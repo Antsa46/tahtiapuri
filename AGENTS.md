@@ -28,7 +28,8 @@ Lue tehtävän mukaan:
   [turvallisuus ja oikeudet](docs/architecture/security-and-permissions-plan.md)
 - Windowsin eristyskokeen natiivi käynnistin, koeoikeudet tai koesiivous:
   [rajattu Windows-koe](docs/experiments/windows-isolation-probe.md) ja
-  [Electron Node -yhteensopivuuskoe](docs/experiments/electron-isolation-probe.md)
+  [Electron Node -yhteensopivuuskoe](docs/experiments/electron-isolation-probe.md) sekä
+  [SDK:n ja binäärilapsen koe](docs/experiments/sdk-isolation-probe.md)
 - havaintopaikkojen asetukset, tallennus tai observing-IPC:
   [nimetyt havaintopaikat](docs/architecture/observing-places.md)
 - käyttäjätieto, historian säilytys ja poisto, välimuistit tai vienti/palautus:

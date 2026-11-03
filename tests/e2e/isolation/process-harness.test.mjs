@@ -4,10 +4,10 @@ import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { once } from 'node:events';
 import { collect } from './process-harness.mjs';
-function fixture() {
+function fixture(options) {
   const child = new EventEmitter(); child.stdout = new PassThrough(); child.stderr = new PassThrough(); child.killed = false;
   child.kill = () => { child.killed = true; return true; };
-  return { child, report: collect(child) };
+  return { child, report: collect(child, options) };
 }
 async function finish(child) {
   const ended = once(child.stdout, 'end'); child.stdout.end(); child.stderr.end(); await ended; child.emit('close', 0, null);
@@ -33,4 +33,15 @@ test('total stdout volume is bounded across individually short records', () => {
 });
 test('stderr is bounded separately and retained only as a diagnostic tail', () => {
   const { child, report } = fixture(); child.stderr.write('x'.repeat(1024 * 1024 + 1)); assert.throws(report.check, /diagnostics/); assert.equal(report.stderr.length, 32768); assert(child.killed);
+});
+
+const envelope = value => JSON.stringify({ type: 'worker-output', data: Buffer.from(JSON.stringify(value)).toString('base64') }) + '\n';
+test('SDK transport keeps host evidence distinct from worker messages', async () => {
+  const { child, report } = fixture({ workerEnvelope: true }); child.stdout.write('{"type":"launched","pid":101}\n' + envelope({ type: 'sdk-child', pid: 102, source: 'host' })); await finish(child); await report.exited; report.checkComplete(); assert.equal(report.records[0].source, 'host'); assert.equal(report.records[1].source, 'worker');
+});
+test('worker cannot forge a trusted token inspection', async () => {
+  const { child, report } = fixture({ workerEnvelope: true }); child.stdout.write(envelope({ type: 'inspected-child', pid: 102, job: true })); await finish(child); await report.exited; assert.throws(report.checkComplete, /Malformed/); assert.deepEqual(report.records, []);
+});
+test('a raw SDK worker record cannot impersonate the host transport', async () => {
+  const { child, report } = fixture({ workerEnvelope: true }); child.stdout.write('{"type":"sdk-child","pid":102}\n'); await finish(child); await report.exited; assert.throws(report.checkComplete, /Malformed/);
 });

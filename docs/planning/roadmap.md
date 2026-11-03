@@ -111,7 +111,9 @@ erottaa sen Electron-/malli- ja täyden minipaketin jatkoporteista.
 Osakoe ei yksin täytä T09:n hyväksymisehtoja. T09b (#25) erottaa
 [Electronin Node-käynnistyksen](../experiments/electron-isolation-probe.md)
 yhteensopivuuden ennen SDK-/malliporttia; natiivikokeen avoimet
-verkkohavainnot säilyvät erillisinä.
+verkkohavainnot säilyvät erillisinä. T09c (#26) selvittää
+[SDK:n CPU-alustuksen ja binäärikoelapsen](../experiments/sdk-isolation-probe.md)
+ilman GGUF-painoja ennen mallin lataus-/generointikoetta.
 
 T15 rakentaa lopullisen asentimen, ja T16 toistaa oikeusrajojen
 hyväksymisnäytön lopullisella toimitettavalla kokoonpanolla.

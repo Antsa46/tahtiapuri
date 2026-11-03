@@ -131,6 +131,9 @@ Ensimmäisen kokeen täsmäversiot on lukittu
 node-llama-cpp 3.22.2:n UtilityProcess-yhteensopivuuden paikallisessa
 Windows-kehityskokoonpanossa. T04:n erillinen [4B/8B-laatuvertailu](../experiments/model-comparison.md)
 on tehty; paketoitu ajo on vielä kokeilematta.
+T09c:n erillinen [SDK-eristyskoe](../experiments/sdk-isolation-probe.md)
+käyttää CPU-binääriä ilman mallipainoja. Julkinen CPU-alustus, SDK:n sisäinen
+binäärikoelapsi ja mallin lataus/generointi ovat erillisiä hyväksymisnäyttöjä.
 Electronin kokeellinen electron/llm näyttää vastaavan prosessijaon.
 Sitä käytetään vertailuna, ei automaattisesti sovelluksen riippuvuutena.
 Tarkat binäärit, CUDA-runtimet, ajurit ja paketoitu offline-käyttö

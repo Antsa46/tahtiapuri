@@ -1,34 +1,24 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { promises as fs, createReadStream } from 'node:fs';
-import { createHash, randomUUID } from 'node:crypto';
+import { promises as fs } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { prepareElectronFixture } from './electron-fixture.mjs';
 import { collect, bounded, until, cleanupOwnedRun } from './process-harness.mjs';
 
 if (process.platform !== 'win32') throw new Error('Native Windows Node is required.');
 const directory = dirname(fileURLToPath(import.meta.url));
 const root = resolve(directory, '../../..');
 const tools = JSON.parse(await fs.readFile(join(root, 'scripts/dev/toolchain.json'), 'utf8'));
-const archive = join(root, '.local/cache/downloads', tools.electron.file);
 const output = join(root, '.artifacts/tests/isolation');
 const host = join(output, 'native/bin/host.exe');
 const runRoot = join(output, 'electron-runs', randomUUID());
 await fs.mkdir(runRoot, { recursive: true });
 const template = join(runRoot, 'runtime-template');
 const summary = { schema: 1, scope: 'electron-node-bootstrap-only', electron: tools.electron.version, archiveSha256: null, cases: [], passed: false, unrunCases: [] };
-const powershell = join(process.env.SystemRoot, 'System32/WindowsPowerShell/v1.0/powershell.exe');
 
-async function prepareTemplate() {
-  const hash = createHash('sha256');
-  for await (const chunk of createReadStream(archive)) hash.update(chunk);
-  summary.archiveSha256 = hash.digest('hex');
-  assert.equal(summary.archiveSha256, tools.electron.sha256, 'Existing Electron archive checksum differs. Nothing was downloaded.');
-  const unpack = spawn(powershell, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', join(directory, 'extract-electron.ps1'), '-Archive', archive, '-Destination', template], { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
-  const report = collect(unpack);
-  try { const exit = await bounded(report.exited, 90000, 'Local archive extraction timeout.'); report.checkComplete(); assert.equal(exit.code, 0, report.stderr); }
-  finally { if (unpack.exitCode === null && unpack.signalCode === null) unpack.kill(); unpack.stdout.destroy(); unpack.stderr.destroy(); }
-}
+async function prepareTemplate() { const prepared = await prepareElectronFixture(root, template); summary.archiveSha256 = prepared.archiveSha256; }
 function validateLaunch(records, mode) {
   const launch = records.find(row => row.type === 'launched'); assert(launch?.job && launch.aclsVerified);
   assert.equal(launch.requestedPolicy, mode); assert.equal(launch.sentinelInherited, false);

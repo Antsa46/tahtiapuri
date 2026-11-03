@@ -3,10 +3,10 @@ import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 
-export function collect(child) {
+export function collect(child, { workerEnvelope = false } = {}) {
   const records = []; let buffered = ''; let outputBytes = 0; let stderrBytes = 0; let stderr = ''; let failure; let ended = false; let closed = false;
   const fail = message => { failure ??= new Error(message); child.kill(); };
-  const pidTypes = new Set(['launched', 'token', 'descendant', 'owner-host', 'escaped', 'runtime']);
+  const pidTypes = new Set(['launched', 'token', 'descendant', 'owner-host', 'escaped', 'runtime', 'sdk-child', 'inspected-child']);
   child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8');
   child.stdout.on('data', data => {
     outputBytes += Buffer.byteLength(data);
@@ -17,7 +17,18 @@ export function collect(child) {
       const line = buffered.slice(0, end).trim(); buffered = buffered.slice(end + 1);
       if (!line) continue;
       try {
-        const row = JSON.parse(line);
+        let row = JSON.parse(line);
+        if (workerEnvelope) {
+          if (row?.type === 'worker-output') {
+            if (typeof row.data !== 'string' || Buffer.from(row.data, 'base64').toString('base64') !== row.data) throw new Error('Invalid worker envelope.');
+            row = JSON.parse(Buffer.from(row.data, 'base64').toString('utf8'));
+            if (!['sdk-phase','sdk-child','sdk-child-message','sdk-policy','sdk-held','sdk-child-exit','sdk-ready','sdk-error','sdk-expected-failure','sdk-instrumentation-error'].includes(row?.type)) throw new Error('Worker cannot emit host records.');
+            row = { ...row, source: 'worker' };
+          } else {
+            if (!['profile','launched','inspected-child','finished','error','cleanup','owner-host'].includes(row?.type)) throw new Error('Invalid host record.');
+            row = { ...row, source: 'host' };
+          }
+        }
         if (!row || typeof row !== 'object' || Array.isArray(row) || typeof row.type !== 'string' || !row.type || row.type.length > 64) throw new Error('Invalid record type.');
         if (pidTypes.has(row.type) || Object.hasOwn(row, 'pid')) {
           if (!Number.isSafeInteger(row.pid) || row.pid <= 0 || row.pid > 0xffffffff) throw new Error('Invalid process identity.');
@@ -60,7 +71,7 @@ export function alive(pid) { try { process.kill(pid, 0); return true; } catch (e
 export async function cleanupOwnedRun({ child, report, host, staged, profile, restricted }) {
   const result = { passed: false, stopped: false, profileClean: !restricted, errors: [] };
   if (child.exitCode === null && child.signalCode === null) child.kill();
-  const pids = [...new Set(report.records.filter(row => ['launched', 'token', 'descendant', 'owner-host', 'escaped'].includes(row.type)).map(row => row.pid))];
+  const pids = [...new Set(report.records.filter(row => ['launched', 'token', 'descendant', 'owner-host', 'escaped', 'sdk-child', 'inspected-child'].includes(row.type)).map(row => row.pid))];
   try { await until(() => pids.every(pid => !alive(pid)), 7000); result.stopped = true; }
   catch {
     result.errors.push('Job lifecycle failed; emergency cleanup required.'); result.emergency = [];

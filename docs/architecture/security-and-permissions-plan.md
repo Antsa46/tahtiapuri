@@ -9,7 +9,10 @@ oikeustarkennukset ja toteutusmekanismit ovat ehdotuksia, ellei niitä merkitä
 sovituiksi. T02:n statusrunko ja sen IPC-rajat on toteutettu;
 Sovelluksen OS-eristystä ei ole vielä toteutettu.
 Erillinen [natiivikoe](../experiments/windows-isolation-probe.md)
-rajaa T09a:n synteettisen koepaketin ja sen näyttöportit. T05:n rajattu stdio-MCP-yhteys
+rajaa T09a:n synteettisen koepaketin ja sen näyttöportit.
+[SDK-koe](../experiments/sdk-isolation-probe.md) erottaa julkisen CPU-alustuksen
+SDK:n sisäisestä lapsikokeesta; kumpikaan ei yksin hyväksy sovelluksen OS-rajoja.
+T05:n rajattu stdio-MCP-yhteys
 käyttää Windowsin capability-todennettua named pipe -sovitinta;
 [mallisuunnitelma](local-model-plan.md#kehitys--ja-diagnostiikkarajapinta-paikalliseen-malliin)
 omistaa toteutetun sopimuksen. Se ei ole koko sovelluksen OS-eristys.
