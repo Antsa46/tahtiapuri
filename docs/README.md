@@ -14,7 +14,7 @@ vastuurajan, lue myös toisen osapuolen sopimus.
 | Julkisten tekstien yksityisyys ja paikallinen kehityskonteksti | [privacy/publication.md](privacy/publication.md) |
 | Suunnittelun lähtökohdat, päätösten tila ja avoimet valinnat | [planning/decisions.md](planning/decisions.md) |
 | Koko projektin vaiheet, työpaketit ja käyttötapausten jäljitettävyys | [planning/roadmap.md](planning/roadmap.md) |
-| Kehityksen GPT-mallien tehtäväkohtaiset suositukset | [ai/development-models.md](ai/development-models.md) |
+| Kehityksen GPT-mallit, issuekohtaiset tokenit ja projektin kertymä | [ai/development-models.md](ai/development-models.md) |
 | Käyttäjä, paikallisen mallin oppimistavoite, illan katsaus, rajaus ja työmäärän reunaehdot | [product/project-definition.md](product/project-definition.md) |
 | Nykyhetken kartta, katsaus, keskustelun karttaohjaus, sääasetukset ja poikkeukset | [product/observing-session-use-cases.md](product/observing-session-use-cases.md) |
 | Valittu kansiorakenne A, moduulit, kerrokset ja prosessien kulkureitit | [architecture/base-architecture.md](architecture/base-architecture.md) |

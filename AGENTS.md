@@ -126,7 +126,8 @@ erillään Tähtiapurin ajonaikaisista mallirooleista.
 
 Kehityksen tehtäväkohtaiset GPT-mallisuositukset omistaa
 [kehitysmallien työnjako](docs/ai/development-models.md), mukaan lukien
-käyttäjälle ilmoitettava mallisuositus ja issuekohtainen tokeniseuranta.
+käyttäjälle ilmoitettava mallisuositus, issuekohtainen tokeniseuranta
+ja tulevien raporttien projektikohtainen tokenikertymä.
 Suositus ei ole tehty malliasetuksen muutos. Valinnat ovat erillisiä
 sovelluksen paikallisista 4B/8B-malleista ja ajonaikaisista mallirooleista.
 

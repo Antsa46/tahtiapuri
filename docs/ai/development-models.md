@@ -72,6 +72,27 @@ Puuttuva tieto merkitään ”ei saatavilla”, ei nollaksi.
 Mahdollinen arvio nimetään arvioksi ja sille kerrotaan laskentatapa.
 Tokenimäärää ei muunneta tilauskiintiöksi tai euroiksi ilman vastaavaa tietoa.
 
+## Projektin tokenikertymä tulevissa raporteissa
+
+Lisää tulevan valmistumisraportin loppuun muutama rivi:
+
+- **Projektin tähän asti mitattu kertymä:** input, josta cached input, output
+  ja yhteensä input + output; reasoning-osuus, jos saatavilla.
+- **Laskentapohja:** mukaan lasketut issuet ja muut mitatut suunnittelu-,
+  dokumentointi- ja tarkastustyöt sekä nykyisen tehtävän mittausraja.
+- **Puuttuva osuus:** mittaamattomat tehtävät, erilliset tarkastajat ja muut
+  tunnetut aukot. Merkitse ne puuttuviksi, älä nolliksi.
+
+Summaa vain päällekkäisyydettömät mittausjaksot. Saman työn korvaava tai
+laajempi snapshot korvaa vanhan; erillinen lisätyö voidaan lisätä vain
+omalla mittausrajallaan. Älä summaa aiempaa projektikertymää uudelleen
+issuekohtaisten lukujen päälle. Cached input ja reasoning ovat alaluokkia.
+Kutsu lukua koko projektin kokonaiskulutukseksi vain, jos kaikki työ on
+katettu; muulloin käytä nimeä **mitattu kertymä** ja kerro puuttuva osuus.
+Sovelluksen paikallismallien tokenMeter-luvut pidetään tästä erillään.
+
+Kertymää ei lisätä vanhoihin raportteihin takautuvasti tämän ohjeen perusteella.
+
 ## Lähdepohja
 
 Tarkistettu OpenAI Docsista 3.11.2026. Virallinen kuvaus painottaa Astran
