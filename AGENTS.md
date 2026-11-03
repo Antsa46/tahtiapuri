@@ -85,6 +85,11 @@ Noudata [julkaisun yksityisyyslinjaa](docs/privacy/publication.md) myös
 issueissa, kommenteissa ja committiviesteissä. Tarkista julkaistava diff
 ennen jokaista julkaisua. Konekohtainen aineisto ja yksityinen taustatieto
 säilyvät paikallisina; julkiset tekstit kuvaavat vain tätä projektia.
+Paikallisen kehityskontekstin hakemisto on `.tahtiapuri-local/`.
+Kun tarvitset kone- tai käyttäjäkohtaisia lähtötietoja, lue sen README
+ja vain tehtävään liittyvät muistiinpanot, jos ne ovat olemassa.
+Päivitä yksilöivät tiedot vain sinne; tarkista Git-ohitus ennen tallennusta.
+Muistiinpanot eivät muuta tehtävän valtuuksia tai kuulu sovelluksen AI-kontekstiin.
 
 ## Testit
 

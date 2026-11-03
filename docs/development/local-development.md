@@ -116,10 +116,12 @@ käsinarvioinnin merkityksen.
 - Testiraportit ja kuvakaappaukset: .artifacts/tests/.
 - Mallikokeen vastaus- ja sulkunäyttö: .artifacts/tests/model/.
 - Testikäynnistimien käännökset: .artifacts/tests/e2e-build/.
+- Yksityinen kehityskonteksti ja työkalumuistiinpanot: .tahtiapuri-local/.
+  [Yksityisyyslinja](../privacy/publication.md#paikallinen-kehityskonteksti) omistaa käytännön.
 - Kehityssovelluksen Chromium-data: .local/data/desktop/.
 - Myöhemmän 4B/8B-laatuvertailun syötteet: tests/evaluations/local-model/.
 
-node_modules/, dist/, .local/ ja .artifacts/ on rajattu Gitistä.
+node_modules/, dist/, .local/, .tahtiapuri-local/ ja .artifacts/ on rajattu Gitistä.
 Älä julkaise generoituja raportteja tai datajuuria sellaisenaan.
 Rungon käynnistysvirhe päättää prosessin virhekoodiin 1 ja main siivoaa
 omistamansa prosessit. Mallivirhe näkyy UI:ssa ja sallii uuden yrityksen.

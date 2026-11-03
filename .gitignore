@@ -8,6 +8,7 @@ coverage/
 .artifacts/
 
 # Private local context and user data
+/.tahtiapuri-local/
 .local/
 .env
 .env.*
