@@ -1,8 +1,8 @@
 # Tähtiapurin roadmap
 
-Tämä on koko projektin etenemisehdotus, 3.11.2026. Tila on suunnittelu:
-yhtään toteutusvaihetta tai hyväksymiskoetta ei ole tämän dokumentin
-perusteella tehty. Käyttöversion rajaus on sovittu; työpakettien tarkka
+Tämä on koko projektin etenemisjärjestys, 3.11.2026.
+Valmistelut ja toteutus etenevät issue kerrallaan. Roadmap ei ole
+ajettujen kokeiden tai valmistumisen todiste. Käyttöversion rajaus on sovittu; työpakettien tarkka
 jako ja kehitysmallien suositus tarkentuvat ennen niistä riippuvaa työtä.
 
 ## Tavoite ja omistajuus

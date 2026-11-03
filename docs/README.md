@@ -26,6 +26,7 @@ vastuurajan, lue myös toisen osapuolen sopimus.
 | Kehitystyön pääkehittäjä ja kriittisten muutosten tarkastaja | [AGENTS.md](../AGENTS.md#kehitystyön-roolit-ja-katselmus) |
 | Ensimmäisen oman työskentelyskillin luonnos: tehtävän aloitus ja valmistuminen | [ai/skills/task-start-finish/SKILL.md](ai/skills/task-start-finish/SKILL.md) |
 | Yhteinen kehitystapa, GitHub-tehtävien ja ohjeiden työnjako, kymmenen aloituskohtaa ja rakennemallin nimitys | [ai/project-start-checklist.md](ai/project-start-checklist.md) |
+| Ensimmäisen 4B/8B-kokeen lukitut versiot, syötteet, ajotapa ja tulosmuoto | [experiments/model-pilot.md](experiments/model-pilot.md) |
 | Ensimmäinen rajattu mallikoe, paikalliset testiajot, lähteen vieressä olevat testit, keskitetty E2E ja raportointi | [ai/testing-rules.md](ai/testing-rules.md) |
 
 product/-kansio kuvaa käyttäjätarpeen ja tavoitellun tuloksen.

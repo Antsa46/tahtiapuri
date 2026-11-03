@@ -1,6 +1,9 @@
 # Paikallisen mallin kokeilu ja toimitus
 
-Tämä on suunnitteluehdotus. Mallia tai moottoria ei ole valittu tai asennettu.
+Tämä dokumentti kuvaa mallirajapinnan ja toimituksen suunnitelman.
+Ensimmäisen kokeen 4B/8B-paketit ja työkaluketju on lukittu
+[kokeen lähtötietoihin](../experiments/model-pilot.md). Mitään mallia tai moottoria
+ei ole vielä asennettu tai ajettu.
 [Päätösten tila](../planning/decisions.md) omistaa valintojen hyväksynnän,
 [turvallisuussuunnitelma](security-and-permissions-plan.md) yleiset oikeusrajat ja
 [testausohje](../ai/testing-rules.md) arviointiaineistot ja tulosten raportoinnin.
@@ -121,8 +124,9 @@ Sovelluksen main omistaa prosessin elinkaaren; backendin assistant
 omistaa tehtäväjonon, kontekstin ja työkalujen tarkistukset.
 Sovitin ei anna rendererille mallimoottorin yleistä APIa.
 
-Tämä on sovittu arviointisuunta, ei täsmäversion valinta tai todennettu
-yhdistelmä. Suunnittelun hyväksyntä ei käynnistä asennuksia tai ajoja.
+Ensimmäisen kokeen täsmäversiot on lukittu
+[kokeen lähtötietoihin](../experiments/model-pilot.md), mutta yhdistelmää
+ei ole vielä asennettu tai ajettu. Yleinen arviointisuunta ei todista yhteensopivuutta.
 Electronin kokeellinen electron/llm näyttää vastaavan prosessijaon.
 Sitä käytetään vertailuna, ei automaattisesti sovelluksen riippuvuutena.
 Tarkat binäärit, CUDA-runtimet, ajurit ja paketoitu offline-käyttö
@@ -144,8 +148,10 @@ se ei yksin rajaa OS-oikeuksia. Ajotavan ja eristyskokeen eron omistaa
 [turvallisuussuunnitelma](security-and-permissions-plan.md#malliprosessin-ajotapa-ja-eristyksen-vaiheistus).
 Mahdollinen kevyt CPU/GPU-yhteensopivuuskoe ilman AppContaineria on
 erikseen rajattava kehityskoe, ei osoitus verkkokiellon täyttymisestä.
-Koeympäristö ja sen oikeudet ovat vielä avoimia. Asennuksia tai ajoja
-ei käynnistetä tämän suunnitelman perusteella.
+Käyttäjä hyväksyi rajatun Windows-kehityskokeen ennen OS-eristyskoetta.
+Sen oikeudet, projektikohtaiset asennuspolut ja toistettavat syötteet
+omistaa [kokeen lähtötieto](../experiments/model-pilot.md).
+Sovellusrungon ja oikean mallin ajon näyttö tehdään T02/T03:ssa.
 
 ## Moottorin tausta ja vertailuehdokkaat
 
@@ -160,15 +166,17 @@ Poro 2 8B Instruct ja Ministral 3 8B Instruct on sovittu vertailuun.
 Käyttäjä vahvisti aloituksen 4B- ja 8B-malleilla. Suositus on Qwen3-perheen
 4B/8B/14B-vertailu, jolloin sukupolvi ei vaihdu kokoluokan mukana.
 Qwen3.5-4B jää erilliseksi myöhemmäksi ehdokkaaksi.
-Tarkat Qwen-paketit, kvantisoinnit ja moottoribuild ovat avoimia.
+Ensimmäiset Qwen3-4B/8B Q4_K_M -paketit ja moottorin npm-versio ovat
+[lukittuina kokeeseen](../experiments/model-pilot.md). Natiivibinäärin ajossa
+käytetty build kirjataan ennen ajoa; 14B:n ja muiden perheiden paketit ovat avoimia.
 Mitään mallia ei ole ladattu tai ajettu.
 
 | Ehdokas | Tila ja kokeen tarkoitus | Avoin osa |
 | --- | --- | --- |
 | LumiOpen Llama-Poro-2-8B-Instruct | Sovittu: suomenkielinen keskustelu ja työkalutehtävät mitattavina. | GGUF-alkuperä, tarkka kvantisointi, chat-template, käyttöehdot ja oma arviointi. |
 | Ministral 3 8B Instruct 2512 | Sovittu: eurooppalainen keskustelu- ja työkalumallin verrokki. | Tarkka GGUF ja kvantisointi; suomen kieli, faktat ja työkalut mitataan. |
-| Qwen3-4B Q4_K_M | Ehdotettu toteutus sovitulle 4B-kokoluokan lisäykselle. | Suomen kieli, aineiston tulkinta, työkalut sekä CPU-/GPU-viive ja ajomuisti. |
-| Qwen3-8B Q4_K_M | Ehdotus: saman perheen keskikokoinen vertailukohta. | Samat tehtävät ja asetusten kirjaaminen; paremmuutta ei oleteta. |
+| Qwen3-4B Q4_K_M | Valittu ensimmäisen kokeen 4B-paketiksi; lähtötiedot lukittu. | Suomen kieli, aineiston tulkinta, työkalut sekä CPU-/GPU-viive ja ajomuisti. |
+| Qwen3-8B Q4_K_M | Valittu saman perheen 8B-verrokiksi; lähtötiedot lukittu. | Samat tehtävät ja asetusten kirjaaminen; paremmuutta ei oleteta. |
 | Qwen3-14B IQ3_M tai Q3_K_M | Ehdotus: suurempi malli pienemmällä painotarkkuudella. Q4_K_M säilyy erillisenä vertailukohtana. | Todellinen VRAM, konteksti ja laatu mitataan. Pieni tiedostokoko ei takaa koko ajon mahtumista näytönohjaimelle. |
 
 Tiedostokokoja tarkistettiin 3.11.2026: Qwenin oma 4B Q4_K_M on noin

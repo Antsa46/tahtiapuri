@@ -23,23 +23,23 @@ valmistumisen näyttö [GitHub-issueissa](https://github.com/Antsa46/tahtiapuri/
 | Paikat, asetukset ja historia | Sovittu paikallinen säilytys: viimeisin paikka, säävalinta, käyttäjän poistoon asti säilyvät keskustelut ja viimeisin ennuste per paikka. Ensimmäinen säätila on manuaalinen. | [Tiedon elinkaari](../architecture/data-lifecycle-plan.md) |
 | Testaus | Sovittu: pienet testit lähteen vieressä, laajat testit ja yhteiset aineistot tests/-puussa; paikalliset ajot ilman etä-CI:tä. Ensimmäinen näyttö on rajattu mallikoe. | [Testausohje](../ai/testing-rules.md) |
 | Kehitystyö | Pääkehittäjä ja kriittisten muutosten tarkastaja on sovittu. GPT-mallien tehtäväkohtainen työnjako on suositus. | [Työohje](../../AGENTS.md#kehitystyön-roolit-ja-katselmus), [kehitysmallit](../ai/development-models.md) |
-| Työskentelyskill | Ensimmäinen luonnos on kirjoitettu; käytännön kokeilu ja käyttöönotto ovat tekemättä. | [task-start-finish](../ai/skills/task-start-finish/SKILL.md) |
+| Työskentelyskill | Luonnosta on kokeiltu T01:n rajauksessa; laajempi toimivuus ja asennus ovat todentamatta. | [task-start-finish](../ai/skills/task-start-finish/SKILL.md) |
 
 ## Ennen riippuvaa toteutusta ratkaistavat asiat
 
-- Tarkat mallipaketit, kvantisoinnit, lisenssit, moottori- ja työkaluketjuversiot.
-- Koeympäristö ja oikeudet sekä varhaisen ja lopullisen kokoonpanon turvanäyttö.
+- Ensimmäisen kokeen [paketit, työkaluketju ja Windows-kehitysoikeudet](../experiments/model-pilot.md) on määritelty. Asennus, natiivibuildin tunnisteet ja ajo ovat todentamatta.
+- Varhaisen ja lopullisen kokoonpanon OS-turvanäyttö; muiden malliperheiden tarkat paketit.
 - Tuettu Windows-/CPU/GPU-kokoonpano ja näkyvä CPU-varatila.
 - Katalogin rajaus, laskentasovitin, FMI-kysely ja käynnistyskatsauksen aikarajat.
 - Mallivalinnan ja mallikansion muistaminen sekä puuttuvan mallin käsittely.
 - Tallennuksen tekninen toteutus, MCP:n todentaminen ja resurssirajat.
-- Malliarvioinnin aineisto ja suorituskyvyn hyväksyttävät rajat.
+- Ensimmäinen synteettinen aineisto on [kokeen lähtötiedoissa](../experiments/model-pilot.md); mallien tulokset ja suorituskyvyn hyväksyttävät rajat ovat avoimia.
 - Horisonttiesteiden ja havaintovälineiden tietojen tarkempi käyttötapa.
 
-Ensimmäisen mallikokeen rajaus tehdään [T01 / #2:ssa](https://github.com/Antsa46/tahtiapuri/issues/2).
+Ensimmäisen mallikokeen rajaus ja lähtötietojen tarkistus kuuluvat [T01 / #2:een](https://github.com/Antsa46/tahtiapuri/issues/2).
 Projectsia tukevan kehitysyhteyden käyttöönotto on [T00 / #1](https://github.com/Antsa46/tahtiapuri/issues/1).
 Tässä ei ylläpidetä näiden tehtävien elävää tilaa.
 
 Vienti ja palautus, havaintopäiväkirja sekä laajemmat kohde- ja välinetoiminnot
-säilyvät myöhemmiksi rajattuina. Sovelluksen toteutus ja malliasennukset
-alkavat erillisestä toteutustehtävästä. EKYä käytetään vain luettavana vertailuna.
+säilyvät myöhemmiksi rajattuina. Toteutuksen aloitus on valtuutettu;
+asennukset ja ajot tehdään rajattujen toteutusissueiden kautta. EKYä käytetään vain luettavana vertailuna.

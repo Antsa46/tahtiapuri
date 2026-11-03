@@ -113,7 +113,8 @@ erillään Tähtiapurin ajonaikaisista mallirooleista.
   rajausta ei oleteta; alagentti perii työistunnon oikeudet.
 
 Kehityksen tehtäväkohtaiset GPT-mallisuositukset omistaa
-[kehitysmallien työnjako](docs/ai/development-models.md).
+[kehitysmallien työnjako](docs/ai/development-models.md), mukaan lukien
+käyttäjälle ilmoitettava mallisuositus ja issuekohtainen tokeniseuranta.
 Suositus ei ole tehty malliasetuksen muutos. Valinnat ovat erillisiä
 sovelluksen paikallisista 4B/8B-malleista ja ajonaikaisista mallirooleista.
 

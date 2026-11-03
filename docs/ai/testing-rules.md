@@ -7,7 +7,9 @@ Tämä korvaa aiemman kaikkien testien tests/-varjorakenteen.
 Käyttäjä jätti sijoittelun ja ylläpidon Codexin harkintaan. Nykyinen
 yhdistelmä säilyy; sijoittelua muutetaan vain todellisen ylläpitohyödyn
 perusteella ja ohje päivitetään samalla.
-Testityökaluja tai ajokomentoja ei ole vielä valittu tai asennettu.
+Ensimmäisen kokeen testityökalun versio on valittu
+[kokeen lähtötiedoissa](../experiments/model-pilot.md), mutta työkaluja
+tai ajokomentoja ei ole vielä asennettu tai ajettu.
 Lähderakenteen omistaa [perusarkkitehtuuri](../architecture/base-architecture.md).
 Alla olevat polut kuvaavat tulevaa rakennetta, eivät olemassa olevaa koodia.
 
@@ -81,8 +83,9 @@ lähdekoodin E2E-ajolla eikä vaadi tuotannon suojausten löysentämistä.
 ## Ensimmäinen tekninen hyväksymiskoe
 
 Käyttäjä valitsi 3.11.2026 rajatun mallikokeen ennen koko käyttöliittymän
-viimeistelyä. Ensimmäinen pari on 4B- ja 8B-kokoluokka. Tarkat mallipaketit,
-kvantisoinnit, koeympäristö ja oikeudet vahvistetaan ennen ajoa.
+viimeistelyä. Ensimmäinen pari on 4B- ja 8B-kokoluokka.
+[Lukitut kokeen lähtötiedot](../experiments/model-pilot.md) omistavat
+paketit, synteettiset tapaukset, oikeusprofiilin ja tulosten kirjaustavan.
 
 Koe käyttää sovelluksen omaa mallisovitinta, jonoa ja rajattuja
 vastaussopimuksia. Sama vakioitu havaintopaikka, aika, taivastiedot ja

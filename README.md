@@ -9,8 +9,9 @@ opetellaan paikallisten kielimallien, rajattujen agenttiroolien ja
 AI-avusteisen ohjelmistokehityksen käyttöä. Oppeja on tarkoitus hyödyntää
 myöhemmin toisessa Electron-sovelluksessa.
 
-**Nykytila:** suunnitteluvaihe. Repositorio sisältää arkkitehtuurin,
-käyttötapaukset ja toteutusroadmapin. Ajettavaa sovellusta ei vielä ole.
+**Nykytila:** ensimmäisen mallikokeen valmistelu. Repositorio sisältää
+arkkitehtuurin, käyttötapaukset, roadmapin ja synteettisen 4B/8B-koeaineiston.
+Ajettavaa sovellusta ei vielä ole.
 
 ## Tavoitellut ominaisuudet
 

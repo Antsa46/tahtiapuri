@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Pilot decision only; not the production IPC contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "action",
+    "targetId",
+    "atUtc",
+    "text"
+  ],
+  "properties": {
+    "action": {
+      "type": "string",
+      "enum": [
+        "answer",
+        "sky.getTarget"
+      ]
+    },
+    "targetId": {
+      "type": "string"
+    },
+    "atUtc": {
+      "type": "string"
+    },
+    "text": {
+      "type": "string"
+    }
+  }
+}

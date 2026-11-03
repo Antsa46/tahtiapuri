@@ -120,8 +120,10 @@ offline-aineistolla. Käyttöjärjestelmäasetuksia ei muuteta suunnittelun aika
 Arvio 3.11.2026 on lähde- ja suunnitteluarvio; CPU/GPU-ajoa tai
 AppContainer-yhteensopivuutta ei ole testattu. Käyttäjä vahvisti mallikokeen
 aloittamisen 4B:llä ja 8B:llä sekä alla kuvatun arviointisuunnan.
-Mahdollisen kevyemmän kehityskokeen koeympäristö ja oikeusprofiili ovat
-edelleen avoimia; turvatavoitetta ei ole alennettu.
+Käyttäjä hyväksyi 3.11.2026 rajatun Windows-kehityskokeen tavallisen käyttäjän
+oikeuksilla ennen AppContainer/LPAC-koetta. Kokeen rajaus ja sallitut syötteet
+ovat [lähtötiedoissa](../experiments/model-pilot.md). Tämä ei hyväksy
+havaintokäytön verkko- ja tiedostorajaa.
 
 Sovittu arviointisuunta on kokeilla node-llama-cpp:tä erillisessä
 UtilityProcessissa ennen oman Windows-käynnistäjän laajaa toteutusta. Electronin kokeellinen
@@ -148,8 +150,9 @@ llama.cpp-, CUDA- tai ajuriyhdistelmämme toimivuutta.
 
 Sovittu suunnitteluvaiheistus on pieni erillinen 4B/8B-yhteensopivuuskoe,
 todellisen GPU-ajon ja prosessin elinkaaren mittaus sekä oma rajattu
-eristyskoe. Mahdollinen koe ilman AppContaineria vaatii ensin koeympäristön
-ja oikeuksien sopimisen. Se käyttää synteettistä aineistoa ja tarkistettuja
+eristyskoe. Ensimmäisen kokeen ympäristö ja oikeudet on sovittu
+[kokeen lähtötiedoissa](../experiments/model-pilot.md).
+Se käyttää synteettistä aineistoa ja tarkistettuja
 malleja; sää-API tai oikea käyttäjäaineisto eivät kuulu tähän kokeeseen.
 Synteettinen aineisto ei itsessään ole käyttöjärjestelmäeristys.
 

@@ -1,7 +1,9 @@
 # Ensimmäinen runko ja kevyt paikallinen backend
 
 Tämä on toteutusvaiheen ehdotus. Päätösten tilan kokoaa
-[päätöshakemisto](../planning/decisions.md). Sovelluskoodia ei vielä luoda.
+[päätöshakemisto](../planning/decisions.md). Käyttäjä on valtuuttanut toteutuksen
+aloittamisen issue kerrallaan; ensimmäisen kokeen lähtötiedot ovat
+[kokeen kuvauksessa](../experiments/model-pilot.md). Ajettavaa runkoa ei vielä ole.
 Sovellusjaon omistaa [perusarkkitehtuuri](base-architecture.md);
 oikeusrajat ja eristyksen käyttöönoton ehdot
 [turvallisuussuunnitelma](security-and-permissions-plan.md).

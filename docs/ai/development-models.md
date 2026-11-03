@@ -47,6 +47,29 @@ Sovelluksen paikalliset 4B/8B-mallit, GGUF-painot ja ajonaikaiset malliroolit
 ovat eri asia kuin nämä kehityksen GPT-valinnat. Niiden suunnitelman omistaa
 [paikallisen mallin suunnitelma](../architecture/local-model-plan.md).
 
+## Mallin ilmoittaminen ja issuekohtainen tokeniseuranta
+
+Sovittu 3.11.2026: kerro käyttäjälle aina tehtävän alussa suositeltu GPT-malli.
+Ilmoita uusi suositus myös, jos työ muuttuu olennaisesti vaativammaksi.
+Merkitse issueen suositus ja todellinen käytetty malli erikseen;
+käyttäjän ilmoitus ja ajon metatieto ovat eri lähteitä.
+Vaihtoa ei väitetä tehdyksi ilman vahvistusta.
+
+Kirjaa jokaisen käsiteltävän issuen valmistumisraporttiin käytetty malli,
+mahdollinen tarkastaja sekä tokenikulutus omana kohtanaan.
+Käytä issueen rajattua mitattua lukemaa, jos sellainen on saatavilla.
+Merkitse lähde, alku- ja loppuraja sekä keskeneräisen snapshotin ulkopuolelle jäävä työ.
+Tämän keskustelun koko historian lukemaa tai tilin käyttörajojen muutosta
+ei kirjata yhden issuen kulutukseksi.
+
+Erittele lähteen sallimalla tarkkuudella input, cached input ja output.
+Cached input on inputin osa; reasoning output on outputin osa.
+Älä summaa näitä alaluokkia uudelleen kokonaistokenien päälle.
+Pidä tarkastajan kulutus erillään, jos pääistunnon lukema ei sisällä sitä.
+Puuttuva tieto merkitään ”ei saatavilla”, ei nollaksi.
+Mahdollinen arvio nimetään arvioksi ja sille kerrotaan laskentatapa.
+Tokenimäärää ei muunneta tilauskiintiöksi tai euroiksi ilman vastaavaa tietoa.
+
 ## Lähdepohja
 
 Tarkistettu OpenAI Docsista 3.11.2026. Virallinen kuvaus painottaa Astran
