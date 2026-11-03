@@ -1,0 +1,24 @@
+# Local dependencies and generated application output
+node_modules/
+dist/
+build/
+release/
+out/
+coverage/
+.artifacts/
+
+# Private local context and user data
+.local/
+.env
+.env.*
+!.env.example
+
+# Model weights are acquired separately
+*.gguf
+*.safetensors
+*.ggml
+
+# Editor and operating system files
+.DS_Store
+Thumbs.db
+*.log
