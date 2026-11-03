@@ -207,7 +207,7 @@ osat eivät saa ulkoista verkkolupaa.
 | Asia | Tilanne |
 | --- | --- |
 | Uuden projektin aloituskäytäntö | Kymmenen kohtaa on käsitelty päälinjojen tasolla. Ensimmäinen [skilliluonnos](docs/ai/skills/task-start-finish/SKILL.md) on kirjoitettu projektin dokumentteihin. Käytännön kokeilu ja käyttöönotto ovat tekemättä; yhteistä skilliä ei ole asennettu eikä EKYä muutettu. |
-| Tehtävien seuranta GitHubissa | Käyttäjä loi ja vahvisti julkiseksi repon [Antsa46/tahtiapuri](https://github.com/Antsa46/tahtiapuri). Suunnittelutiedostojen ja issueiden ensisiirto on valmistelussa. Projects-taulua ei ole luotu; nykyinen GitHub MCP ei tarjoa sen luontia. Etä-CI:tä ei lisätä. |
+| Tehtävien seuranta GitHubissa | Oma julkinen repo [Antsa46/tahtiapuri](https://github.com/Antsa46/tahtiapuri) sisältää suunnitteludokumentit ja [19 työpakettia issueina](https://github.com/Antsa46/tahtiapuri/issues). Projects-taulun käyttöönotto on [T00 / #1](https://github.com/Antsa46/tahtiapuri/issues/1); nykyinen GitHub MCP ei tue sen luontia. Etä-CI:tä ei ole lisätty. |
 | Sovellusjako | [Vaihtoehto A](docs/architecture/base-architecture.md#vaihtoehto-a-kevyt-ekyn-mukainen-workspace) on valittu pohjaksi: apps/web, apps/desktop, apps/backend ja kolme rajattua yhteistä pakettia. B säilyy arvioituna vaihtoehtona. |
 | Paikallinen backend | Sovittu perusmalli: backendin assistant-moduulin ohjelmakoodi koordinoi rajattuja mallirooleja; omistavat moduulit tarkistavat toiminnot. Mallin laskenta on erillisessä prosessissa. Tarkat sopimukset ovat avoinna [työnkulkusuunnitelmassa](docs/architecture/assistant-orchestration-plan.md). |
 | Desktopin ja backendin yhteys | Sovittu suora IPC mainin ja backendin välille. Renderer–main pysyy rajattuna Electron IPC:nä. [HTTP/IPC-vertailu](docs/architecture/base-architecture.md#paikallinen-http-vai-suora-prosessikanava) säilyy perusteluina; tarkka viestisopimus ja toteutustekniikka täsmennetään ennen koodia. |
@@ -232,7 +232,7 @@ jatkokokeen E1 sekä käyttötapausten UC-01–UC-08 jäljitettävyyden.
 suositus, jota ei ole vielä verrattu omilla kehitystehtävillä.
 Erillisiä malliasetuksia ei ole muutettu.
 
-Ensimmäinen toteutusta edeltävä työpaketti on T01: tarkat 4B/8B-painot,
+Ensimmäinen toteutusta edeltävä työpaketti on [T01 / #2](https://github.com/Antsa46/tahtiapuri/issues/2): tarkat 4B/8B-painot,
 moottoriversio, koeympäristö ja oikeudet sekä pieni arviointiaineisto
 ja hyväksymisehdot. Ensimmäinen näyttö on sovittu
 [rajattu mallikoe](docs/ai/testing-rules.md#ensimmäinen-tekninen-hyväksymiskoe)

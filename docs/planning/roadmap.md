@@ -55,8 +55,8 @@ itsenäisesti tarkistettaviksi muutoksiksi.
 
 | Työ | Rajattu tulos | Edeltävä näyttö |
 | --- | --- | --- |
-| T00 — Ota GitHub Projects -työjono ja kehitysyhteys käyttöön | Liitä tämän repon issuet yhteen kehitystyön näkymään. | Ei toteutusriippuvuutta |
-| T01 — Rajaa ensimmäinen mallikoe ja lukitse kokeen lähtötiedot | Määritä toteutuskelpoinen 4B/8B-koe ennen asennuksia ja sovelluskoodia. | Ei toteutusriippuvuutta |
+| [T00](https://github.com/Antsa46/tahtiapuri/issues/1) — Ota GitHub Projects -työjono ja kehitysyhteys käyttöön | Liitä tämän repon issuet yhteen kehitystyön näkymään. | Ei toteutusriippuvuutta |
+| [T01](https://github.com/Antsa46/tahtiapuri/issues/2) — Rajaa ensimmäinen mallikoe ja lukitse kokeen lähtötiedot | Määritä toteutuskelpoinen 4B/8B-koe ennen asennuksia ja sovelluskoodia. | Ei toteutusriippuvuutta |
 
 **Vaiheen hyväksyminen:** Tarkka ensimmäinen toteutuspala, koeympäristö, oikeudet, versiot ja hyväksymisaineisto on sovittu. GitHub ei edellytä etä-CI:tä.
 
@@ -64,10 +64,10 @@ itsenäisesti tarkistettaviksi muutoksiksi.
 
 | Työ | Rajattu tulos | Edeltävä näyttö |
 | --- | --- | --- |
-| T02 — Pystytä Electron–backend-runko ja rajattu IPC | Käynnistä pienin desktop-runko, joka käyttää sovittua kerrosjakoa. | T01 |
-| T03 — Aja hyväksytty GGUF erillisessä malliprosessissa | Kytke oikea mallisovitin backendin rajattuun työjonoon. | T02 |
-| T04 — Vertaa 4B- ja 8B-malleja yhteisellä aineistolla | Hanki toistettava lähtötaso ennen laajaa käyttöliittymää. | T03 |
-| T05 — Toteuta rajattu stdio-MCP-kehitysyhteys | Mahdollista kehityksen koepyynnöt saman mallisovittimen kautta. | T03 |
+| [T02](https://github.com/Antsa46/tahtiapuri/issues/3) — Pystytä Electron–backend-runko ja rajattu IPC | Käynnistä pienin desktop-runko, joka käyttää sovittua kerrosjakoa. | T01 |
+| [T03](https://github.com/Antsa46/tahtiapuri/issues/4) — Aja hyväksytty GGUF erillisessä malliprosessissa | Kytke oikea mallisovitin backendin rajattuun työjonoon. | T02 |
+| [T04](https://github.com/Antsa46/tahtiapuri/issues/5) — Vertaa 4B- ja 8B-malleja yhteisellä aineistolla | Hanki toistettava lähtötaso ennen laajaa käyttöliittymää. | T03 |
+| [T05](https://github.com/Antsa46/tahtiapuri/issues/6) — Toteuta rajattu stdio-MCP-kehitysyhteys | Mahdollista kehityksen koepyynnöt saman mallisovittimen kautta. | T03 |
 
 **Vaiheen hyväksyminen:** Todellinen malli vastaa sovelluksen oman sovittimen kautta. Vertailun ja MCP-polun näyttö on kirjattu; epäonnistuneet ja ajamattomat tapaukset erottuvat.
 
@@ -83,9 +83,9 @@ kulkee saman sovittimen ja jonon kautta. Tarkka käytäntö on
 
 | Työ | Rajattu tulos | Edeltävä näyttö |
 | --- | --- | --- |
-| T06 — Laske taivastiedot ja varmista paikallinen kohdeaineisto | Tuota kohdetiedot deterministisesti mallin selitysten pohjaksi. | T02 |
-| T07 — Toteuta paikallinen tähtikartta ja kohteen valinta | Näytä kevyt todelliseen aikaan ja paikkaan sidottu kartta. | T06 |
-| T08 — Tallenna havaintopaikat ja muista aktiivinen paikka | Tue muutamia nimettyjä käyttäjän määrittämiä sijainteja. | T06 |
+| [T06](https://github.com/Antsa46/tahtiapuri/issues/7) — Laske taivastiedot ja varmista paikallinen kohdeaineisto | Tuota kohdetiedot deterministisesti mallin selitysten pohjaksi. | T02 |
+| [T07](https://github.com/Antsa46/tahtiapuri/issues/8) — Toteuta paikallinen tähtikartta ja kohteen valinta | Näytä kevyt todelliseen aikaan ja paikkaan sidottu kartta. | T06 |
+| [T08](https://github.com/Antsa46/tahtiapuri/issues/9) — Tallenna havaintopaikat ja muista aktiivinen paikka | Tue muutamia nimettyjä käyttäjän määrittämiä sijainteja. | T06 |
 
 **Vaiheen hyväksyminen:** Paikkaan ja aikaan sidottu kartta sekä kohdetiedot toimivat ilman mallia tai internetiä. Laskentaa on verrattu riippumattomiin arvoihin.
 
@@ -93,8 +93,8 @@ kulkee saman sovittimen ja jonon kautta. Tarkka käytäntö on
 
 | Työ | Rajattu tulos | Edeltävä näyttö |
 | --- | --- | --- |
-| T09 — Todista prosessien verkko- ja tiedostorajaus | Valitse oikeusrajojen toteutus ja varmista se minimaalisessa koepaketissa. | T03, T05 |
-| T10 — Liitä Ilmatieteen laitoksen sääsovitin ja välimuisti | Hae pilvisyystiedot rajatusti ja säilytä viimeisin onnistunut ennuste. | T08, T09 |
+| [T09](https://github.com/Antsa46/tahtiapuri/issues/10) — Todista prosessien verkko- ja tiedostorajaus | Valitse oikeusrajojen toteutus ja varmista se minimaalisessa koepaketissa. | T03, T05 |
+| [T10](https://github.com/Antsa46/tahtiapuri/issues/11) — Liitä Ilmatieteen laitoksen sääsovitin ja välimuisti | Hae pilvisyystiedot rajatusti ja säilytä viimeisin onnistunut ennuste. | T08, T09 |
 
 **Vaiheen hyväksyminen:** Verkko- ja tiedostorajojen toiminta on todennettu sovituilla prosesseilla ennen oikeaa sääverkkokäyttöä. Ennusteen lähde, ikä ja kattavuus säilyvät.
 
@@ -114,10 +114,10 @@ sääkoe jatkuu fixtureilla. Omistaja on [turvallisuussuunnitelma](../architectu
 
 | Työ | Rajattu tulos | Edeltävä näyttö |
 | --- | --- | --- |
-| T11 — Yhdistä käynnistyskartta ja yhteinen illan katsaus | Toteuta sovittu ensimmäisen käyttökerran pääpolku. | T04, T07, T08, T10 |
-| T12 — Ohjaa karttaa keskustelusta ja käsittele jatkokysymykset | Yhdistä keskustelu, kohteen valinta ja tulevan ajan tarkastelu. | T04, T07, T11 |
-| T13 — Tallenna keskusteluhistoria ja rajaa mallin konteksti | Säilytä keskustelut paikallisesti käyttäjän poistoon asti. | T09, T11 |
-| T14 — Vaihda paikallismallia asetuksista ja hallitse mallikansiota | Tue useita levyllä olevia hyväksyttyjä malleja ja yhtä ladattua mallia. | T03, T09 |
+| [T11](https://github.com/Antsa46/tahtiapuri/issues/12) — Yhdistä käynnistyskartta ja yhteinen illan katsaus | Toteuta sovittu ensimmäisen käyttökerran pääpolku. | T04, T07, T08, T10 |
+| [T12](https://github.com/Antsa46/tahtiapuri/issues/13) — Ohjaa karttaa keskustelusta ja käsittele jatkokysymykset | Yhdistä keskustelu, kohteen valinta ja tulevan ajan tarkastelu. | T04, T07, T11 |
+| [T13](https://github.com/Antsa46/tahtiapuri/issues/14) — Tallenna keskusteluhistoria ja rajaa mallin konteksti | Säilytä keskustelut paikallisesti käyttäjän poistoon asti. | T09, T11 |
+| [T14](https://github.com/Antsa46/tahtiapuri/issues/15) — Vaihda paikallismallia asetuksista ja hallitse mallikansiota | Tue useita levyllä olevia hyväksyttyjä malleja ja yhtä ladattua mallia. | T03, T09 |
 
 **Vaiheen hyväksyminen:** Käyttötapaukset yhdistyvät samaan paikkaan ja aikaan. Kartan ohjaus, historia, poisto ja mallinvaihto toimivat omistavien sopimusten mukaan.
 
@@ -125,9 +125,9 @@ sääkoe jatkuu fixtureilla. Omistaja on [turvallisuussuunnitelma](../architectu
 
 | Työ | Rajattu tulos | Edeltävä näyttö |
 | --- | --- | --- |
-| T15 — Paketoi desktop ja moottori ulkoisilla mallipainoilla | Toimita omalla Windows-koneella käytettävä kokonaisuus ilman erillistä mallipalvelinasennusta. | T09, T14 |
-| T16 — Varmenna käyttöversion E2E, virhepolut ja offline-käyttö | Osoita koko sovitun käyttökokonaisuuden toimivuus. | T05, T11, T12, T13, T14, T15 |
-| T17 — Viimeistele käyttöohje, lisenssit ja tutkimusmuistiinpanot | Tee henkilökohtaisesta käyttöversiosta toistettava ja sen rajoista ymmärrettävät. | T04, T15, T16 |
+| [T15](https://github.com/Antsa46/tahtiapuri/issues/16) — Paketoi desktop ja moottori ulkoisilla mallipainoilla | Toimita omalla Windows-koneella käytettävä kokonaisuus ilman erillistä mallipalvelinasennusta. | T09, T14 |
+| [T16](https://github.com/Antsa46/tahtiapuri/issues/17) — Varmenna käyttöversion E2E, virhepolut ja offline-käyttö | Osoita koko sovitun käyttökokonaisuuden toimivuus. | T05, T11, T12, T13, T14, T15 |
+| [T17](https://github.com/Antsa46/tahtiapuri/issues/18) — Viimeistele käyttöohje, lisenssit ja tutkimusmuistiinpanot | Tee henkilökohtaisesta käyttöversiosta toistettava ja sen rajoista ymmärrettävät. | T04, T15, T16 |
 
 **Vaiheen hyväksyminen:** Ohjelma toimii ilman kehitystyökaluja, hyväksytyillä ulkoisilla mallipainoilla. Koko käyttökokonaisuuden ja todellisten oikeusrajojen näyttö on olemassa.
 
@@ -140,7 +140,7 @@ verkkoluvaksi. Aluksi riittää paikallinen, erikseen tehtävä jakelu.
 
 | Työ | Rajattu tulos | Edeltävä näyttö |
 | --- | --- | --- |
-| T18 — Vertaa lisämalleja ja yhden sekä kahden malliroolin työnkulkua | Tutki lisämallien ja delegoinnin hyöty suhteessa yhden opastajan lähtötasoon. | T04 |
+| [T18](https://github.com/Antsa46/tahtiapuri/issues/19) — Vertaa lisämalleja ja yhden sekä kahden malliroolin työnkulkua | Tutki lisämallien ja delegoinnin hyöty suhteessa yhden opastajan lähtötasoon. | T04 |
 
 **Vaiheen hyväksyminen:** Lisäkokeiden tulos erotetaan yhden roolin lähtötasosta. Mahdollinen hyöty ja rajoitukset kirjataan; EKYn ratkaisuista päätetään erikseen.
 
