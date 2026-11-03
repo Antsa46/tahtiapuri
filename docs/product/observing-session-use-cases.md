@@ -4,7 +4,7 @@ Tämä dokumentti omistaa aloituskierroksen kohdan 3 käyttäjäpolut ja
 poikkeukset. Tuotteen tavoite ja sovittu rajaus ovat
 [projektin määrittelyssä](project-definition.md), tekniset luottamusrajat
 [perusarkkitehtuurissa](../architecture/base-architecture.md) ja
-kierroksen eteneminen [READMEssä](../../README.md).
+suunnittelun valinnat [päätöshakemistossa](../planning/decisions.md).
 
 Käyttäjä hyväksyi pääkäyttötapaukset ja täsmensi nykyhetken kartan,
 paikallisen mallin yhteisen aloituskatsauksen, kartan ohjaamisen keskustelusta

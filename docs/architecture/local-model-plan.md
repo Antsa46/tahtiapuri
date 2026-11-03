@@ -1,7 +1,7 @@
 # Paikallisen mallin kokeilu ja toimitus
 
 Tämä on suunnitteluehdotus. Mallia tai moottoria ei ole valittu tai asennettu.
-[Päätösten tila](../../README.md) omistaa valintojen hyväksynnän,
+[Päätösten tila](../planning/decisions.md) omistaa valintojen hyväksynnän,
 [turvallisuussuunnitelma](security-and-permissions-plan.md) yleiset oikeusrajat ja
 [testausohje](../ai/testing-rules.md) arviointiaineistot ja tulosten raportoinnin.
 

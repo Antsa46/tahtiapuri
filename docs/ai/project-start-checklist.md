@@ -23,13 +23,13 @@ Yhteiset skillit voivat myöhemmin ohjata toistuvia työtapoja.
 AGENTS.md omistaa projektin työrajat ja lukureitin; aihedokumentit
 projektikohtaiset sopimukset. Historiallinen aineisto erotetaan nykyisistä
 ohjeista. Projektikohtaisten skilliluonnosten ja käyttöönoton tila
-kirjataan projektin READMEen, ei tähän yhteiseen aloituslistaan.
+kirjataan projektin päätöshakemistoon, ei tähän yhteiseen aloituslistaan.
 
 ## Tehtävien, ohjeiden ja tarkistusten työnjako
 
 Alla kuvataan tehtävien ja pysyvien ohjeiden työnjako. Projektikohtaisen
 käyttöönottopäätöksen, ajoituksen ja avoimien oikeuksien omistaja on
-[README](../../README.md). Tarkat tehtäväkentät ja tarkistukset ovat
+[päätöshakemisto](../planning/decisions.md). Tarkat tehtäväkentät ja tarkistukset ovat
 edelleen täsmennettäviä ehdotuksia.
 
 | Väline | Vastuu |
@@ -140,8 +140,9 @@ onnistumisen ehto ja se, mihin päätökseen tulos vaikuttaa.
 Toteutusta estävä avoin kysymys ratkaistaan ennen siitä riippuvaa toteutusosaa.
 Riippumaton suunnittelu ja kokeilu voivat jatkua tehtävän rajojen sisällä.
 Projektikohtaisia vastauksia ei kopioida tähän yleiseen listaan:
-Tähtiapurin nykytilan ja päätösten omistaja on [README](../../README.md),
-ja aihekohtaiset sopimukset löytyvät [lukureitistä](../README.md).
+Tähtiapurin esittely on [READMEssä](../../README.md), valintojen tila
+[päätöshakemistossa](../planning/decisions.md) ja aihekohtaiset sopimukset
+[lukureitin](../README.md) osoittamissa dokumenteissa.
 
 ## Rakennemallin nimitys
 

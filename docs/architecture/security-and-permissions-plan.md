@@ -7,7 +7,7 @@ vertailupainot ovat erillisessä paikallisessa mallikansiossa.
 Vain säätyöntekijän ulkoinen verkkolupa on tavoite. Muut alla esitetyt
 oikeustarkennukset ja toteutusmekanismit ovat ehdotuksia, ellei niitä merkitä
 sovituiksi. Sovellusta, eristystä tai MCP-yhteyttä ei ole vielä toteutettu.
-Yleisen päätöstilan omistaa [projektin README](../../README.md).
+Päätösten tilan kokoaa [päätöshakemisto](../planning/decisions.md).
 
 Tämä dokumentti omistaa oikeusmatriisin, alustarajauksen vaatimukset ja
 turvallisen koodin periaatteet. [Perusarkkitehtuuri](base-architecture.md)

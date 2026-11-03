@@ -1,8 +1,8 @@
 # Tiedon elinkaari ja paikallinen tallennus
 
 Tämä dokumentti omistaa käyttäjätiedon, historian ja välimuistien
-tallennussopimuksen. Projektin yleinen nykytila ja seuraava päätös ovat
-[READMEssä](../../README.md). Tallennusta tai tietokantaa ei ole toteutettu.
+tallennussopimuksen. Suunnittelun valinnat ja avoimet asiat kokoaa
+[päätöshakemisto](../planning/decisions.md). Tallennusta tai tietokantaa ei ole toteutettu.
 Tarkkaa formaattia, kirjastoa tai versiota ei valita tämän tekstin perusteella.
 
 ## Aineistot ja vastuut

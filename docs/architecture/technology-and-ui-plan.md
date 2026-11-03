@@ -6,7 +6,8 @@ jotta Tähtiapuri toimii paikallisen mallin ja agenttiohjauksen pilottina.
 React/Vite ja oma CSS Modules -tyylitys on hyväksytty tekniseksi suunnaksi.
 Täsmäversiot, asennukset ja muut alla nimetyt uudet kirjastot eivät vielä
 ole hyväksyttyjä riippuvuuksia.
-[README](../../README.md) omistaa päätösten tilan ja jatkamiskohdan.
+Valintojen tilan kokoaa [päätöshakemisto](../planning/decisions.md);
+toteutusjärjestys on [roadmapissa](../planning/roadmap.md).
 
 [Perusarkkitehtuuri](base-architecture.md) omistaa kerrokset, moduulit ja
 luottamusrajat. Tämä dokumentti omistaa käyttöliittymätekniikan vertailun ja

@@ -18,7 +18,8 @@ Electronissa. EKYn toteutusta tai mallia ei päätetä tässä projektissa.
   [arkkitehtuuri](../architecture/base-architecture.md) ja muut aihedokumentit sopimukset.
 - GitHub-issue omistaa yhden toteutustyön rajauksen, tilan ja valmistumisen näytön.
   Projects on samojen issueiden näkymä. Tähän ei kopioida niiden elävää tilaa.
-- Projektin nykytilan ja GitHub-käyttöönoton omistaa [README](../../README.md).
+- [README](../../README.md) esittelee projektin; valintojen tilan kokoaa
+  [päätöshakemisto](decisions.md).
   [Kehitysmallien työnjako](../ai/development-models.md) on erillinen suositus.
 
 Kalenteriaikataulua ei ole sovittu. Tähtiapurin vaiheet etenevät näytön
@@ -170,7 +171,8 @@ paketointi ovat teknisiä vaatimuksia, eivät uusia käyttäjän käyttötapauks
 
 Repositorio on oma Tähtiapurin kokonaisuus. Julkaistavasta aineistosta
 jätetään pois painot, binäärit, tunnukset, oikeat sijainnit ja keskustelut.
-Näkyvyys varmennetaan ennen siirtoa; käyttöönoton todellinen tila on READMEssä.
+Julkisen aineiston rajaus tarkistetaan ennen siirtoa; käyttöönoton
+tehtävätila säilyy GitHub-issueissa.
 
 Issueen kirjataan tavoite, työalue, riippuvuudet, omistavat ohjeet,
 käyttötapaukset, hyväksymisehdot ja vaadittu testinäyttö. Mallisuositus

@@ -2,7 +2,7 @@
 
 Tämä dokumentti omistaa projektin käyttäjäkuvan, käyttötarpeen, käyttäjä-
 ja oppimistavoitteet sekä ensimmäisen version tuoterajauksen.
-Projektin yleinen eteneminen on [READMEssä](../../README.md).
+Projektin etenemisjärjestys on [roadmapissa](../planning/roadmap.md).
 Aloituskierroksen runko on [aloituslistassa](../ai/project-start-checklist.md).
 
 ## Käyttäjä ja käyttötarve

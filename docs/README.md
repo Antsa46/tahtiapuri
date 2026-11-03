@@ -1,15 +1,17 @@
 # Dokumenttien lukureitti
 
-Projektin yleisen nykytilan, päätösyhteenvedon ja jatkamiskohdan omistaja on
-[projektin README](../README.md). Aihekohtaiset vastaukset ja perustelut ovat
-alla nimetyissä omistavissa dokumenteissa. Yhteiset työrajat ovat
-[AGENTS.md:ssä](../AGENTS.md).
+[Projektin README](../README.md) esittelee Tähtiapurin ja sen yleisen vaiheen.
+Suunnittelun valinnat ja avoimet asiat kokoaa
+[päätöshakemisto](planning/decisions.md). Aihekohtaiset sopimukset ja
+perustelut ovat alla nimetyissä omistavissa dokumenteissa.
+Yhteiset työrajat ovat [AGENTS.md:ssä](../AGENTS.md).
 
 Lue vain tehtävään liittyvät omistavat dokumentit. Kun tehtävä ylittää
 vastuurajan, lue myös toisen osapuolen sopimus.
 
 | Aihe | Omistava dokumentti |
 | --- | --- |
+| Suunnittelun lähtökohdat, päätösten tila ja avoimet valinnat | [planning/decisions.md](planning/decisions.md) |
 | Koko projektin vaiheet, työpaketit ja käyttötapausten jäljitettävyys | [planning/roadmap.md](planning/roadmap.md) |
 | Kehityksen GPT-mallien tehtäväkohtaiset suositukset | [ai/development-models.md](ai/development-models.md) |
 | Käyttäjä, paikallisen mallin oppimistavoite, illan katsaus, rajaus ja työmäärän reunaehdot | [product/project-definition.md](product/project-definition.md) |

@@ -1,7 +1,7 @@
 # Tähtiapurin perusarkkitehtuuri
 
 Tila: suunnitteluehdotus, päivitetty 3.11.2026.
-[Päätösten tila](../../README.md) erottaa käyttäjän linjaukset ehdotuksista.
+[Päätösten tila](../planning/decisions.md) erottaa käyttäjän linjaukset ehdotuksista.
 Alla olevat lähdepolut ovat tulevan rakenteen ehdotus.
 
 ## Ydinajatus

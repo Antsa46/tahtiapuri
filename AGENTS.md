@@ -2,8 +2,10 @@
 
 ## Aloitus ja lukureitti
 
-Lue ensin tämä tiedosto ja [README](README.md), joka omistaa projektin
-yleisen nykytilan, päätösyhteenvedon ja seuraavan käsiteltävän asian.
+Lue ensin tämä tiedosto ja [README](README.md), joka esittelee projektin
+ja sen yleisen vaiheen. Suunnittelun valinnat ja avoimet asiat kokoaa
+[päätöshakemisto](docs/planning/decisions.md). Työpaketit ja niiden
+riippuvuudet ovat roadmapissa, tehtävien tila GitHub-issueissa.
 
 Aihekohtainen lukureitti on [ohjehakemistossa](docs/README.md).
 Lue tehtävän mukaan:
@@ -54,7 +56,8 @@ EKYn ohjeita ei tarvitse lukea jokaisessa Tähtiapurin tehtävässä.
   tekoälyn ehdotus ei ole toteutuspäätös.
 - Älä aloita asennuksia tai sovelluskoodia pelkän suunnittelun perusteella.
 - Nimeä ulkopuolinen riippuvuus, tarve ja vaihtoehdot ennen käyttöönottoa.
-  Tarkka kirjasto ja versio kirjataan päätökseksi READMEen vasta, kun ne on sovittu.
+  Tarkka kirjasto ja versio kirjataan omistavaan tekniseen dokumenttiin
+  vasta, kun ne on sovittu.
 
 ## Toteutuksen periaatteet
 
@@ -126,8 +129,9 @@ sovelluksen paikallisista 4B/8B-malleista ja ajonaikaisista mallirooleista.
   Päivitä kartta, kun dokumentin sijainti, vastuu tai lukemistarve muuttuu.
 - Päivitä muuttunut sopimus omistavaan dokumenttiin. Linkitä muualla;
   älä ylläpidä samaa sääntöä useassa paikassa.
-- READMEssä on yksi yleinen nykytila, aloituskierroksen nykyinen kohta ja jatkamiskohta. Siirrä historia erilleen vasta
-  tarvittaessa; älä lisää kilpailevia tehtäväjonoja.
+- Pidä README tiiviinä projektiesittelynä. Päätösten tila kuuluu
+  päätöshakemistoon ja tekniset sopimukset aihedokumentteihin.
+  Toteutustöiden elävä tila säilyy GitHub-issueissa.
 - Raportoi tehdyt tiedostomuutokset, ajetut tarkistukset ja avoimet kohdat.
   Ajamaton testi ei ole läpäissyt testi.
 - Dokumentaatiomuutoksessa linkkien ja sisällön tarkistus riittää, kun

@@ -5,7 +5,7 @@ Kansiorakenne A, backendin assistant-koordinaattorin ohjelmakoodissa ohjaama
 työnkulku, rajatut malliroolit ja omistavien moduulien tarkistamat työkalut
 on sovittu lähtökohdaksi. Tarkat sopimukset, rajat ja moduulin sisäinen
 kansiojako ovat vielä ehdotuksia. Ajonaikaista toteutusta ei ole.
-Yleisen nykytilan ja seuraavan asian omistaa [README](../../README.md).
+Valintojen tilan kokoaa [päätöshakemisto](../planning/decisions.md).
 
 [Perusarkkitehtuuri](base-architecture.md) omistaa moduulit ja luottamusrajat.
 [Mallisuunnitelma](local-model-plan.md) omistaa ajomoottorin, mallisovittimen,

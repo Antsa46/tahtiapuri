@@ -1,7 +1,7 @@
 # Ensimmäinen runko ja kevyt paikallinen backend
 
-Tämä on toteutusvaiheen ehdotus. Nykytilan ja päätösten omistaja on
-[projektin README](../../README.md). Sovelluskoodia ei vielä luoda.
+Tämä on toteutusvaiheen ehdotus. Päätösten tilan kokoaa
+[päätöshakemisto](../planning/decisions.md). Sovelluskoodia ei vielä luoda.
 Sovellusjaon omistaa [perusarkkitehtuuri](base-architecture.md);
 oikeusrajat ja eristyksen käyttöönoton ehdot
 [turvallisuussuunnitelma](security-and-permissions-plan.md).
