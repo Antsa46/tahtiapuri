@@ -156,3 +156,7 @@ osoitettava. Seuraava rajattu työ on valita ja testata korjatun libuv-polun
 sisältävä yhteensopiva runtime tai arvioida lapsen käynnistys erikseen.
 Samat kontrolleihin verrattavat token-/Job-/IPC-/tiedosto- ja elinkaariportit
 säilyvät. Verkko-, LPAC-, GGUF-/CUDA- ja koko sovelluksen portteja ei ohiteta.
+
+Korjatun runtimen valintaa, työkaluketjua ja sitä edeltävää Win32-putkikoetta
+kuvaa [vertailun valmistelu](runtime-comparison.md). Putkidiagnoosin läpäisy
+ei muuta yllä olevan SDK-matriisin hylättyä tulosta.

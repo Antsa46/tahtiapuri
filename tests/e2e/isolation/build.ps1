@@ -24,7 +24,7 @@ foreach ($required in @('um/x64/kernel32.lib', 'ucrt/x64/ucrt.lib')) {
 $lines = @('@echo off', ('call "' + $environmentScript + '" >nul'), 'if errorlevel 1 exit /b 1')
 $lines += 'set "INCLUDE=' + $sdkInclude + '\um;' + $sdkInclude + '\shared;' + $sdkInclude + '\ucrt;%INCLUDE%"'
 $lines += 'set "LIB=' + $sdkLib + '\um\x64;' + $sdkLib + '\ucrt\x64;%LIB%"'
-foreach ($name in @('host', 'probe')) {
+foreach ($name in @('host', 'probe', 'pipe-probe')) {
   $source = Join-Path $PSScriptRoot "native/$name.cpp"
   $binary = Join-Path $outputRoot "bin/$name.exe"
   $object = Join-Path $outputRoot "$name.obj"
