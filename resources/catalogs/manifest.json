@@ -1,0 +1,14 @@
+{
+  "id": "hyg-v41-naked-eye-v1",
+  "sourceVersion": "4.1",
+  "sourceRevision": "c7f7f883fe678cc7680169a50ccd7dcc49b060ce",
+  "sourceUrl": "https://raw.githubusercontent.com/astronexus/HYG-Database/c7f7f883fe678cc7680169a50ccd7dcc49b060ce/hyg/CURRENT/hygdata_v41.csv",
+  "sourceSha256": "d9f69fd86bbf90a4e4d52b4c5c53eacfa6dfc0bfdef85bfd94f095e0bebe4ebd",
+  "file": "stars.json",
+  "sha256": "076fce99a809190350e467f5a953658c8378ecbef47fbba79c7756ad3c4426a3",
+  "count": 5070,
+  "license": "CC-BY-SA-4.0",
+  "epoch": "J2000.0",
+  "selection": "id != 0 and finite mag <= 6.0; magnitude is catalogue V, not current brightness",
+  "transformation": "Selected fields only; source Cartesian positions in parsecs and velocities in parsecs/year retained without rounding. Sorted by HYG id."
+}

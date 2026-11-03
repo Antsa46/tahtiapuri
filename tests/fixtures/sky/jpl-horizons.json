@@ -1,0 +1,937 @@
+{
+  "source": "NASA/JPL Horizons",
+  "retrievedDate": "2026-11-03",
+  "meaning": "Apparent equator-of-date, topocentric; airless local horizon. All sites synthetic. Times are fixture observation times, not execution timestamps.",
+  "tolerances": {
+    "positionDeg": 0.04,
+    "magnitude": 0.5
+  },
+  "queries": [
+    {
+      "id": "dst-Sun",
+      "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=json&COMMAND=%2710%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27OBSERVER%27&CENTER=%27coord%40399%27&COORD_TYPE=%27GEODETIC%27&SITE_COORD=%2725%2C60%2C0%27&TLIST=%272460400.5208333335+2460400.5625000000+2460610.5208333335+2460610.5625000000%27&TLIST_TYPE=%27JD%27&TIME_TYPE=%27UT%27&QUANTITIES=%272%2C4%2C9%27&ANG_FORMAT=%27DEG%27&APPARENT=%27AIRLESS%27&EXTRA_PREC=%27YES%27&CSV_FORMAT=%27YES%27&TIME_DIGITS=%27SECONDS%27",
+      "responseSha256": "7843d31d2e0c217e57f27932042d4de2531ffce14029fea984d25ecca5281484",
+      "apiSignature": {
+        "version": "1.2",
+        "source": "NASA/JPL Horizons API"
+      }
+    },
+    {
+      "id": "dst-Moon",
+      "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=json&COMMAND=%27301%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27OBSERVER%27&CENTER=%27coord%40399%27&COORD_TYPE=%27GEODETIC%27&SITE_COORD=%2725%2C60%2C0%27&TLIST=%272460400.5208333335+2460400.5625000000+2460610.5208333335+2460610.5625000000%27&TLIST_TYPE=%27JD%27&TIME_TYPE=%27UT%27&QUANTITIES=%272%2C4%2C9%27&ANG_FORMAT=%27DEG%27&APPARENT=%27AIRLESS%27&EXTRA_PREC=%27YES%27&CSV_FORMAT=%27YES%27&TIME_DIGITS=%27SECONDS%27",
+      "responseSha256": "d3faa9639fdce6a0a551d86c8172a3b68b091242048acb8445552bdaa0f403ae",
+      "apiSignature": {
+        "version": "1.2",
+        "source": "NASA/JPL Horizons API"
+      }
+    },
+    {
+      "id": "dst-Mercury",
+      "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=json&COMMAND=%27199%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27OBSERVER%27&CENTER=%27coord%40399%27&COORD_TYPE=%27GEODETIC%27&SITE_COORD=%2725%2C60%2C0%27&TLIST=%272460400.5208333335+2460400.5625000000+2460610.5208333335+2460610.5625000000%27&TLIST_TYPE=%27JD%27&TIME_TYPE=%27UT%27&QUANTITIES=%272%2C4%2C9%27&ANG_FORMAT=%27DEG%27&APPARENT=%27AIRLESS%27&EXTRA_PREC=%27YES%27&CSV_FORMAT=%27YES%27&TIME_DIGITS=%27SECONDS%27",
+      "responseSha256": "1589fc34335f8f6d67aae914359235f414062ab89afe9642dfb386c5eb3b2bc8",
+      "apiSignature": {
+        "version": "1.2",
+        "source": "NASA/JPL Horizons API"
+      }
+    },
+    {
+      "id": "dst-Venus",
+      "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=json&COMMAND=%27299%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27OBSERVER%27&CENTER=%27coord%40399%27&COORD_TYPE=%27GEODETIC%27&SITE_COORD=%2725%2C60%2C0%27&TLIST=%272460400.5208333335+2460400.5625000000+2460610.5208333335+2460610.5625000000%27&TLIST_TYPE=%27JD%27&TIME_TYPE=%27UT%27&QUANTITIES=%272%2C4%2C9%27&ANG_FORMAT=%27DEG%27&APPARENT=%27AIRLESS%27&EXTRA_PREC=%27YES%27&CSV_FORMAT=%27YES%27&TIME_DIGITS=%27SECONDS%27",
+      "responseSha256": "3f407a28c4218706e6b5c38ce753b1e60599e8a2540acab984225cca339cb1d9",
+      "apiSignature": {
+        "version": "1.2",
+        "source": "NASA/JPL Horizons API"
+      }
+    },
+    {
+      "id": "dst-Mars",
+      "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=json&COMMAND=%27499%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27OBSERVER%27&CENTER=%27coord%40399%27&COORD_TYPE=%27GEODETIC%27&SITE_COORD=%2725%2C60%2C0%27&TLIST=%272460400.5208333335+2460400.5625000000+2460610.5208333335+2460610.5625000000%27&TLIST_TYPE=%27JD%27&TIME_TYPE=%27UT%27&QUANTITIES=%272%2C4%2C9%27&ANG_FORMAT=%27DEG%27&APPARENT=%27AIRLESS%27&EXTRA_PREC=%27YES%27&CSV_FORMAT=%27YES%27&TIME_DIGITS=%27SECONDS%27",
+      "responseSha256": "b133cddd543325ed9d00a4c863fb4270baaba1fe77c43030b74b5900b84fc1b7",
+      "apiSignature": {
+        "version": "1.2",
+        "source": "NASA/JPL Horizons API"
+      }
+    },
+    {
+      "id": "dst-Jupiter",
+      "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=json&COMMAND=%27599%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27OBSERVER%27&CENTER=%27coord%40399%27&COORD_TYPE=%27GEODETIC%27&SITE_COORD=%2725%2C60%2C0%27&TLIST=%272460400.5208333335+2460400.5625000000+2460610.5208333335+2460610.5625000000%27&TLIST_TYPE=%27JD%27&TIME_TYPE=%27UT%27&QUANTITIES=%272%2C4%2C9%27&ANG_FORMAT=%27DEG%27&APPARENT=%27AIRLESS%27&EXTRA_PREC=%27YES%27&CSV_FORMAT=%27YES%27&TIME_DIGITS=%27SECONDS%27",
+      "responseSha256": "6ba9eeeb12831fd87b53d8c591b286854a16ce960f292325c66f0ba050181bd0",
+      "apiSignature": {
+        "source": "NASA/JPL Horizons API",
+        "version": "1.2"
+      }
+    },
+    {
+      "id": "dst-Saturn",
+      "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=json&COMMAND=%27699%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27OBSERVER%27&CENTER=%27coord%40399%27&COORD_TYPE=%27GEODETIC%27&SITE_COORD=%2725%2C60%2C0%27&TLIST=%272460400.5208333335+2460400.5625000000+2460610.5208333335+2460610.5625000000%27&TLIST_TYPE=%27JD%27&TIME_TYPE=%27UT%27&QUANTITIES=%272%2C4%2C9%27&ANG_FORMAT=%27DEG%27&APPARENT=%27AIRLESS%27&EXTRA_PREC=%27YES%27&CSV_FORMAT=%27YES%27&TIME_DIGITS=%27SECONDS%27",
+      "responseSha256": "3d02e0f3502f246890ae07b9b1499e85f2841bf486146f24f30f3cfa3a7345c7",
+      "apiSignature": {
+        "source": "NASA/JPL Horizons API",
+        "version": "1.2"
+      }
+    },
+    {
+      "id": "dst-Uranus",
+      "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=json&COMMAND=%27799%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27OBSERVER%27&CENTER=%27coord%40399%27&COORD_TYPE=%27GEODETIC%27&SITE_COORD=%2725%2C60%2C0%27&TLIST=%272460400.5208333335+2460400.5625000000+2460610.5208333335+2460610.5625000000%27&TLIST_TYPE=%27JD%27&TIME_TYPE=%27UT%27&QUANTITIES=%272%2C4%2C9%27&ANG_FORMAT=%27DEG%27&APPARENT=%27AIRLESS%27&EXTRA_PREC=%27YES%27&CSV_FORMAT=%27YES%27&TIME_DIGITS=%27SECONDS%27",
+      "responseSha256": "b1caf44bdea7641393ad69b0dfd157530bd83b0a897de2b16e34dcdb30b4c47c",
+      "apiSignature": {
+        "source": "NASA/JPL Horizons API",
+        "version": "1.2"
+      }
+    },
+    {
+      "id": "dst-Neptune",
+      "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=json&COMMAND=%27899%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27OBSERVER%27&CENTER=%27coord%40399%27&COORD_TYPE=%27GEODETIC%27&SITE_COORD=%2725%2C60%2C0%27&TLIST=%272460400.5208333335+2460400.5625000000+2460610.5208333335+2460610.5625000000%27&TLIST_TYPE=%27JD%27&TIME_TYPE=%27UT%27&QUANTITIES=%272%2C4%2C9%27&ANG_FORMAT=%27DEG%27&APPARENT=%27AIRLESS%27&EXTRA_PREC=%27YES%27&CSV_FORMAT=%27YES%27&TIME_DIGITS=%27SECONDS%27",
+      "responseSha256": "259713c446c95de75bb6cf37a3c3ff0ee98ab4bb4ea04aa89e706bdd1f8ad5ba",
+      "apiSignature": {
+        "version": "1.2",
+        "source": "NASA/JPL Horizons API"
+      }
+    },
+    {
+      "id": "polar-Sun",
+      "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=json&COMMAND=%2710%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27OBSERVER%27&CENTER=%27coord%40399%27&COORD_TYPE=%27GEODETIC%27&SITE_COORD=%2720%2C70%2C0%27&TLIST=%272460482.5000000000+2460483.0000000000+2460665.5000000000+2460666.0000000000%27&TLIST_TYPE=%27JD%27&TIME_TYPE=%27UT%27&QUANTITIES=%272%2C4%2C9%27&ANG_FORMAT=%27DEG%27&APPARENT=%27AIRLESS%27&EXTRA_PREC=%27YES%27&CSV_FORMAT=%27YES%27&TIME_DIGITS=%27SECONDS%27",
+      "responseSha256": "f4b37943457a1967823734639ce1cddcf8cb02716b7e25992487ea50be5cb195",
+      "apiSignature": {
+        "source": "NASA/JPL Horizons API",
+        "version": "1.2"
+      }
+    },
+    {
+      "id": "polar-Moon",
+      "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=json&COMMAND=%27301%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27OBSERVER%27&CENTER=%27coord%40399%27&COORD_TYPE=%27GEODETIC%27&SITE_COORD=%2720%2C70%2C0%27&TLIST=%272460482.5000000000+2460483.0000000000+2460665.5000000000+2460666.0000000000%27&TLIST_TYPE=%27JD%27&TIME_TYPE=%27UT%27&QUANTITIES=%272%2C4%2C9%27&ANG_FORMAT=%27DEG%27&APPARENT=%27AIRLESS%27&EXTRA_PREC=%27YES%27&CSV_FORMAT=%27YES%27&TIME_DIGITS=%27SECONDS%27",
+      "responseSha256": "059caf406a8ca66b264f22e3837a68414ce607e8ef3d7652278168f740cf214b",
+      "apiSignature": {
+        "version": "1.2",
+        "source": "NASA/JPL Horizons API"
+      }
+    },
+    {
+      "id": "horizon-Sun",
+      "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=json&COMMAND=%2710%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27OBSERVER%27&CENTER=%27coord%40399%27&COORD_TYPE=%27GEODETIC%27&SITE_COORD=%270%2C0%2C0%27&TLIST=%272460389.7500000000+2460389.7569444445+2460390.2500000000+2460390.2569444445%27&TLIST_TYPE=%27JD%27&TIME_TYPE=%27UT%27&QUANTITIES=%272%2C4%2C9%27&ANG_FORMAT=%27DEG%27&APPARENT=%27AIRLESS%27&EXTRA_PREC=%27YES%27&CSV_FORMAT=%27YES%27&TIME_DIGITS=%27SECONDS%27",
+      "responseSha256": "2538844a0796feae32f9f6d9e0d7d217eac02e626ccd477963bd121b8d5d530a",
+      "apiSignature": {
+        "version": "1.2",
+        "source": "NASA/JPL Horizons API"
+      }
+    }
+  ],
+  "cases": [
+    {
+      "sourceId": "dst-Sun",
+      "scenario": "dst",
+      "body": "Sun",
+      "atUtc": "2024-03-31T00:30:00Z",
+      "timeZone": "Europe/Helsinki",
+      "observer": {
+        "latitudeDeg": 60,
+        "longitudeDeg": 25,
+        "elevationMeters": 0
+      },
+      "raDeg": 9.914896034,
+      "decDeg": 4.266509738,
+      "azimuthDeg": 33.927566395,
+      "altitudeDeg": -21.153504509,
+      "magnitudeV": -26.744
+    },
+    {
+      "sourceId": "dst-Sun",
+      "scenario": "dst",
+      "body": "Sun",
+      "atUtc": "2024-03-31T01:30:00Z",
+      "timeZone": "Europe/Helsinki",
+      "observer": {
+        "latitudeDeg": 60,
+        "longitudeDeg": 25,
+        "elevationMeters": 0
+      },
+      "raDeg": 9.953111475,
+      "decDeg": 4.282642713,
+      "azimuthDeg": 48.833877331,
+      "altitudeDeg": -16.185356176,
+      "magnitudeV": -26.744
+    },
+    {
+      "sourceId": "dst-Sun",
+      "scenario": "dst",
+      "body": "Sun",
+      "atUtc": "2024-10-27T00:30:00Z",
+      "timeZone": "Europe/Helsinki",
+      "observer": {
+        "latitudeDeg": 60,
+        "longitudeDeg": 25,
+        "elevationMeters": 0
+      },
+      "raDeg": 211.829599064,
+      "decDeg": -12.880562158,
+      "azimuthDeg": 45.674911784,
+      "altitudeDeg": -35.780283203,
+      "magnitudeV": -26.755
+    },
+    {
+      "sourceId": "dst-Sun",
+      "scenario": "dst",
+      "body": "Sun",
+      "atUtc": "2024-10-27T01:30:00Z",
+      "timeZone": "Europe/Helsinki",
+      "observer": {
+        "latitudeDeg": 60,
+        "longitudeDeg": 25,
+        "elevationMeters": 0
+      },
+      "raDeg": 211.869989216,
+      "decDeg": -12.894660009,
+      "azimuthDeg": 61.5538102,
+      "altitudeDeg": -29.763113347,
+      "magnitudeV": -26.755
+    },
+    {
+      "sourceId": "dst-Moon",
+      "scenario": "dst",
+      "body": "Moon",
+      "atUtc": "2024-03-31T00:30:00Z",
+      "timeZone": "Europe/Helsinki",
+      "observer": {
+        "latitudeDeg": 60,
+        "longitudeDeg": 25,
+        "elevationMeters": 0
+      },
+      "raDeg": 253.518316733,
+      "decDeg": -28.039455185,
+      "azimuthDeg": 151.979631672,
+      "altitudeDeg": -1.914719699,
+      "magnitudeV": -10.941
+    },
+    {
+      "sourceId": "dst-Moon",
+      "scenario": "dst",
+      "body": "Moon",
+      "atUtc": "2024-03-31T01:30:00Z",
+      "timeZone": "Europe/Helsinki",
+      "observer": {
+        "latitudeDeg": 60,
+        "longitudeDeg": 25,
+        "elevationMeters": 0
+      },
+      "raDeg": 253.987898217,
+      "decDeg": -28.14807938,
+      "azimuthDeg": 164.565384285,
+      "altitudeDeg": 0.673660181,
+      "magnitudeV": -10.932
+    },
+    {
+      "sourceId": "dst-Moon",
+      "scenario": "dst",
+      "body": "Moon",
+      "atUtc": "2024-10-27T00:30:00Z",
+      "timeZone": "Europe/Helsinki",
+      "observer": {
+        "latitudeDeg": 60,
+        "longitudeDeg": 25,
+        "elevationMeters": 0
+      },
+      "raDeg": 157.732317974,
+      "decDeg": 11.748789497,
+      "azimuthDeg": 84.607262262,
+      "altitudeDeg": 10.472560806,
+      "magnitudeV": -8.651
+    },
+    {
+      "sourceId": "dst-Moon",
+      "scenario": "dst",
+      "body": "Moon",
+      "atUtc": "2024-10-27T01:30:00Z",
+      "timeZone": "Europe/Helsinki",
+      "observer": {
+        "latitudeDeg": 60,
+        "longitudeDeg": 25,
+        "elevationMeters": 0
+      },
+      "raDeg": 158.174569244,
+      "decDeg": 11.552243463,
+      "azimuthDeg": 97.402229539,
+      "altitudeDeg": 17.586651024,
+      "magnitudeV": -8.631
+    },
+    {
+      "sourceId": "dst-Mercury",
+      "scenario": "dst",
+      "body": "Mercury",
+      "atUtc": "2024-03-31T00:30:00Z",
+      "timeZone": "Europe/Helsinki",
+      "observer": {
+        "latitudeDeg": 60,
+        "longitudeDeg": 25,
+        "elevationMeters": 0
+      },
+      "raDeg": 23.875732081,
+      "decDeg": 13.371860392,
+      "azimuthDeg": 17.65934499,
+      "altitudeDeg": -15.285774412,
+      "magnitudeV": 1.02
+    },
+    {
+      "sourceId": "dst-Mercury",
+      "scenario": "dst",
+      "body": "Mercury",
+      "atUtc": "2024-03-31T01:30:00Z",
+      "timeZone": "Europe/Helsinki",
+      "observer": {
+        "latitudeDeg": 60,
+        "longitudeDeg": 25,
+        "elevationMeters": 0
+      },
+      "raDeg": 23.884156124,
+      "decDeg": 13.378025241,
+      "azimuthDeg": 32.354083621,
+      "altitudeDeg": -12.105197692,
+      "magnitudeV": 1.031
+    },
+    {
+      "sourceId": "dst-Mercury",
+      "scenario": "dst",
+      "body": "Mercury",
+      "atUtc": "2024-10-27T00:30:00Z",
+      "timeZone": "Europe/Helsinki",
+      "observer": {
+        "latitudeDeg": 60,
+        "longitudeDeg": 25,
+        "elevationMeters": 0
+      },
+      "raDeg": 227.410176376,
+      "decDeg": -19.290518881,
+      "azimuthDeg": 29.439540114,
+      "altitudeDeg": -46.619470253,
+      "magnitudeV": -0.391
+    },
+    {
+      "sourceId": "dst-Mercury",
+      "scenario": "dst",
+      "body": "Mercury",
+      "atUtc": "2024-10-27T01:30:00Z",
+      "timeZone": "Europe/Helsinki",
+      "observer": {
+        "latitudeDeg": 60,
+        "longitudeDeg": 25,
+        "elevationMeters": 0
+      },
+      "raDeg": 227.471641758,
+      "decDeg": -19.311061741,
+      "azimuthDeg": 48.132402936,
+      "altitudeDeg": -41.947411299,
+      "magnitudeV": -0.391
+    },
+    {
+      "sourceId": "dst-Venus",
+      "scenario": "dst",
+      "body": "Venus",
+      "atUtc": "2024-03-31T00:30:00Z",
+      "timeZone": "Europe/Helsinki",
+      "observer": {
+        "latitudeDeg": 60,
+        "longitudeDeg": 25,
+        "elevationMeters": 0
+      },
+      "raDeg": 354.739195367,
+      "decDeg": -3.865408476,
+      "azimuthDeg": 52.356195418,
+      "altitudeDeg": -23.633477021,
+      "magnitudeV": -3.876
+    },
+    {
+      "sourceId": "dst-Venus",
+      "scenario": "dst",
+      "body": "Venus",
+      "atUtc": "2024-03-31T01:30:00Z",
+      "timeZone": "Europe/Helsinki",
+      "observer": {
+        "latitudeDeg": 60,
+        "longitudeDeg": 25,
+        "elevationMeters": 0
+      },
+      "raDeg": 354.786858961,
+      "decDeg": -3.845373389,
+      "azimuthDeg": 66.761617687,
+      "altitudeDeg": -17.163093449,
+      "magnitudeV": -3.876
+    },
+    {
+      "sourceId": "dst-Venus",
+      "scenario": "dst",
+      "body": "Venus",
+      "atUtc": "2024-10-27T00:30:00Z",
+      "timeZone": "Europe/Helsinki",
+      "observer": {
+        "latitudeDeg": 60,
+        "longitudeDeg": 25,
+        "elevationMeters": 0
+      },
+      "raDeg": 249.314638224,
+      "decDeg": -23.653470133,
+      "azimuthDeg": 358.535708734,
+      "altitudeDeg": -53.647416418,
+      "magnitudeV": -3.986
+    },
+    {
+      "sourceId": "dst-Venus",
+      "scenario": "dst",
+      "body": "Venus",
+      "atUtc": "2024-10-27T01:30:00Z",
+      "timeZone": "Europe/Helsinki",
+      "observer": {
+        "latitudeDeg": 60,
+        "longitudeDeg": 25,
+        "elevationMeters": 0
+      },
+      "raDeg": 249.36886768,
+      "decDeg": -23.662366853,
+      "azimuthDeg": 21.335649068,
+      "altitudeDeg": -52.359639116,
+      "magnitudeV": -3.986
+    },
+    {
+      "sourceId": "dst-Mars",
+      "scenario": "dst",
+      "body": "Mars",
+      "atUtc": "2024-03-31T00:30:00Z",
+      "timeZone": "Europe/Helsinki",
+      "observer": {
+        "latitudeDeg": 60,
+        "longitudeDeg": 25,
+        "elevationMeters": 0
+      },
+      "raDeg": 338.472130128,
+      "decDeg": -10.352522855,
+      "azimuthDeg": 71.20047977,
+      "altitudeDeg": -22.310856153,
+      "magnitudeV": 1.191
+    },
+    {
+      "sourceId": "dst-Mars",
+      "scenario": "dst",
+      "body": "Mars",
+      "atUtc": "2024-03-31T01:30:00Z",
+      "timeZone": "Europe/Helsinki",
+      "observer": {
+        "latitudeDeg": 60,
+        "longitudeDeg": 25,
+        "elevationMeters": 0
+      },
+      "raDeg": 338.502865445,
+      "decDeg": -10.340683427,
+      "azimuthDeg": 84.739560605,
+      "altitudeDeg": -14.975447543,
+      "magnitudeV": 1.204
+    },
+    {
+      "sourceId": "dst-Mars",
+      "scenario": "dst",
+      "body": "Mars",
+      "atUtc": "2024-10-27T00:30:00Z",
+      "timeZone": "Europe/Helsinki",
+      "observer": {
+        "latitudeDeg": 60,
+        "longitudeDeg": 25,
+        "elevationMeters": 0
+      },
+      "raDeg": 119.282934013,
+      "decDeg": 21.971427658,
+      "azimuthDeg": 113.918458762,
+      "altitudeDeg": 38.050383137,
+      "magnitudeV": 0.166
+    },
+    {
+      "sourceId": "dst-Mars",
+      "scenario": "dst",
+      "body": "Mars",
+      "atUtc": "2024-10-27T01:30:00Z",
+      "timeZone": "Europe/Helsinki",
+      "observer": {
+        "latitudeDeg": 60,
+        "longitudeDeg": 25,
+        "elevationMeters": 0
+      },
+      "raDeg": 119.30049129,
+      "decDeg": 21.969552476,
+      "azimuthDeg": 130.452757144,
+      "altitudeDeg": 44.397966332,
+      "magnitudeV": 0.173
+    },
+    {
+      "sourceId": "dst-Jupiter",
+      "scenario": "dst",
+      "body": "Jupiter",
+      "atUtc": "2024-03-31T00:30:00Z",
+      "timeZone": "Europe/Helsinki",
+      "observer": {
+        "latitudeDeg": 60,
+        "longitudeDeg": 25,
+        "elevationMeters": 0
+      },
+      "raDeg": 44.921024672,
+      "decDeg": 16.163234168,
+      "azimuthDeg": 356.49831073,
+      "altitudeDeg": -13.782675025,
+      "magnitudeV": -2.065
+    },
+    {
+      "sourceId": "dst-Jupiter",
+      "scenario": "dst",
+      "body": "Jupiter",
+      "atUtc": "2024-03-31T01:30:00Z",
+      "timeZone": "Europe/Helsinki",
+      "observer": {
+        "latitudeDeg": 60,
+        "longitudeDeg": 25,
+        "elevationMeters": 0
+      },
+      "raDeg": 44.929933987,
+      "decDeg": 16.165838233,
+      "azimuthDeg": 11.3375256,
+      "altitudeDeg": -13.266826145,
+      "magnitudeV": -2.065
+    },
+    {
+      "sourceId": "dst-Jupiter",
+      "scenario": "dst",
+      "body": "Jupiter",
+      "atUtc": "2024-10-27T00:30:00Z",
+      "timeZone": "Europe/Helsinki",
+      "observer": {
+        "latitudeDeg": 60,
+        "longitudeDeg": 25,
+        "elevationMeters": 0
+      },
+      "raDeg": 80.057748388,
+      "decDeg": 22.403427718,
+      "azimuthDeg": 162.48182317,
+      "altitudeDeg": 51.511859116,
+      "magnitudeV": -2.653
+    },
+    {
+      "sourceId": "dst-Jupiter",
+      "scenario": "dst",
+      "body": "Jupiter",
+      "atUtc": "2024-10-27T01:30:00Z",
+      "timeZone": "Europe/Helsinki",
+      "observer": {
+        "latitudeDeg": 60,
+        "longitudeDeg": 25,
+        "elevationMeters": 0
+      },
+      "raDeg": 80.055029468,
+      "decDeg": 22.403273782,
+      "azimuthDeg": 185.076483786,
+      "altitudeDeg": 52.329013595,
+      "magnitudeV": -2.654
+    },
+    {
+      "sourceId": "dst-Saturn",
+      "scenario": "dst",
+      "body": "Saturn",
+      "atUtc": "2024-03-31T00:30:00Z",
+      "timeZone": "Europe/Helsinki",
+      "observer": {
+        "latitudeDeg": 60,
+        "longitudeDeg": 25,
+        "elevationMeters": 0
+      },
+      "raDeg": 345.430625419,
+      "decDeg": -8.02854714,
+      "azimuthDeg": 63.428822487,
+      "altitudeDeg": -23.463963801,
+      "magnitudeV": 1.055
+    },
+    {
+      "sourceId": "dst-Saturn",
+      "scenario": "dst",
+      "body": "Saturn",
+      "atUtc": "2024-03-31T01:30:00Z",
+      "timeZone": "Europe/Helsinki",
+      "observer": {
+        "latitudeDeg": 60,
+        "longitudeDeg": 25,
+        "elevationMeters": 0
+      },
+      "raDeg": 345.435079186,
+      "decDeg": -8.026811367,
+      "azimuthDeg": 77.382197103,
+      "altitudeDeg": -16.39341541,
+      "magnitudeV": 1.055
+    },
+    {
+      "sourceId": "dst-Saturn",
+      "scenario": "dst",
+      "body": "Saturn",
+      "atUtc": "2024-10-27T00:30:00Z",
+      "timeZone": "Europe/Helsinki",
+      "observer": {
+        "latitudeDeg": 60,
+        "longitudeDeg": 25,
+        "elevationMeters": 0
+      },
+      "raDeg": 345.186421451,
+      "decDeg": -8.655265737,
+      "azimuthDeg": 259.784006291,
+      "altitudeDeg": -4.107858947,
+      "magnitudeV": 0.777
+    },
+    {
+      "sourceId": "dst-Saturn",
+      "scenario": "dst",
+      "body": "Saturn",
+      "atUtc": "2024-10-27T01:30:00Z",
+      "timeZone": "Europe/Helsinki",
+      "observer": {
+        "latitudeDeg": 60,
+        "longitudeDeg": 25,
+        "elevationMeters": 0
+      },
+      "raDeg": 345.185080553,
+      "decDeg": -8.655707055,
+      "azimuthDeg": 272.762203453,
+      "altitudeDeg": -11.597402269,
+      "magnitudeV": 0.777
+    },
+    {
+      "sourceId": "dst-Uranus",
+      "scenario": "dst",
+      "body": "Uranus",
+      "atUtc": "2024-03-31T00:30:00Z",
+      "timeZone": "Europe/Helsinki",
+      "observer": {
+        "latitudeDeg": 60,
+        "longitudeDeg": 25,
+        "elevationMeters": 0
+      },
+      "raDeg": 48.3791078,
+      "decDeg": 17.674162746,
+      "azimuthDeg": 353.180290795,
+      "altitudeDeg": -12.117723224,
+      "magnitudeV": 5.841
+    },
+    {
+      "sourceId": "dst-Uranus",
+      "scenario": "dst",
+      "body": "Uranus",
+      "atUtc": "2024-03-31T01:30:00Z",
+      "timeZone": "Europe/Helsinki",
+      "observer": {
+        "latitudeDeg": 60,
+        "longitudeDeg": 25,
+        "elevationMeters": 0
+      },
+      "raDeg": 48.381122416,
+      "decDeg": 17.674692713,
+      "azimuthDeg": 7.831877507,
+      "altitudeDeg": -12.050815932,
+      "magnitudeV": 5.841
+    },
+    {
+      "sourceId": "dst-Uranus",
+      "scenario": "dst",
+      "body": "Uranus",
+      "atUtc": "2024-10-27T00:30:00Z",
+      "timeZone": "Europe/Helsinki",
+      "observer": {
+        "latitudeDeg": 60,
+        "longitudeDeg": 25,
+        "elevationMeters": 0
+      },
+      "raDeg": 53.839396886,
+      "decDeg": 19.017609703,
+      "azimuthDeg": 200.638867744,
+      "altitudeDeg": 47.714120599,
+      "magnitudeV": 5.643
+    },
+    {
+      "sourceId": "dst-Uranus",
+      "scenario": "dst",
+      "body": "Uranus",
+      "atUtc": "2024-10-27T01:30:00Z",
+      "timeZone": "Europe/Helsinki",
+      "observer": {
+        "latitudeDeg": 60,
+        "longitudeDeg": 25,
+        "elevationMeters": 0
+      },
+      "raDeg": 53.837758776,
+      "decDeg": 19.017244898,
+      "azimuthDeg": 220.349301887,
+      "altitudeDeg": 43.894792433,
+      "magnitudeV": 5.643
+    },
+    {
+      "sourceId": "dst-Neptune",
+      "scenario": "dst",
+      "body": "Neptune",
+      "atUtc": "2024-03-31T00:30:00Z",
+      "timeZone": "Europe/Helsinki",
+      "observer": {
+        "latitudeDeg": 60,
+        "longitudeDeg": 25,
+        "elevationMeters": 0
+      },
+      "raDeg": 358.530582318,
+      "decDeg": -1.965796097,
+      "azimuthDeg": 47.749056086,
+      "altitudeDeg": -23.332244572,
+      "magnitudeV": 7.826
+    },
+    {
+      "sourceId": "dst-Neptune",
+      "scenario": "dst",
+      "body": "Neptune",
+      "atUtc": "2024-03-31T01:30:00Z",
+      "timeZone": "Europe/Helsinki",
+      "observer": {
+        "latitudeDeg": 60,
+        "longitudeDeg": 25,
+        "elevationMeters": 0
+      },
+      "raDeg": 358.532025506,
+      "decDeg": -1.965189718,
+      "azimuthDeg": 62.380108197,
+      "altitudeDeg": -17.176777431,
+      "magnitudeV": 7.826
+    },
+    {
+      "sourceId": "dst-Neptune",
+      "scenario": "dst",
+      "body": "Neptune",
+      "atUtc": "2024-10-27T00:30:00Z",
+      "timeZone": "Europe/Helsinki",
+      "observer": {
+        "latitudeDeg": 60,
+        "longitudeDeg": 25,
+        "elevationMeters": 0
+      },
+      "raDeg": 358.324260746,
+      "decDeg": -2.166964867,
+      "azimuthDeg": 251.499657974,
+      "altitudeDeg": 7.92001737,
+      "magnitudeV": 7.697
+    },
+    {
+      "sourceId": "dst-Neptune",
+      "scenario": "dst",
+      "body": "Neptune",
+      "atUtc": "2024-10-27T01:30:00Z",
+      "timeZone": "Europe/Helsinki",
+      "observer": {
+        "latitudeDeg": 60,
+        "longitudeDeg": 25,
+        "elevationMeters": 0
+      },
+      "raDeg": 358.323441313,
+      "decDeg": -2.167298099,
+      "azimuthDeg": 264.66014672,
+      "altitudeDeg": 0.576375057,
+      "magnitudeV": 7.697
+    },
+    {
+      "sourceId": "polar-Sun",
+      "scenario": "polar",
+      "body": "Sun",
+      "atUtc": "2024-06-21T00:00:00Z",
+      "timeZone": "Europe/Helsinki",
+      "observer": {
+        "latitudeDeg": 70,
+        "longitudeDeg": 20,
+        "elevationMeters": 0
+      },
+      "raDeg": 90.136724756,
+      "decDeg": 23.435786315,
+      "azimuthDeg": 17.933439036,
+      "altitudeDeg": 4.474453918,
+      "magnitudeV": -26.707
+    },
+    {
+      "sourceId": "polar-Sun",
+      "scenario": "polar",
+      "body": "Sun",
+      "atUtc": "2024-06-21T12:00:00Z",
+      "timeZone": "Europe/Helsinki",
+      "observer": {
+        "latitudeDeg": 70,
+        "longitudeDeg": 20,
+        "elevationMeters": 0
+      },
+      "raDeg": 90.656034063,
+      "decDeg": 23.435092025,
+      "azimuthDeg": 204.375890326,
+      "altitudeDeg": 42.02817788,
+      "magnitudeV": -26.707
+    },
+    {
+      "sourceId": "polar-Sun",
+      "scenario": "polar",
+      "body": "Sun",
+      "atUtc": "2024-12-21T00:00:00Z",
+      "timeZone": "Europe/Helsinki",
+      "observer": {
+        "latitudeDeg": 70,
+        "longitudeDeg": 20,
+        "elevationMeters": 0
+      },
+      "raDeg": 269.568267681,
+      "decDeg": -23.439596904,
+      "azimuthDeg": 25.557980168,
+      "altitudeDeg": -41.892687289,
+      "magnitudeV": -26.778
+    },
+    {
+      "sourceId": "polar-Sun",
+      "scenario": "polar",
+      "body": "Sun",
+      "atUtc": "2024-12-21T12:00:00Z",
+      "timeZone": "Europe/Helsinki",
+      "observer": {
+        "latitudeDeg": 70,
+        "longitudeDeg": 20,
+        "elevationMeters": 0
+      },
+      "raDeg": 270.122566848,
+      "decDeg": -23.440807272,
+      "azimuthDeg": 198.738459483,
+      "altitudeDeg": -4.574275085,
+      "magnitudeV": -26.778
+    },
+    {
+      "sourceId": "polar-Moon",
+      "scenario": "polar",
+      "body": "Moon",
+      "atUtc": "2024-06-21T00:00:00Z",
+      "timeZone": "Europe/Helsinki",
+      "observer": {
+        "latitudeDeg": 70,
+        "longitudeDeg": 20,
+        "elevationMeters": 0
+      },
+      "raDeg": 255.263164504,
+      "decDeg": -28.239925468,
+      "azimuthDeg": 210.519704344,
+      "altitudeDeg": -11.307456676,
+      "magnitudeV": -12.305
+    },
+    {
+      "sourceId": "polar-Moon",
+      "scenario": "polar",
+      "body": "Moon",
+      "atUtc": "2024-06-21T12:00:00Z",
+      "timeZone": "Europe/Helsinki",
+      "observer": {
+        "latitudeDeg": 70,
+        "longitudeDeg": 20,
+        "elevationMeters": 0
+      },
+      "raDeg": 263.100979319,
+      "decDeg": -28.686700185,
+      "azimuthDeg": 35.019525787,
+      "altitudeDeg": -45.908497309,
+      "magnitudeV": -12.444
+    },
+    {
+      "sourceId": "polar-Moon",
+      "scenario": "polar",
+      "body": "Moon",
+      "atUtc": "2024-12-21T00:00:00Z",
+      "timeZone": "Europe/Helsinki",
+      "observer": {
+        "latitudeDeg": 70,
+        "longitudeDeg": 20,
+        "elevationMeters": 0
+      },
+      "raDeg": 161.068056989,
+      "decDeg": 9.482610668,
+      "azimuthDeg": 124.49567079,
+      "altitudeDeg": 21.534708823,
+      "magnitudeV": -10.804
+    },
+    {
+      "sourceId": "polar-Moon",
+      "scenario": "polar",
+      "body": "Moon",
+      "atUtc": "2024-12-21T12:00:00Z",
+      "timeZone": "Europe/Helsinki",
+      "observer": {
+        "latitudeDeg": 70,
+        "longitudeDeg": 20,
+        "elevationMeters": 0
+      },
+      "raDeg": 166.047540606,
+      "decDeg": 6.646897738,
+      "azimuthDeg": 304.771117032,
+      "altitudeDeg": -4.799289966,
+      "magnitudeV": -10.615
+    },
+    {
+      "sourceId": "horizon-Sun",
+      "scenario": "horizon",
+      "body": "Sun",
+      "atUtc": "2024-03-20T06:00:00Z",
+      "timeZone": "UTC",
+      "observer": {
+        "latitudeDeg": 0,
+        "longitudeDeg": 0,
+        "elevationMeters": 0
+      },
+      "raDeg": 0.112275182,
+      "decDeg": 0.047733495,
+      "azimuthDeg": 89.952241659,
+      "altitudeDeg": -1.848273388,
+      "magnitudeV": -26.751
+    },
+    {
+      "sourceId": "horizon-Sun",
+      "scenario": "horizon",
+      "body": "Sun",
+      "atUtc": "2024-03-20T06:10:00Z",
+      "timeZone": "UTC",
+      "observer": {
+        "latitudeDeg": 0,
+        "longitudeDeg": 0,
+        "elevationMeters": 0
+      },
+      "raDeg": 0.118609662,
+      "decDeg": 0.050477579,
+      "azimuthDeg": 89.949519151,
+      "altitudeDeg": 0.652236014,
+      "magnitudeV": -26.751
+    },
+    {
+      "sourceId": "horizon-Sun",
+      "scenario": "horizon",
+      "body": "Sun",
+      "atUtc": "2024-03-20T18:00:00Z",
+      "timeZone": "UTC",
+      "observer": {
+        "latitudeDeg": 0,
+        "longitudeDeg": 0,
+        "elevationMeters": 0
+      },
+      "raDeg": 0.563032628,
+      "decDeg": 0.245266689,
+      "azimuthDeg": 270.245388609,
+      "altitudeDeg": 1.806193912,
+      "magnitudeV": -26.751
+    },
+    {
+      "sourceId": "horizon-Sun",
+      "scenario": "horizon",
+      "body": "Sun",
+      "atUtc": "2024-03-20T18:10:00Z",
+      "timeZone": "UTC",
+      "observer": {
+        "latitudeDeg": 0,
+        "longitudeDeg": 0,
+        "elevationMeters": 0
+      },
+      "raDeg": 0.569355303,
+      "decDeg": 0.248009204,
+      "azimuthDeg": 270.248027414,
+      "altitudeDeg": -0.694305087,
+      "magnitudeV": -26.751
+    }
+  ]
+}

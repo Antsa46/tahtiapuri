@@ -30,6 +30,8 @@ Lue tehtävän mukaan:
   [tiedon elinkaari](docs/architecture/data-lifecycle-plan.md)
 - AI:n sijoittelu, avustajan työnkulku, agenttiroolit tai työkalujen välitys:
   [avustajan työnkulkusuunnitelma](docs/architecture/assistant-orchestration-plan.md)
+- tähtilaskenta, aika-/koordinaattisopimus tai paikallinen tähtiaineisto:
+  [tähtilaskenta](docs/architecture/sky-calculation.md)
 - käyttöliittymätekniikka, UI-kirjasto tai riippuvuuskartta:
   [tekniikkaehdotus ja käyttöliittymän linja](docs/architecture/technology-and-ui-plan.md)
 - ensimmäisen rungon rakentaminen, backend tai rakennuksen vaiheistus:

@@ -20,6 +20,7 @@ vastuurajan, lue myös toisen osapuolen sopimus.
 | Valittu kansiorakenne A, moduulit, kerrokset ja prosessien kulkureitit | [architecture/base-architecture.md](architecture/base-architecture.md) |
 | Osien oikeudet, malliprosessin ajotapa ja eristyksen vaiheistus sekä Windows-/kontti-/VM-vertailu | [architecture/security-and-permissions-plan.md](architecture/security-and-permissions-plan.md) |
 | Käyttäjätiedot, keskusteluhistoria ja mallin konteksti, poisto, välimuistit ja vienti/palautus | [architecture/data-lifecycle-plan.md](architecture/data-lifecycle-plan.md) |
+| Tähtilaskenta, UTC/paikallisaika, koordinaatit, magnitudit ja paikallinen katalogi | [architecture/sky-calculation.md](architecture/sky-calculation.md) |
 | AI:n sijoittelu, ohjelmakoodin työnkulku, agenttiroolit ja delegointi | [architecture/assistant-orchestration-plan.md](architecture/assistant-orchestration-plan.md) |
 | Käyttöliittymätekniikka, sääpalveluvertailu ja riippuvuuskartta | [architecture/technology-and-ui-plan.md](architecture/technology-and-ui-plan.md) |
 | Kevyt backend, ensimmäisen rungon vaiheistus ja rakennuksen tarkistukset | [architecture/initial-skeleton-plan.md](architecture/initial-skeleton-plan.md) |

@@ -346,6 +346,9 @@ Agentti ei hyväksy omia oikeuksiaan tai muuta havaittavuuden sääntöjä.
 
 ## Laskenta ja havaittavuus
 
+T06:n snapshot-palvelun sopimuksen omistaa [tähtilaskenta](sky-calculation.md).
+Alla oleva havaittavuuden kokonaisuus sisältää myös myöhemmät osat.
+
 - Laskenta käyttää UTC-aikaleimoja. UI käyttää valittua aikavyöhykettä.
   Kesäaika, paikallinen keskiyö ja päivän vaihtuminen huomioidaan.
 - Koordinaattikehykset, yksiköt ja laskennan ajankohta ovat osa sopimusta.

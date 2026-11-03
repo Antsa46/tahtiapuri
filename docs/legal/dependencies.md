@@ -15,6 +15,8 @@ asennuspaketin lisenssiliite. Se viimeistellään T17:ssä toimitetun sisällön
 | @playwright/test 1.64.1 | Oikean Electronin E2E-testit. | Apache-2.0 |
 | @types/node 24.10.0, @types/react ja @types/react-dom 19.3.0 | Käännösaikaiset tyypit. | MIT |
 | node-llama-cpp 3.22.2 ja sen Windows CPU-/CUDA-binäärit | Erillisen mallityöntekijän llama.cpp-sovitin. | MIT; binäärien mukana tulevat llama.cpp- ja muut ilmoitukset säilytetään. |
+| Astronomy Engine 2.1.19 | Offline-efemeridit ja koordinaattimuunnokset sky-sovittimessa. | MIT |
+| HYG Database 4.1, johdettu 5 070 tähden aineisto | Paikallinen mag≤6-katalogi. | CC BY-SA 4.0; lähde, muutokset ja aineistolisenssi resources/catalogs-puussa. |
 | @modelcontextprotocol/server, client ja core 2.4.0 | Rajattu stdio-palvelin sekä oikean asiakkaan integraatiotestit. | Apache-2.0 |
 | Zod 4.6.7 | MCP-työkalujen syöteskeemat. | MIT |
 | simple-git 4.0.2 ja argv-parser 2.0.1 | SDK:n transitiivinen Git-kirjasto, rajattu turvallisuuspäivityksen override. Rakennuspolku ei käytössä malliajossa. | MIT |

@@ -96,6 +96,13 @@ Tuotannon IPC:ssä tai asetuksissa ei ole testitilaa.
 Playwrightin tilapäiset debug-yhteydet kuuluvat testiajuriin.
 Kehitysajo toimii tavallisen käyttäjän oikeuksilla; testaus ei osoita OS-verkkokieltoa.
 
+## Paikallinen tähtilaskenta
+
+T06:n offline-katalogi toimitetaan resources/catalogs-puussa. Tavallinen
+build tai ajo ei lataa sitä. Test-komento sisältää JPL/ERFA-vertailut,
+UTC/DST-reunat ja katalogin eheyden. [Laskentasopimus](../architecture/sky-calculation.md)
+kuvaa yksiköt ja rajat. Kartan UI-kytkentä on seuraava työpaketti.
+
 ## Erillinen 4B/8B-laatuvertailu
 
 Vain vertailua varten valmistele myös hyväksytty noin 5,03 GB:n 8B-paino:

@@ -15,6 +15,7 @@ valmistumisen näyttö GitHub-issueissa (repositoryn Issues).
 | Ensimmäinen käyttöversio | Sovittu: kartta, keskusteleva katsaus, kohdetiedot, sää, paikat ja paikallinen historia. | [Tuoterajaus](../product/project-definition.md), [käyttötapaukset](../product/observing-session-use-cases.md) |
 | Sovellus ja kerrokset | T02:n statusrunko toteutettu: Electron/TypeScript, React/Vite/CSS Modules, rakenne A ja main–backend-IPC. Laajemmat moduulit myöhemmin. | [Perusarkkitehtuuri](../architecture/base-architecture.md), [tekniikkasuunnitelma](../architecture/technology-and-ui-plan.md) |
 | Mallimoottori | T03: node-llama-cpp 3.22.2 toimii UtilityProcessissa, 4B:n CPU-/CUDA-kehitysajot todennettu. Paketoitu ajo ja OS-eristys avoinna. | [Mallisuunnitelma](../architecture/local-model-plan.md) |
+| Tähtilaskenta | T06: Astronomy Engine 2.1.19 ja HYG 4.1:n 5 070 tähden paikallinen aineisto; snapshot ilman UI-/IPC-kytkentää. | [Laskentasopimus](../architecture/sky-calculation.md) |
 | Mallit ja painot | Qwen3-4B Q4_K_M on otettu käyttöön projektin paikallisesta kansiosta. T04:n 4B/8B-vertailu on tehty; tulos ei vielä hyväksy kumpaakaan havaintoavustajaksi. Mallinvaihto asetuksista on sovittu myöhemmäksi toteutukseksi. Poro–Ministral-verrokit ovat mukana suunnitelmassa; tarkat paketit ja oletusmalli ovat avoimia. | [Mallivalinta ja toimitus](../architecture/local-model-plan.md) |
 | Avustajan työnkulku | Sovittu: backend koordinoi, moduulit tarkistavat työkalut ja yksi opastajarooli toimii lähtötasona. Usean roolin hyöty mitataan erikseen. | [Orkestrointi](../architecture/assistant-orchestration-plan.md) |
 | Verkon ja tiedostojen oikeudet | Sovittu tavoite: vain säätyöntekijän rajattu ulkoinen yhteys. OS-mekanismi, GPU ja eristyksen näyttö ovat avoimia; AppContainer/LPAC on vaihtoehto. | [Turvallisuus ja oikeudet](../architecture/security-and-permissions-plan.md) |
@@ -31,7 +32,7 @@ valmistumisen näyttö GitHub-issueissa (repositoryn Issues).
   mutta laatu ei riitä havaintokäytön hyväksyntään.
 - Varhaisen ja lopullisen kokoonpanon OS-turvanäyttö; muiden malliperheiden tarkat paketit.
 - Laajemmin tuettu Windows-/CPU/GPU-kokoonpano; T03:ssa CPU ja CUDA valitaan näkyvästi ilman hiljaista fallbackia.
-- Katalogin rajaus, laskentasovitin, FMI-kysely ja käynnistyskatsauksen aikarajat.
+- T06:n [tähtilaskenta](../architecture/sky-calculation.md) käyttää Astronomy Engine 2.1.19:ää ja HYG 4.1:n paikallista mag≤6-aineistoa. FMI-kysely ja käynnistyskatsauksen aikarajat ovat avoimia.
 - Mallivalinnan ja mallikansion muistaminen sekä puuttuvan mallin käsittely.
 - Tallennuksen tekninen toteutus; MCP:n OS-oikeusrajan ja paketoidun ajon näyttö.
 - Ensimmäinen synteettinen aineisto on [kokeen lähtötiedoissa](../experiments/model-pilot.md); T04:n tulokset ovat [vertailuraportissa](../experiments/model-comparison.md). Suorituskyvyn hyväksyttävät rajat ja luotettavan havaintoavustajan mallivalinta ovat avoimia.

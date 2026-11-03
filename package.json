@@ -36,6 +36,7 @@
     "node-llama-cpp": "3.22.2",
     "@modelcontextprotocol/client": "2.4.0",
     "@tahtiapuri/mcp": "workspace:*",
-    "@tahtiapuri/validation": "workspace:*"
+    "@tahtiapuri/validation": "workspace:*",
+    "@tahtiapuri/domain": "workspace:*"
   }
 }

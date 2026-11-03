@@ -19,6 +19,9 @@
     },
     {
       "path": "../apps/backend"
+    },
+    {
+      "path": "../packages/domain"
     }
   ]
 }

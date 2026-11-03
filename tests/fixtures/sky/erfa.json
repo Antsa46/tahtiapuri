@@ -1,0 +1,39 @@
+{
+  "sourceUrl": "https://raw.githubusercontent.com/liberfa/erfa/1a8044cde5b7763295d472a6443387239127c6c8/src/t_erfa_c.c",
+  "sourceRevision": "1a8044cde5b7763295d472a6443387239127c6c8",
+  "sourceMethods": [
+    "eraPn06a",
+    "eraGst06a",
+    "eraHd2ae"
+  ],
+  "dateUtc": "2006-01-01T00:00:00Z",
+  "referenceTtJd": [
+    2400000.5,
+    53736.0
+  ],
+  "matrix": [
+    [
+      0.999998944048067,
+      -0.001332881418091916,
+      -0.0005790767447612043
+    ],
+    [
+      0.0013328579112509892,
+      0.9999991109049142,
+      -4.097767128546785e-05
+    ],
+    [
+      0.0005791308482835292,
+      4.0205800994540205e-05,
+      0.9999998314954629
+    ]
+  ],
+  "gastRadians": 1.754166137675019,
+  "hourAngleRadians": 1.1,
+  "declinationRadians": 1.2,
+  "latitudeRadians": 0.3,
+  "azimuthRadians": 5.916889243730066,
+  "altitudeRadians": 0.44721863049904864,
+  "toleranceDeg": 0.04,
+  "note": "Reference TT/UT1 date is treated as UTC in this coarse naked-eye comparison; frame-bias and timescale differences are covered by the stated tolerance."
+}

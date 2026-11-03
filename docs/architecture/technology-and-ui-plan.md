@@ -4,8 +4,8 @@ Tila: kohdan 4 suunnitteluehdotus, kirjattu 2.11.2026.
 Tähtiapuri toimii modulaarisen Electron-rakenteen, paikallisen mallin
 ja rajatun agenttiohjauksen pilottina.
 React/Vite ja oma CSS Modules -tyylitys on hyväksytty tekniseksi suunnaksi.
-Täsmäversiot, asennukset ja muut alla nimetyt uudet kirjastot eivät vielä
-ole hyväksyttyjä riippuvuuksia.
+Käyttöön otetut täsmäversiot on kirjattu alempana ja riippuvuuskoonnissa;
+muut ehdokkaat eivät vielä ole asennettuja tai hyväksyttyjä riippuvuuksia.
 Valintojen tilan kokoaa [päätöshakemisto](../planning/decisions.md);
 toteutusjärjestys on [roadmapissa](../planning/roadmap.md).
 
@@ -79,7 +79,7 @@ Yksi rivi voi sisältää useita paketteja ja transitiivisia riippuvuuksia.
 | UI:n rakennus | Vite ja React-plugin | Kehitykseen ja rakentamiseen. Paketoitu ohjelma ei tarvitse Vite-palvelinta. |
 | Kieli ja tyypit | TypeScript sekä tarvittavat @types-paketit | Tyypintarkistus erikseen; Viten muunnos ei yksin tarkista tyyppejä. |
 | Paikallinen backend | Node/TypeScript ja rajattu IPC-adapteri | Node Electronin hallitsemassa prosessissa. Main–backend-kuljetus on sovittu IPC:ksi, joten Honoa tai @hono/node-serveriä ei tarvita tähän yhteyteen. Sovelluksen käyttäjältä ei edellytetä Node-asennusta. |
-| Taivaan laskenta | Astronomy Engine | Backendin sky-laskentasovitin; oma laskenta- ja koordinaattisopimus säilyy. |
+| Taivaan laskenta | Astronomy Engine 2.1.19 (T06) | Backendin sky-laskentasovitin; toteutetun sopimuksen omistaa [tähtilaskenta](sky-calculation.md). |
 | Kartan piirto | D3-Celestial ja sen tarvitsemat paikalliset resurssit | Rendererissä rajatun karttasovittimen takana. D3-yhteensopivuus, lisäriippuvuudet ja aineistojen oikeudet tarkistetaan ennen valintaa. |
 | Mallimoottori | node-llama-cpp / llama.cpp | T03:n UtilityProcess-toteutus. Oma mallisovitin; llama-server säilyy vaihtoehtona. |
 | Mallin painot | Vaihdettavia GGUF-malleja erillisessä paikallisessa kansiossa; yksi muistissa kerrallaan | Mallikansio ja 4B/8B/14B-vertailu kuvataan [mallisuunnitelmassa](local-model-plan.md). Painot eivät kuulu tavalliseen sovellusbuildiin. |

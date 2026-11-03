@@ -15,6 +15,9 @@
   "references": [
     {
       "path": "../../packages/validation"
+    },
+    {
+      "path": "../../packages/domain"
     }
   ]
 }
