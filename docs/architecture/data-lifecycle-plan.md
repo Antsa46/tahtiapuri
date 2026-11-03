@@ -2,8 +2,9 @@
 
 Tämä dokumentti omistaa käyttäjätiedon, historian ja välimuistien
 tallennussopimuksen. Suunnittelun valinnat ja avoimet asiat kokoaa
-[päätöshakemisto](../planning/decisions.md). Tallennusta tai tietokantaa ei ole toteutettu.
-Tarkkaa formaattia, kirjastoa tai versiota ei valita tämän tekstin perusteella.
+[päätöshakemisto](../planning/decisions.md). T08 toteuttaa nimettyjen paikkojen JSON-tallennuksen. Sen formaatin,
+kirjoituseheyden ja palautuksen omistaa [havaintopaikkojen toteutus](observing-places.md).
+Muiden aineistojen tallennus on edelleen suunnitelma.
 
 ## Aineistot ja vastuut
 
@@ -103,9 +104,9 @@ MCP-kytkimen päällä-tilaa ei palauteta tallennettuna asetuksena seuraavaan
 käynnistykseen; kehitysistunnon elinkaaren omistaa
 [kytkimen sopimus](local-model-plan.md#kehitysyhteyden-kytkin).
 
-JSONin ja SQLiten kaltaiset tallennusvaihtoehdot arvioidaan vasta
-tietomäärän, hakujen ja eheysvaatimusten perusteella. Tietokantakirjastoa,
-hakukehystä tai salaustapaa ei ole tässä valittu.
+T08:n paikkaluettelo käyttää JSONia ilman uutta tietokantariippuvuutta.
+Muiden aineistojen JSON-/SQLite-vaihtoehdot arvioidaan tietomäärän, hakujen
+ja eheysvaatimusten perusteella. Hakukehystä tai salaustapaa ei ole valittu.
 
 ## Kirjoituksen eheys ja myöhempi vienti/palautus
 
@@ -122,8 +123,9 @@ myöhemmäksi ei poista nykyisen paikallisen tallennuksen eheysvaatimuksia.
 
 ## Avoimet valinnat ja todennettava toiminta
 
-Kohdan 5 toiminnalliset päälinjat on sovittu. Avoinna ovat tallennusformaatti,
-tarkka kirjoitus- ja poistosopimus sekä sääennusteen tuoreusraja.
+Kohdan 5 toiminnalliset päälinjat on sovittu. Paikkojen toteutettu formaatti sekä kirjoitus- ja poistosopimus ovat
+[havaintopaikkojen ohjeessa](observing-places.md). Muiden aineistojen formaatti,
+kirjoitus-/poistosopimus ja sääennusteen tuoreusraja ovat avoimia.
 Tekniikat ratkaistaan kohdassa 7 ja testinäyttö kohdassa 8 ennen toteutusta.
 Vienti ja palautus ovat myöhemmäksi rajattuja.
 

@@ -102,10 +102,12 @@ T06:n offline-katalogi toimitetaan resources/catalogs-puussa. Tavallinen
 build tai ajo ei lataa sitä. Test-komento sisältää JPL/ERFA-vertailut,
 UTC/DST-reunat ja katalogin eheyden. [Laskentasopimus](../architecture/sky-calculation.md)
 kuvaa yksiköt ja rajat. [Tähtikartta](../architecture/sky-map.md) toimii
-ilman kielimallia: anna havaintopaikka, paikallisaika, IANA-vyöhyke ja
-UTC-poikkeama, valitse Näytä taivas. Paikkoja ei vielä tallenneta.
+ilman kielimallia: lisää havaintopaikka ja IANA-vyöhyke Havaintopaikat-asetuksissa.
+Tallenna ja käytä paikkaa avaa kartan; seuraava käynnistys muistaa valinnan.
+Kartan oma lomake vaihtaa paikallisaikaa ja UTC-poikkeamaa.
+[Tallennussopimus](../architecture/observing-places.md) omistaa JSONin ja virhepolut.
 test:e2e sisältää kartan valinnan, ajan/paikan vaihdon, resurssirajan ja
-puuttuvan katalogin kokeet. Kuvakaappaukset jäävät .artifacts/tests/e2e/-puuhun.
+puuttuvan katalogin kokeet sekä paikkojen restart-/tallennusvirhepolut. Kuvakaappaukset jäävät .artifacts/tests/e2e/-puuhun.
 
 ## Erillinen 4B/8B-laatuvertailu
 
@@ -137,6 +139,7 @@ käsinarvioinnin merkityksen.
 - Yksityinen kehityskonteksti ja työkalumuistiinpanot: .tahtiapuri-local/.
   [Yksityisyyslinja](../privacy/publication.md#paikallinen-kehityskonteksti) omistaa käytännön.
 - Kehityssovelluksen Chromium-data: .local/data/desktop/.
+- Tallennetut havaintopaikat: .local/data/desktop/observing/places.json.
 - Myöhemmän 4B/8B-laatuvertailun syötteet: tests/evaluations/local-model/.
 
 node_modules/, dist/, .local/, .tahtiapuri-local/ ja .artifacts/ on rajattu Gitistä.

@@ -1,22 +1,17 @@
 import { expect, test, type Page } from "@playwright/test";
 import { join } from "node:path";
+import { addPlace, setSyntheticTime } from "../support/observing.js";
 import { backendPid, expectGone, launch } from "../support/electron.js";
 const observation = { atUtc: "2024-03-31T00:30:00.000Z", timeZone: "Europe/Helsinki", observer: { latitudeDeg: 60, longitudeDeg: 25, elevationMeters: 0 } };
 async function fillObservation(page: Page) {
-  await page.getByLabel("Paikan nimi", { exact: true }).fill("Synteettinen koepaikka");
-  await page.getByLabel("Leveysaste °", { exact: true }).fill("60");
-  await page.getByLabel("Pituusaste °", { exact: true }).fill("25");
-  await page.getByLabel("Paikallinen aika", { exact: true }).fill("2024-03-31T02:30");
-  await page.getByLabel("Aikavyöhyke", { exact: true }).fill("Europe/Helsinki");
-  await page.getByLabel("UTC-poikkeama (min)", { exact: true }).fill("120");
-  await page.getByRole("button", { name: "Näytä taivas", exact: true }).click();
+  await addPlace(page, "Synteettinen koepaikka"); await setSyntheticTime(page);
 }
 test("local sky map follows time and observer, selects an object and makes no remote requests", async ({}, info) => {
   const app = await launch(info.outputPath("data")); const pid = await backendPid(app);
   try {
     const page = await app.firstWindow();
     const requests: string[] = []; page.on("request", request => requests.push(request.url()));
-    await expect(page.getByRole("status", { name: "Kartan tila", exact: true })).toContainText("Anna havaintopaikka");
+    await expect(page.getByRole("status", { name: "Kartan tila", exact: true })).toContainText("Valitse havaintopaikka");
     await fillObservation(page);
     await expect(page.locator('[data-map-ready="true"]')).toBeVisible();
     await expect(page.getByTestId("active-observation")).toContainText("2024-03-31 02:30:00");
@@ -30,10 +25,11 @@ test("local sky map follows time and observer, selects an object and makes no re
     await expect(card).not.toHaveAttribute("data-object-id", "Jupiter");
     await page.getByRole("combobox", { name: "Kartan kohde", exact: true }).selectOption("Jupiter");
     await expect(card).toHaveAttribute("data-object-id", "Jupiter"); expect(await card.textContent()).not.toBe(original);
+    await page.getByRole("button", { name: "Muokkaa paikkaa", exact: true }).click();
     await page.getByLabel("Leveysaste °", { exact: true }).fill("0");
-    await expect(page.locator('[data-map-ready="true"]')).toHaveCount(0);
     await page.getByLabel("Pituusaste °", { exact: true }).fill("0");
-    await page.getByRole("button", { name: "Näytä taivas", exact: true }).click();
+    await expect(page.getByTestId("active-observation")).toContainText("60° / 25°");
+    await page.getByRole("button", { name: "Tallenna ja käytä paikkaa", exact: true }).click();
     await expect(page.getByTestId("active-observation")).toContainText("0° / 0°");
     await page.getByRole("searchbox", { name: "Nimi tai tunniste", exact: true }).fill("Sirius");
     const option = page.getByRole("combobox", { name: "Kartan kohde", exact: true }).locator("option").filter({ hasText: "Sirius" });

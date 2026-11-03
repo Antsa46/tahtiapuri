@@ -2,6 +2,7 @@ import { ParentModelEngine } from "../modules/assistant/adapters/parent-model-en
 import { AssistantService } from "../modules/assistant/application/assistant-service.js";
 import { isInitialize } from "@tahtiapuri/validation/backend";
 import { createBackend } from "../composition/create-backend.js";
+import { createObserving } from "../composition/create-observing.js";
 import { createSky } from "../composition/create-sky.js";
 import { SkyQueries } from "../modules/sky/application/sky-queries.js";
 import { dirname, resolve } from "node:path";
@@ -18,6 +19,7 @@ const assistant = new AssistantService(engine);
 const endpoint = createBackend({
   send: message => port.postMessage(message),
   assistant,
+  observing: createObserving(process.cwd()),
   sky: new SkyQueries(createSky(resolve(dirname(fileURLToPath(import.meta.url)), "../../../../resources/catalogs"))),
   stop: () => { assistant.dispose(); setImmediate(() => process.exit(0)); },
   now: () => Date.now(),

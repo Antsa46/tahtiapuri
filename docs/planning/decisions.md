@@ -21,7 +21,7 @@ valmistumisen näyttö GitHub-issueissa (repositoryn Issues).
 | Verkon ja tiedostojen oikeudet | Sovittu tavoite: vain säätyöntekijän rajattu ulkoinen yhteys. OS-mekanismi, GPU ja eristyksen näyttö ovat avoimia; AppContainer/LPAC on vaihtoehto. | [Turvallisuus ja oikeudet](../architecture/security-and-permissions-plan.md) |
 | Kehityksen MCP | Sovittu: rajattu stdio-yhteys ja asetusten kytkin, oletuksena pois joka käynnistyksessä. T05 toteuttaa Windowsin capability-kanavan ja omistajuuden tarkistukset. Codex-isännän erillinen käyttöönotto ja OS-eristys säilyvät erillisinä. | [MCP-sopimus](../architecture/local-model-plan.md#kehitys--ja-diagnostiikkarajapinta-paikalliseen-malliin) |
 | Sää | Ilmatieteen laitos on valittu tarjoajaksi. Tarkka kysely ja kentät ovat avoimia; Open-Meteota ei toteuteta rinnalle. | [Sääpalvelu](../architecture/technology-and-ui-plan.md), [sään elinkaari](../architecture/data-lifecycle-plan.md) |
-| Paikat, asetukset ja historia | Sovittu paikallinen säilytys: viimeisin paikka, säävalinta, käyttäjän poistoon asti säilyvät keskustelut ja viimeisin ennuste per paikka. Ensimmäinen säätila on manuaalinen. | [Tiedon elinkaari](../architecture/data-lifecycle-plan.md) |
+| Paikat, asetukset ja historia | T08 toteuttaa paikkojen JSON-tallennuksen ja aktiivisen paikan muistamisen; muu tallennus myöhemmin. Sovittu paikallinen säilytys: viimeisin paikka, säävalinta, käyttäjän poistoon asti säilyvät keskustelut ja viimeisin ennuste per paikka. Ensimmäinen säätila on manuaalinen. | [Tiedon elinkaari](../architecture/data-lifecycle-plan.md), [havaintopaikat](../architecture/observing-places.md) |
 | Testaus | Sovittu: pienet testit lähteen vieressä, laajat testit ja yhteiset aineistot tests/-puussa; paikalliset ajot ilman etä-CI:tä. Ensimmäinen näyttö on rajattu mallikoe. | [Testausohje](../ai/testing-rules.md) |
 | Kehitystyö | Pääkehittäjä ja kriittisten muutosten tarkastaja on sovittu. GPT-mallien tehtäväkohtainen työnjako on suositus. | [Työohje](../../AGENTS.md#kehitystyön-roolit-ja-katselmus), [kehitysmallit](../ai/development-models.md) |
 | Työskentelyskill | Luonnosta on kokeiltu T01:n rajauksessa; laajempi toimivuus ja asennus ovat todentamatta. | [task-start-finish](../ai/skills/task-start-finish/SKILL.md) |
@@ -34,7 +34,7 @@ valmistumisen näyttö GitHub-issueissa (repositoryn Issues).
 - Laajemmin tuettu Windows-/CPU/GPU-kokoonpano; T03:ssa CPU ja CUDA valitaan näkyvästi ilman hiljaista fallbackia.
 - T06:n [tähtilaskenta](../architecture/sky-calculation.md) käyttää Astronomy Engine 2.1.19:ää ja HYG 4.1:n paikallista mag≤6-aineistoa. FMI-kysely ja käynnistyskatsauksen aikarajat ovat avoimia.
 - Mallivalinnan ja mallikansion muistaminen sekä puuttuvan mallin käsittely.
-- Tallennuksen tekninen toteutus; MCP:n OS-oikeusrajan ja paketoidun ajon näyttö.
+- Keskustelujen ja sään tallennuksen tekninen toteutus; paikat toteutettu T08:ssa. MCP:n OS-oikeusrajan ja paketoidun ajon näyttö.
 - Ensimmäinen synteettinen aineisto on [kokeen lähtötiedoissa](../experiments/model-pilot.md); T04:n tulokset ovat [vertailuraportissa](../experiments/model-comparison.md). Suorituskyvyn hyväksyttävät rajat ja luotettavan havaintoavustajan mallivalinta ovat avoimia.
 - Horisonttiesteiden ja havaintovälineiden tietojen tarkempi käyttötapa.
 

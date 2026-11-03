@@ -10,3 +10,4 @@ export function createRuntimeClient(bridge: RuntimeBridge) {
   };
 }
 export { createSkyClient } from "./sky.js";
+export { createObservingClient } from "./observing.js";

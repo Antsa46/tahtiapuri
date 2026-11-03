@@ -26,6 +26,8 @@ Lue tehtävän mukaan:
   [perusarkkitehtuuri](docs/architecture/base-architecture.md)
 - oikeudet, ulkoinen syöte, IPC/MCP, verkkokäyttö, tiedostorajat tai tietoturvaan vaikuttava muutos:
   [turvallisuus ja oikeudet](docs/architecture/security-and-permissions-plan.md)
+- havaintopaikkojen asetukset, tallennus tai observing-IPC:
+  [nimetyt havaintopaikat](docs/architecture/observing-places.md)
 - käyttäjätieto, historian säilytys ja poisto, välimuistit tai vienti/palautus:
   [tiedon elinkaari](docs/architecture/data-lifecycle-plan.md)
 - AI:n sijoittelu, avustajan työnkulku, agenttiroolit tai työkalujen välitys:

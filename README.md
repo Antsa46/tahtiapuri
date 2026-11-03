@@ -12,7 +12,8 @@ kanssa CPU:lla tai CUDA:lla. Malli toimii erillisessä UtilityProcessissa;
 käyttöliittymä käyttää rajattua IPC:tä. Asetuksista avattava stdio-MCP-kehitysyhteys
 mahdollistaa erilliset mallikokeet. Paikallinen tähtikartta näyttää
 valitun ajan ja paikan kohteet sekä niiden laskentakortit, mukana 5 070 tähteä.
-Karttaa voi tutkia myös ilman mallia. Sää ja kartan yhdistäminen keskusteluun
+Havaintopaikat tallentuvat paikallisesti, ja viimeksi käytetty paikka palautuu
+käynnistyksessä. Karttaa voi tutkia myös ilman mallia. Sää ja kartan yhdistäminen keskusteluun
 ovat seuraavia vaiheita.
 
 ## Tavoitellut ominaisuudet

@@ -2,9 +2,10 @@ import { isCapability, isDevelopmentIdentity, isDevelopmentInvocation, isDevelop
 import { isModelInput, isJobId, isAssistantResult, type AssistantResult } from "./assistant.js";
 import { exactKeys, isRecord, isRuntimeStatus, type RuntimeStatus } from "./public-api.js";
 import { isObservationRequest, isSkySelectionRequest, isSkyResult, isSkySelectionResult, type SkyResult, type SkySelectionResult } from "./sky.js";
+import { isObservingInput, isObservingResult, type ObservingOperation, type ObservingResult } from "./observing.js";
 export const PROTOCOL_VERSION = 1;
 export const MAX_REQUEST_MS = 5000;
-export const OPERATIONS = ["sky.snapshot", "sky.select", "runtime.status", "runtime.ping", "runtime.shutdown", "assistant.submit", "assistant.get", "assistant.cancel", "development.status", "development.configure", "development.attach", "development.detach", "development.invoke"] as const;
+export const OPERATIONS = ["observing.read", "observing.save", "observing.remove", "observing.activate", "sky.snapshot", "sky.select", "runtime.status", "runtime.ping", "runtime.shutdown", "assistant.submit", "assistant.get", "assistant.cancel", "development.status", "development.configure", "development.attach", "development.detach", "development.invoke"] as const;
 export type Operation = typeof OPERATIONS[number];
 export type Initialize = { type: "initialize"; protocol: 1; session: string };
 export type Ready = { type: "ready"; protocol: 1; session: string };
@@ -14,7 +15,7 @@ export type Request = {
 };
 export type Response = {
   type: "response"; protocol: 1; session: string; id: string;
-  operation: Operation; result: RuntimeStatus | AssistantResult | DevelopmentResult | SkyResult | SkySelectionResult | null;
+  operation: Operation; result: RuntimeStatus | ObservingResult | AssistantResult | DevelopmentResult | SkyResult | SkySelectionResult | null;
 };
 export function isSession(value: unknown): value is string {
   return typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
@@ -34,10 +35,11 @@ function isEnvelope(value: unknown, session: string): value is Record<string, un
 }
 export function isRequest(value: unknown, session: string, now: number): value is Request {
   return isEnvelope(value, session)
-    && exactKeys(value, (String(value.operation).startsWith("sky.") || String(value.operation).startsWith("assistant.") || (String(value.operation).startsWith("development.") && value.operation !== "development.status"))
+    && exactKeys(value, ((String(value.operation).startsWith("observing.") && value.operation !== "observing.read") || String(value.operation).startsWith("sky.") || String(value.operation).startsWith("assistant.") || (String(value.operation).startsWith("development.") && value.operation !== "development.status"))
       ? ["type", "protocol", "session", "id", "operation", "expiresAtUnixMs", "input"]
       : ["type", "protocol", "session", "id", "operation", "expiresAtUnixMs"])
-    && (value.operation === "sky.snapshot" ? isObservationRequest(value.input)
+    && (String(value.operation).startsWith("observing.") ? isObservingInput(value.operation as ObservingOperation, value.input)
+      : value.operation === "sky.snapshot" ? isObservationRequest(value.input)
       : value.operation === "sky.select" ? isSkySelectionRequest(value.input)
       : value.operation === "assistant.submit" ? isModelInput(value.input)
       : value.operation === "assistant.get" || value.operation === "assistant.cancel" ? isJobId(value.input)
@@ -52,5 +54,5 @@ export function isResponse(value: unknown, session: string): value is Response {
   return isEnvelope(value, session)
     && exactKeys(value, ["type", "protocol", "session", "id", "operation", "result"])
     && value.type === "response"
-    && (value.operation === "sky.snapshot" ? isSkyResult(value.result) : value.operation === "sky.select" ? isSkySelectionResult(value.result) : value.operation === "runtime.status" ? isRuntimeStatus(value.result) : String(value.operation).startsWith("assistant.") ? isAssistantResult(value.result) : String(value.operation).startsWith("development.") ? isDevelopmentResult(value.result) : value.result === null);
+    && (String(value.operation).startsWith("observing.") ? isObservingResult(value.result) : value.operation === "sky.snapshot" ? isSkyResult(value.result) : value.operation === "sky.select" ? isSkySelectionResult(value.result) : value.operation === "runtime.status" ? isRuntimeStatus(value.result) : String(value.operation).startsWith("assistant.") ? isAssistantResult(value.result) : String(value.operation).startsWith("development.") ? isDevelopmentResult(value.result) : value.result === null);
 }

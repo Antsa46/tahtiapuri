@@ -1,3 +1,4 @@
+import { isObservingResult, type ObservingOperation, type ObservingResult } from "@tahtiapuri/validation/observing";
 import { isSkyResult, isSkySelectionResult, type SkyResult, type SkySelectionResult } from "@tahtiapuri/validation/sky";
 import { isDevelopmentResult, type DevelopmentResult } from "@tahtiapuri/validation/development";
 import { isModelRun, isModelCancel } from "@tahtiapuri/validation/model-wire";
@@ -104,7 +105,7 @@ export class BackendController {
     const child = this.child;
     if (!child || !this.ready || this.exited || (this.closing && operation !== "runtime.shutdown"))
       return Promise.reject(new Error("Backend unavailable."));
-    if ((operation === "runtime.status" || operation.startsWith("sky.") || operation.startsWith("assistant.") || operation === "development.invoke" || operation === "development.status") && this.pending.size >= 14)
+    if ((operation === "runtime.status" || operation.startsWith("observing.") || operation.startsWith("sky.") || operation.startsWith("assistant.") || operation === "development.invoke" || operation === "development.status") && this.pending.size >= 14)
       return Promise.reject(new Error("Backend request limit reached."));
     if (this.pending.size >= 16) return Promise.reject(new Error("Backend request limit reached."));
     const id = randomUUID();
@@ -118,7 +119,7 @@ export class BackendController {
         child.postMessage({
           type: "request", protocol: 1, session: this.session, id, operation,
           expiresAtUnixMs: Date.now() + 2500,
-          ...((operation.startsWith("sky.") || operation.startsWith("assistant.") || (operation.startsWith("development.") && operation !== "development.status")) ? { input } : {}),
+          ...(((operation.startsWith("observing.") && operation !== "observing.read") || operation.startsWith("sky.") || operation.startsWith("assistant.") || (operation.startsWith("development.") && operation !== "development.status")) ? { input } : {}),
         });
       } catch {
         clearTimeout(timer);
@@ -151,6 +152,11 @@ export class BackendController {
     const response = await this.request(operation, input);
     if (operation === "sky.snapshot" ? isSkyResult(response.result) : isSkySelectionResult(response.result)) return response.result as SkyResult | SkySelectionResult;
     return { ok: false, code: "UNAVAILABLE" };
+  }
+
+  async observing(operation: ObservingOperation, input?: unknown): Promise<ObservingResult> {
+    const response = await this.request(operation, input);
+    return isObservingResult(response.result) ? response.result : { ok: false, code: "UNAVAILABLE" };
   }
 
   stop(): Promise<void> {

@@ -10,7 +10,8 @@
     "./model-wire": "./dist/model-wire.js",
     "./development": "./dist/development.js",
     "./development-framing": "./dist/development-framing.js",
-    "./sky": "./dist/sky.js"
+    "./sky": "./dist/sky.js",
+    "./observing": "./dist/observing.js"
   },
   "dependencies": {
     "@tahtiapuri/domain": "workspace:*"

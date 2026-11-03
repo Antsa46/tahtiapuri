@@ -5,8 +5,10 @@ import type { ModelInput } from "@tahtiapuri/validation/assistant";
 import { isInitialize, isRequest, type Response, type Ready } from "@tahtiapuri/validation/backend";
 import type { RuntimeStatus } from "@tahtiapuri/validation/public";
 import type { SkyQueries } from "../modules/sky/application/sky-queries.js";
+import type { PlacesService } from "../modules/observing/application/places-service.js";
+import type { ObservingOperation } from "@tahtiapuri/validation/observing";
 export function createBackendEndpoint(ports: {
-  send(message: Response | Ready): void; stop(): void; getStatus(): RuntimeStatus; now(): number; assistant?: AssistantService; sky?: SkyQueries; development: DevelopmentService;
+  send(message: Response | Ready): void; stop(): void; getStatus(): RuntimeStatus; now(): number; assistant?: AssistantService; observing?: PlacesService; sky?: SkyQueries; development: DevelopmentService;
 }) {
   let session: string | undefined;
   let closing = false;
@@ -27,6 +29,14 @@ export function createBackendEndpoint(ports: {
       if (recentIds.size > 256) recentIds.delete(recentIds.values().next().value!);
       if (message.operation === "runtime.shutdown") { closing = true; development.configure(null); }
       const operation = message.operation;
+      if (operation.startsWith("observing.")) {
+        const result = ports.observing?.execute(operation as ObservingOperation, message.input, message.expiresAtUnixMs)
+          ?? Promise.resolve({ ok: false as const, code: "UNAVAILABLE" as const });
+        void result.then(value => {
+          if (!closing) ports.send({ type: "response", protocol: 1, session: session!, id: message.id, operation, result: value });
+        });
+        return true;
+      }
       if (operation === "sky.snapshot" || operation === "sky.select") {
         const reply = (result: Response["result"]) => {
           if (!closing) ports.send({ type: "response", protocol: 1, session: session!, id: message.id, operation, result });
@@ -48,7 +58,10 @@ export function createBackendEndpoint(ports: {
         : operation === "development.detach" ? development.detach(message.input as DevelopmentIdentity)
         : operation === "development.invoke" ? development.invoke(message.input as DevelopmentInvocation) : null;
       ports.send({ type: "response", protocol: 1, session, id: message.id, operation, result });
-      if (closing) ports.stop();
+      if (closing) {
+        if (ports.observing) void ports.observing.close().finally(() => ports.stop());
+        else ports.stop();
+      }
       return true;
     },
   };

@@ -3,7 +3,7 @@
 Tämä dokumentti omistaa T07:n piirron, valinnan ja käyttöliittymän
 havaintokontekstin. [Tähtilaskenta](sky-calculation.md) omistaa laskennan,
 koordinaatit, aineiston ja tieteelliset rajat. [Turvallisuussuunnitelma](security-and-permissions-plan.md)
-omistaa yleisen oikeusrajan. Paikkojen tallennus on erillinen T08.
+omistaa yleisen oikeusrajan. Paikkojen tallennuksen omistaa [observing](observing-places.md).
 
 ## Piirtoadapterin valinta
 
@@ -60,19 +60,21 @@ Nimet ja lähdemerkinnät näytetään tekstinä, ei HTML:nä tai avattavina URL
 ## Ajan ja paikan käyttö
 
 Ilman käyttäjän antamaa kelvollista havaintopaikkaa ei esitetä oletettua
-paikkasidonnaista karttaa. Tässä vaiheessa nimi, koordinaatit, korkeus ja
-aikavyöhyke annetaan lomakkeelta; niitä ei tallenneta. T08 liittää myöhemmin
-samat käyttötapaukset tallennettuihin paikkoihin.
+paikkasidonnaista karttaa. T08:n asetuksista valittu tallennettu paikka
+antaa nimen, koordinaatit, korkeuden ja aikavyöhykkeen. Käynnistys laskee
+nykyhetken kartan; paikan vaihtaminen säilyttää viimeisimmän validoidun
+karttapyynnön UTC-hetken ja vaihtaa paikallisen näyttöajan uuden vyöhykkeen mukaan.
 
-Aika annetaan paikallisena kellonaikana, IANA-aikavyöhykkeenä ja eksplisiittisenä
-UTC-poikkeamana minuutteina. Domainin `resolveLocalTime` hylkää kesäajan
+Kartan aika annetaan paikallisena kellonaikana ja eksplisiittisenä
+UTC-poikkeamana minuutteina; IANA-aikavyöhyke tulee valitusta paikasta. Domainin `resolveLocalTime` hylkää kesäajan
 puuttuvan kellonajan ja ristiriitaisen poikkeaman. Syksyn toistuva kellonaika
 erottuu poikkeamalla. Käytetty paikka, paikallisaika, vyöhyke ja poikkeama
 näytetään palautetusta snapshotista. UTC-vuosiväli on 2000–2100.
 Nyt käyttää paikallista järjestelmäkelloa; ±1 h siirtää UTC-hetkeä ja laskee
 uuden paikallisen näyttöajan. Aika ei etene huomaamatta taustalla.
 
-Lomakkeen muutos poistaa vanhan kartan ja valinnan. Uusi snapshot hyväksytään
+Kartan ajan muutos sekä tallennetun aktiivisen paikan muutos poistavat
+vanhan kartan ja valinnan. Paikan asetusten tallentamaton luonnos ei muuta karttaa. Uusi snapshot hyväksytään
 vain samaan pyyntöön ja kontekstiin. Kohdevalinnan myöhäinen vastaus ei saa
 korvata uutta havaintokontekstia tai suljettua näkymää. AI-keskusteluun
 kytkeminen, mallin automaattinen katsaus ja keskustelusta tulevat karttapyynnöt
@@ -87,6 +89,7 @@ istunnon, operaation, voimassaoloajan, duplikaatin ja syötteen uudelleen.
 Kohde haetaan tarkistetun katalogin tunnisteesta samassa havaintokontekstissa.
 Syntaktisesti oikea mutta puuttuva tunniste hylätään.
 
+UI jonottaa vain uusimman paikkakontekstin käynnissä olevan karttapyynnön jälkeen.
 Main ja backend sallivat kumpikin yhden karttakyselyn kerrallaan;
 samalla heartbeat ja sulku säilyttävät kapasiteettinsa. Sulku estää
 myöhäisen vastauksen. Backend pitää muistissa yhden laskentatuloksen ja

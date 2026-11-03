@@ -13,6 +13,8 @@ käyttää Windowsin capability-todennettua named pipe -sovitinta;
 omistaa toteutetun sopimuksen. Se ei ole koko sovelluksen OS-eristys.
 T07:n nimetyt [karttakyselyt](sky-map.md#nimetty-ipc-ja-resurssit) käyttävät samaa
 lähettäjä- ja istuntorajaa ilman uusia verkko- tai tiedosto-oikeuksia.
+T08:n [havaintopaikat](observing-places.md) lisäävät vain nimetyt UI-asetustoiminnot
+ja backendin kiinteän observing-tallennuspolun; malli ja MCP eivät saa niitä.
 Päätösten tilan kokoaa [päätöshakemisto](../planning/decisions.md).
 
 Tämä dokumentti omistaa oikeusmatriisin, alustarajauksen vaatimukset ja

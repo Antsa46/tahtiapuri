@@ -1,3 +1,4 @@
+import { OBSERVING_CHANNELS, isObservingInput, type ObservingOperation } from "@tahtiapuri/validation/observing";
 import { SKY_CHANNELS, isObservationRequest, isSkySelectionRequest } from "@tahtiapuri/validation/sky";
 import { DevelopmentHost } from "./development-host.js";
 import { DEVELOPMENT_CHANNELS } from "@tahtiapuri/validation/development";
@@ -5,7 +6,7 @@ import { ModelHost } from "./model-host.js";
 import { ASSISTANT_CHANNELS, isModelInput, isJobId } from "@tahtiapuri/validation/assistant";
 import type { ApprovedModel } from "@tahtiapuri/validation/model-wire";
 import { app, BrowserWindow, ipcMain, protocol, session, utilityProcess } from "electron";
-import { mkdirSync } from "node:fs";
+import { prepareOwnedDataRoot } from "./owned-data-root.js";
 import { access } from "node:fs/promises";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -18,13 +19,15 @@ import { PAGE_URL, localPageResponse } from "./local-page.js";
 export type DesktopPaths = { backendEntry: string; preload: string; renderer: string; data: string; model?: { entry: string; profile: ApprovedModel; cudaPaths: string[] } };
 export function startDesktop(paths: DesktopPaths) {
   protocol.registerSchemesAsPrivileged([{ scheme: "tahtiapuri", privileges: { standard: true, secure: true } }]);
-  mkdirSync(paths.data, { recursive: true });
+  try { paths = { ...paths, data: prepareOwnedDataRoot(paths.data) }; }
+  catch { console.error("Tähtiapurin datahakemisto ei ole käytettävissä."); app.exit(1); return; }
   app.setPath("userData", paths.data);
   app.setPath("sessionData", paths.data);
   app.setPath("crashDumps", join(paths.data, "crash-dumps"));
   if (!app.requestSingleInstanceLock()) { app.exit(1); return; }
   let window: BrowserWindow | undefined;
   let skyPending = false;
+  let observingPending = false;
   let rendererTimer: NodeJS.Timeout | undefined;
   let shutdownPromise: Promise<void> | undefined;
   const model = paths.model ? new ModelHost(() => utilityProcess.fork(paths.model!.entry, [], {
@@ -44,6 +47,7 @@ export function startDesktop(paths: DesktopPaths) {
     shutdownPromise ??= (async () => {
       clearTimeout(rendererTimer);
       ipcMain.removeHandler(STATUS_CHANNEL);
+      for (const channel of Object.values(OBSERVING_CHANNELS)) ipcMain.removeHandler(channel);
       for (const channel of Object.values(SKY_CHANNELS)) ipcMain.removeHandler(channel);
       for (const channel of Object.values(ASSISTANT_CHANNELS)) ipcMain.removeHandler(channel);
       for (const channel of Object.values(DEVELOPMENT_CHANNELS)) ipcMain.removeHandler(channel);
@@ -98,6 +102,20 @@ export function startDesktop(paths: DesktopPaths) {
         return { ok: true, status };
       } catch { return { ok: false, code: "UNAVAILABLE" }; }
     });
+    for (const [name, channel] of Object.entries(OBSERVING_CHANNELS)) {
+      ipcMain.handle(channel, async (event, ...args) => {
+        const operation = ("observing." + name) as ObservingOperation;
+        if (!isTrustedSender(event, owner, PAGE_URL) || shutdownPromise || args.length !== (name === "read" ? 0 : 1)
+          || !isObservingInput(operation, args[0])) throw new Error("Request denied.");
+        if (observingPending) return { ok: false, code: "BUSY" };
+        observingPending = true;
+        try {
+          const result = await backend.observing(operation, args[0]);
+          return isTrustedSender(event, owner, PAGE_URL) && !shutdownPromise ? result : { ok: false, code: "UNAVAILABLE" };
+        } catch { return { ok: false, code: "UNAVAILABLE" }; }
+        finally { observingPending = false; }
+      });
+    }
     for (const [name, channel] of Object.entries(SKY_CHANNELS)) {
       ipcMain.handle(channel, async (event, ...args) => {
         if (!isTrustedSender(event, owner, PAGE_URL) || shutdownPromise || args.length !== 1
