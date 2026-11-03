@@ -32,6 +32,8 @@ Lue tehtävän mukaan:
   [avustajan työnkulkusuunnitelma](docs/architecture/assistant-orchestration-plan.md)
 - tähtilaskenta, aika-/koordinaattisopimus tai paikallinen tähtiaineisto:
   [tähtilaskenta](docs/architecture/sky-calculation.md)
+- paikallinen tähtikartta, piirto, kohdevalinta tai kartan IPC:
+  [tähtikartta](docs/architecture/sky-map.md)
 - käyttöliittymätekniikka, UI-kirjasto tai riippuvuuskartta:
   [tekniikkaehdotus ja käyttöliittymän linja](docs/architecture/technology-and-ui-plan.md)
 - ensimmäisen rungon rakentaminen, backend tai rakennuksen vaiheistus:

@@ -2,7 +2,7 @@
 
 Tämä ohje omistaa asennus- ja ajokomennot. Rungon vastuut ja IPC-sopimus
 ovat [runkosuunnitelmassa](../architecture/initial-skeleton-plan.md).
-Käytössä on Windows x64; muiden alustojen ajettavuutta ei ole todennettu.
+Kehityskäynnistin tukee Windows x64:ää; muiden alustojen ajettavuutta ei ole todennettu.
 
 ## Asennus ja käynnistys
 
@@ -46,7 +46,7 @@ asiakkaan erillinen määritys ja uudelleenkäynnistys on kuvattu
 
 ## Valinnainen CUDA-valmistelu
 
-Tämän koneen CUDA-ajo tarvitsee NVIDIA-ajurin lisäksi paikalliset cuBLAS- ja
+CUDA-taustan käyttö tarvitsee yhteensopivan NVIDIA-ajurin lisäksi paikalliset cuBLAS- ja
 cudart-kirjastot:
 
 ```powershell
@@ -101,7 +101,11 @@ Kehitysajo toimii tavallisen käyttäjän oikeuksilla; testaus ei osoita OS-verk
 T06:n offline-katalogi toimitetaan resources/catalogs-puussa. Tavallinen
 build tai ajo ei lataa sitä. Test-komento sisältää JPL/ERFA-vertailut,
 UTC/DST-reunat ja katalogin eheyden. [Laskentasopimus](../architecture/sky-calculation.md)
-kuvaa yksiköt ja rajat. Kartan UI-kytkentä on seuraava työpaketti.
+kuvaa yksiköt ja rajat. [Tähtikartta](../architecture/sky-map.md) toimii
+ilman kielimallia: anna havaintopaikka, paikallisaika, IANA-vyöhyke ja
+UTC-poikkeama, valitse Näytä taivas. Paikkoja ei vielä tallenneta.
+test:e2e sisältää kartan valinnan, ajan/paikan vaihdon, resurssirajan ja
+puuttuvan katalogin kokeet. Kuvakaappaukset jäävät .artifacts/tests/e2e/-puuhun.
 
 ## Erillinen 4B/8B-laatuvertailu
 

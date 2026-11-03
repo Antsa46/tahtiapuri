@@ -1,3 +1,4 @@
+import { SKY_CHANNELS, isObservationRequest, isSkySelectionRequest } from "@tahtiapuri/validation/sky";
 import { DevelopmentHost } from "./development-host.js";
 import { DEVELOPMENT_CHANNELS } from "@tahtiapuri/validation/development";
 import { ModelHost } from "./model-host.js";
@@ -23,6 +24,7 @@ export function startDesktop(paths: DesktopPaths) {
   app.setPath("crashDumps", join(paths.data, "crash-dumps"));
   if (!app.requestSingleInstanceLock()) { app.exit(1); return; }
   let window: BrowserWindow | undefined;
+  let skyPending = false;
   let rendererTimer: NodeJS.Timeout | undefined;
   let shutdownPromise: Promise<void> | undefined;
   const model = paths.model ? new ModelHost(() => utilityProcess.fork(paths.model!.entry, [], {
@@ -42,6 +44,7 @@ export function startDesktop(paths: DesktopPaths) {
     shutdownPromise ??= (async () => {
       clearTimeout(rendererTimer);
       ipcMain.removeHandler(STATUS_CHANNEL);
+      for (const channel of Object.values(SKY_CHANNELS)) ipcMain.removeHandler(channel);
       for (const channel of Object.values(ASSISTANT_CHANNELS)) ipcMain.removeHandler(channel);
       for (const channel of Object.values(DEVELOPMENT_CHANNELS)) ipcMain.removeHandler(channel);
       try { await development.stop(); } catch { code = 1; }
@@ -95,6 +98,19 @@ export function startDesktop(paths: DesktopPaths) {
         return { ok: true, status };
       } catch { return { ok: false, code: "UNAVAILABLE" }; }
     });
+    for (const [name, channel] of Object.entries(SKY_CHANNELS)) {
+      ipcMain.handle(channel, async (event, ...args) => {
+        if (!isTrustedSender(event, owner, PAGE_URL) || shutdownPromise || args.length !== 1
+          || !(name === "snapshot" ? isObservationRequest(args[0]) : isSkySelectionRequest(args[0]))) throw new Error("Request denied.");
+        if (skyPending) return { ok: false, code: "BUSY" };
+        skyPending = true;
+        try {
+          const result = name === "snapshot" ? await backend.sky("sky.snapshot", args[0]) : await backend.sky("sky.select", args[0]);
+          return isTrustedSender(event, owner, PAGE_URL) && !shutdownPromise ? result : { ok: false, code: "UNAVAILABLE" };
+        } catch { return { ok: false, code: "UNAVAILABLE" }; }
+        finally { skyPending = false; }
+      });
+    }
     for (const [name, channel] of Object.entries(ASSISTANT_CHANNELS)) {
       ipcMain.handle(channel, async (event, ...args) => {
         if (!isTrustedSender(event, owner, PAGE_URL) || shutdownPromise || args.length !== 1

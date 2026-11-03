@@ -10,8 +10,10 @@ rajattujen agenttiroolien ja AI-avusteisen ohjelmistokehityksen tutkimiseen.
 **Nykytila:** Electron-sovelluksessa voi keskustella paikallisen Qwen3-4B-mallin
 kanssa CPU:lla tai CUDA:lla. Malli toimii erillisessä UtilityProcessissa;
 käyttöliittymä käyttää rajattua IPC:tä. Asetuksista avattava stdio-MCP-kehitysyhteys
-mahdollistaa erilliset mallikokeet. Backendissä on paikallinen tähtilaskenta
-ja 5 070 tähden aineisto. Tähtikartan käyttöliittymä ja sää ovat seuraavia vaiheita.
+mahdollistaa erilliset mallikokeet. Paikallinen tähtikartta näyttää
+valitun ajan ja paikan kohteet sekä niiden laskentakortit, mukana 5 070 tähteä.
+Karttaa voi tutkia myös ilman mallia. Sää ja kartan yhdistäminen keskusteluun
+ovat seuraavia vaiheita.
 
 ## Tavoitellut ominaisuudet
 
@@ -33,7 +35,7 @@ haetaan erikseen rajatun API-yhteyden kautta.
 | Käyttöliittymä | React, Vite ja CSS Modules |
 | Paikallinen backend | Node.js / TypeScript ja rajattu IPC-viestintä |
 | Mallimoottori | node-llama-cpp / llama.cpp erillisessä UtilityProcessissa |
-| Tähtikartta ja laskenta | Astronomy Engine 2.1.19 ja HYG 4.1; D3-Celestial arvioitavana piirtoadapterina |
+| Tähtikartta ja laskenta | Canvas 2D, Astronomy Engine 2.1.19 ja HYG 4.1 |
 | Sää | Ilmatieteen laitoksen avoin data |
 
 Ensimmäiset mallikokeet tehdään 4B- ja 8B-kokoluokissa. GGUF-painot

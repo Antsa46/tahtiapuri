@@ -4,11 +4,13 @@ import type { DevelopmentIdentity, DevelopmentInvocation } from "@tahtiapuri/val
 import type { ModelInput } from "@tahtiapuri/validation/assistant";
 import { isInitialize, isRequest, type Response, type Ready } from "@tahtiapuri/validation/backend";
 import type { RuntimeStatus } from "@tahtiapuri/validation/public";
+import type { SkyQueries } from "../modules/sky/application/sky-queries.js";
 export function createBackendEndpoint(ports: {
-  send(message: Response | Ready): void; stop(): void; getStatus(): RuntimeStatus; now(): number; assistant?: AssistantService; development: DevelopmentService;
+  send(message: Response | Ready): void; stop(): void; getStatus(): RuntimeStatus; now(): number; assistant?: AssistantService; sky?: SkyQueries; development: DevelopmentService;
 }) {
   let session: string | undefined;
   let closing = false;
+  let skyPending = false;
   const development = ports.development;
   const recentIds = new Set<string>();
   return {
@@ -25,6 +27,17 @@ export function createBackendEndpoint(ports: {
       if (recentIds.size > 256) recentIds.delete(recentIds.values().next().value!);
       if (message.operation === "runtime.shutdown") { closing = true; development.configure(null); }
       const operation = message.operation;
+      if (operation === "sky.snapshot" || operation === "sky.select") {
+        const reply = (result: Response["result"]) => {
+          if (!closing) ports.send({ type: "response", protocol: 1, session: session!, id: message.id, operation, result });
+        };
+        if (skyPending) { reply({ ok: false, code: "BUSY" }); return true; }
+        skyPending = true;
+        const query = ports.sky ? (operation === "sky.snapshot" ? ports.sky.snapshot(message.input) : ports.sky.select(message.input))
+          : Promise.resolve({ ok: false as const, code: "CATALOG_UNAVAILABLE" as const });
+        void query.then(reply, () => reply({ ok: false, code: "UNAVAILABLE" })).finally(() => { skyPending = false; });
+        return true;
+      }
       const result = operation === "runtime.status" ? ports.getStatus()
         : operation === "assistant.submit" ? (ports.assistant?.submit(message.input as ModelInput) ?? { ok: false as const, code: "ENGINE_UNAVAILABLE" as const })
         : operation === "assistant.get" ? (ports.assistant?.get(message.input as string) ?? { ok: false as const, code: "ENGINE_UNAVAILABLE" as const })

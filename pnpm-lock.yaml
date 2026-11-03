@@ -253,6 +253,9 @@ importers:
       '@tahtiapuri/api-client':
         specifier: workspace:*
         version: link:../../packages/api-client
+      '@tahtiapuri/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
       '@tahtiapuri/validation':
         specifier: workspace:*
         version: link:../../packages/validation
@@ -271,7 +274,11 @@ importers:
 
   packages/domain: {}
 
-  packages/validation: {}
+  packages/validation:
+    dependencies:
+      '@tahtiapuri/domain':
+        specifier: workspace:*
+        version: link:../domain
 
 packages:
 

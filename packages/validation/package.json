@@ -9,7 +9,10 @@
     "./assistant": "./dist/assistant.js",
     "./model-wire": "./dist/model-wire.js",
     "./development": "./dist/development.js",
-    "./development-framing": "./dist/development-framing.js"
+    "./development-framing": "./dist/development-framing.js",
+    "./sky": "./dist/sky.js"
   },
-  "dependencies": {}
+  "dependencies": {
+    "@tahtiapuri/domain": "workspace:*"
+  }
 }

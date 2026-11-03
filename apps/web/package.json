@@ -8,6 +8,7 @@
     "@tahtiapuri/validation": "workspace:*",
     "@tahtiapuri/api-client": "workspace:*",
     "react": "19.3.1",
-    "react-dom": "19.3.1"
+    "react-dom": "19.3.1",
+    "@tahtiapuri/domain": "workspace:*"
   }
 }

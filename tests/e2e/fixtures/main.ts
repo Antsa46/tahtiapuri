@@ -4,7 +4,8 @@ import { join } from "node:path";
 const root = process.cwd();
 const scenario = process.argv.at(-2);
 const data = process.argv.at(-1)!;
-const backendEntry = scenario === "early-exit" ? join(root, ".artifacts/tests/e2e-build/early-exit.js")
+const backendEntry = scenario === "sky-no-catalog" ? join(root, ".artifacts/tests/e2e-build/sky-no-catalog.js")
+  : scenario === "early-exit" ? join(root, ".artifacts/tests/e2e-build/early-exit.js")
   : scenario === "unresponsive" ? join(root, ".artifacts/tests/e2e-build/unresponsive.js")
   : scenario === "unready-ui" ? join(root, ".artifacts/tests/e2e-build/recording-backend.js")
   : join(root, "apps/backend/dist/runtime/backend.js");

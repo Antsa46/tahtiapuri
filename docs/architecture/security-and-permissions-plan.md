@@ -11,6 +11,8 @@ OS-eristystä ei ole vielä toteutettu. T05:n rajattu stdio-MCP-yhteys
 käyttää Windowsin capability-todennettua named pipe -sovitinta;
 [mallisuunnitelma](local-model-plan.md#kehitys--ja-diagnostiikkarajapinta-paikalliseen-malliin)
 omistaa toteutetun sopimuksen. Se ei ole koko sovelluksen OS-eristys.
+T07:n nimetyt [karttakyselyt](sky-map.md#nimetty-ipc-ja-resurssit) käyttävät samaa
+lähettäjä- ja istuntorajaa ilman uusia verkko- tai tiedosto-oikeuksia.
 Päätösten tilan kokoaa [päätöshakemisto](../planning/decisions.md).
 
 Tämä dokumentti omistaa oikeusmatriisin, alustarajauksen vaatimukset ja

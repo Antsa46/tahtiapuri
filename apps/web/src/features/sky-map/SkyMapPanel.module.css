@@ -1,0 +1,51 @@
+.panel { min-width: 0; }
+.titleRow { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 22px; }
+.eyebrow { color: #93b7c5; text-transform: uppercase; font-size: 11px; letter-spacing: .13em; margin: 0 0 8px; }
+.titleRow h2 { margin: 0; font-size: clamp(24px, 3vw, 34px); font-weight: 500; letter-spacing: -.025em; }
+.offline { font-size: 12px; white-space: nowrap; color: #9dd5bd; border: 1px solid #314d47; padding: 7px 11px; border-radius: 20px; }
+.contextForm { padding: 20px 22px 10px; background: #111c2b; border: 1px solid #2b3e51; border-radius: 14px; }
+.contextForm fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.contextForm legend { font-size: 13px; color: #d4dfe9; margin-bottom: 16px; }
+.fields { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.fields label, .finder label { display: block; font-size: 12px; color: #acbdd1; }
+.panel input, .panel select { display: block; width: 100%; min-width: 0; background: #0b1421; color: #e6edf7; border: 1px solid #435771; border-radius: 7px; padding: 9px 10px; margin-top: 6px; font: inherit; font-size: 13px; color-scheme: dark; }
+.panel input:focus-visible, .panel select:focus-visible { outline: 2px solid #9dd5bd; outline-offset: 2px; }
+.panel button { border-radius: 7px; border: 1px solid #4b626f; background: #213c46; color: #dfeeed; padding: 8px 14px; cursor: pointer; }
+.panel button:hover { background: #2d4b59; }
+.panel button:disabled { opacity: .5; cursor: wait; }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 16px; }
+.actions span { font-size: 11px; color: #a3b3c5; }
+.small, .sources { font-size: 12px; line-height: 1.6; color: #9cacc1; overflow-wrap: anywhere; }
+.state { margin: 18px 0 8px; font-size: 13px; color: #b4c9d9; min-height: 22px; }
+.error { color: #f3bda9; background: #392b2a; border: 1px solid #775040; border-radius: 9px; padding: 14px; line-height: 1.6; }
+.error button { margin-left: 10px; }
+.workspace { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 26px; align-items: start; }
+.chartColumn { min-width: 0; }
+.activeContext { text-align: center; display: grid; gap: 6px; padding: 12px 0 4px; font-size: 12px; color: #a8bed2; }
+.activeContext strong { font-size: 16px; color: #e3ebf4; font-weight: 500; }
+.timeActions { display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 8px; font-size: 11px; }
+.timeActions button { padding: 5px 10px; white-space: nowrap; }
+.mapFrame { position: relative; width: 100%; aspect-ratio: 1; }
+.canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
+.emptyMap { position: absolute; inset: 20%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: #a3b6cd; pointer-events: none; }
+.emptyMap > span { font-size: 48px; color: #8eacb9; }
+.emptyMap h3 { font-size: 20px; font-weight: 400; color: #dae2ee; }
+.emptyMap p { font-size: 13px; line-height: 1.7; max-width: 280px; }
+.detailColumn { display: grid; gap: 18px; }
+.finder, .objectCard { padding: 20px; background: #111c2b; border: 1px solid #2b3e51; border-radius: 14px; }
+.finder h3 { margin: 0 0 16px; font-size: 16px; font-weight: 500; }
+.finder label + label { margin-top: 14px; }
+.objectCard h3 { font-size: 26px; font-weight: 400; letter-spacing: -.02em; margin: 12px 0; }
+.objectCard p { font-size: 13px; line-height: 1.6; color: #a6b8ca; }
+.objectCard .horizon { font-size: 12px; color: #c7dfd8; }
+.facts { display: grid; gap: 14px; margin: 24px 0; }
+.facts > div { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+.facts dt { font-size: 12px; color: #9fb4cb; }
+.facts dd { font-size: 15px; margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.objectCard .small { font-size: 11px; }
+.objectCard .sunWarning { color: #edcb9e; border-top: 1px solid #4a453d; padding-top: 12px; }
+.sources { padding: 0 4px; }
+.sources h3 { color: #b7c6d7; font-size: 12px; font-weight: 600; }
+@media (max-width: 1050px) { .workspace { grid-template-columns: minmax(0, 1fr) 230px; gap: 16px; } .fields { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 760px) { .workspace { grid-template-columns: 1fr; } .detailColumn { grid-template-columns: 1fr 1fr; align-items: start; } .sources { grid-column: 1 / -1; } .fields { grid-template-columns: repeat(2, minmax(0, 1fr)); } .offline { font-size: 10px; } }
+@media (max-width: 450px) { .detailColumn { grid-template-columns: 1fr; } .fields { grid-template-columns: 1fr; } .titleRow { align-items: start; flex-direction: column; } }

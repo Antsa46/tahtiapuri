@@ -88,3 +88,6 @@ JPL kattaa horisontin molemmat puolet, Suomen DST-vaihdot ja 70°N:n kesän/talv
 ERFA tarkistaa synteettisen tähtisuunnan, horisonttimuunnoksen ja omanliikkeen
 erillisellä matriisilla. IANA tzdb-2024a määrittää siviiliajan testiodotukset.
 Tavalliset testit eivät hae aineistoa verkosta.
+
+Karttakytkennän, kohdevalinnan ja näyttöpyöristyksen omistaa
+[paikallinen tähtikartta](sky-map.md). Laskentapalvelu pysyy piirrosta riippumattomana.

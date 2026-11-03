@@ -53,3 +53,7 @@ Tämä koonti ei valitse projektin oman lähdekoodin lisenssiä.
 
 SDK:n Git-aliriippuvuuden rajatun yliajon syy, lähteet ja tarkistusraja ovat
 [moottorikokeen raportissa](../experiments/model-runtime-probe.md#aliriippuvuuden-audit-ja-rajattu-poikkeama).
+
+T07:n kartta käyttää selaimen Canvas 2D -rajapintaa ja samoja HYG/Astronomy Engine
+-resursseja. D3-Celestialia tai uusia kuva-/fontti-/katalogiriippuvuuksia ei
+otettu käyttöön. Kartan aineistomerkinnät kuvataan [tähtikarttasopimuksessa](../architecture/sky-map.md).

@@ -17,7 +17,7 @@ test("status crosses the real sandboxed renderer/main/backend path", async ({}, 
       require: typeof (window as unknown as Record<string, unknown>).require,
       process: typeof (window as unknown as Record<string, unknown>).process,
       bridge: Object.keys(window.tahtiapuri),
-    }))).toEqual({ require: "undefined", process: "undefined", bridge: ["assistant", "development", "getStatus"] });
+    }))).toEqual({ require: "undefined", process: "undefined", bridge: ["sky", "assistant", "development", "getStatus"] });
     await page.screenshot({ path: info.outputPath("tahtiapuri.png") });
   } finally { await app.close(); }
   await expectGone(pid);

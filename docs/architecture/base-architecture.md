@@ -132,6 +132,9 @@ Reactin ja muiden työkalujen valinta on erillinen asia.
 [UI- ja tekniikkaehdotus](technology-and-ui-plan.md) omistaa
 alustavan riippuvuuskartan sekä sääpalveluvertailun.
 React/Vite ja oma CSS Modules -tyylitys on hyväksytty tekniseksi suunnaksi.
+T07:n [tähtikarttasopimus](sky-map.md) kuvaa toteutetun paikallisen piirron,
+kohdevalinnan sekä nimetyt snapshot/select-operaatiot.
+
 Main–backend-yhteys on sovittu suoraan IPC:hen; siihen ei lisätä
 HTTP-frameworkia. Mahdollinen myöhempi HTTP-sovitin arvioidaan erikseen.
 Yleistä utils-, auth-, cloud- tai agenttikehystä ei tarvita alkuun.
