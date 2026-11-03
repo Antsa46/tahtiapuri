@@ -133,6 +133,10 @@ sovelluksen paikallisista 4B/8B-malleista ja ajonaikaisista mallirooleista.
 - Pidä README tiiviinä projektiesittelynä. Päätösten tila kuuluu
   päätöshakemistoon ja tekniset sopimukset aihedokumentteihin.
   Toteutustöiden elävä tila säilyy GitHub-issueissa.
+- Tarkista toteutus issuen jokaista hyväksymisehtoa vasten. Merkitse ruutu
+  tehdyksi vasta näytön perusteella ja sulje issue completed-tilaan, kun
+  kaikki ehdot ja vaadittu katselmus täyttyvät. Kirjaa tulos ja tokenit
+  issueen kehitysmalliohjeen mukaan.
 - Raportoi tehdyt tiedostomuutokset, ajetut tarkistukset ja avoimet kohdat.
   Ajamaton testi ei ole läpäissyt testi.
 - Dokumentaatiomuutoksessa linkkien ja sisällön tarkistus riittää, kun

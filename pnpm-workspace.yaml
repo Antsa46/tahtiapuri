@@ -1,0 +1,13 @@
+packages:
+  - apps/*
+  - packages/*
+storeDir: .local/cache/pnpm
+cacheDir: .local/cache/pnpm-cache
+ignoreScripts: true
+verifyStoreIntegrity: true
+pmOnFail: error
+minimumReleaseAgeStrict: true
+minimumReleaseAgeExclude:
+  - '@vitest/mocker@5.1.0'
+  - '@vitest/spy@5.1.0'
+  - 'vitest@5.1.0'

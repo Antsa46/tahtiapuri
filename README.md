@@ -1,6 +1,6 @@
 # Tähtiapuri
 
-Tähtiapuri on suunnitteilla oleva työpöytäsovellus tähtitaivaan havainnointiin.
+Tähtiapuri on kehitteillä oleva työpöytäsovellus tähtitaivaan havainnointiin.
 Paikallinen kielimalli auttaa keskustelemaan siitä, mitä valitussa paikassa
 näkyy nyt tai myöhemmin illalla.
 
@@ -9,9 +9,9 @@ opetellaan paikallisten kielimallien, rajattujen agenttiroolien ja
 AI-avusteisen ohjelmistokehityksen käyttöä. Oppeja on tarkoitus hyödyntää
 myöhemmin toisessa Electron-sovelluksessa.
 
-**Nykytila:** ensimmäisen mallikokeen valmistelu. Repositorio sisältää
-arkkitehtuurin, käyttötapaukset, roadmapin ja synteettisen 4B/8B-koeaineiston.
-Ajettavaa sovellusta ei vielä ole.
+**Nykytila:** ajettava Electron–backend-kehitysrunko. React-näkymän
+paikallinen statuskysely kulkee rajatun IPC:n kautta erilliseen backendiin.
+Kielimalli, tähtikartta ja sää liitetään mukaan seuraavissa vaiheissa.
 
 ## Tavoitellut ominaisuudet
 
@@ -76,9 +76,18 @@ ja [työohjeet](AGENTS.md) kuvaavat toimintatavan tarkemmin.
 
 ## Kehitys ja dokumentaatio
 
-Ensimmäinen tekninen tavoite on rajattu 4B/8B-mallikoe ennen koko
-käyttöliittymän viimeistelyä. Asennus- ja ajo-ohjeet lisätään ensimmäisen
-ajettavan version yhteydessä.
+Windowsin PowerShellissä, projektijuuressa:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev.ps1 install
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev.ps1 build
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev.ps1 start
+```
+
+[Paikallinen kehitys ja testaus](docs/development/local-development.md) kuvaa
+työkaluketjun, polut ja tarkistuskomennot. [Riippuvuudet ja lisenssit](docs/legal/dependencies.md)
+täydennetään toimitettavan sisällön mukaan. Ensimmäinen mallikoe käyttää
+4B/8B-malleille yhteistä synteettistä aineistoa.
 
 - [Roadmap ja työpaketit](docs/planning/roadmap.md)
 - [GitHub-työjono](https://github.com/Antsa46/tahtiapuri/issues)

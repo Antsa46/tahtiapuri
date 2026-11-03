@@ -1,0 +1,13 @@
+{
+  "name": "@tahtiapuri/web",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {},
+  "dependencies": {
+    "@tahtiapuri/validation": "workspace:*",
+    "@tahtiapuri/api-client": "workspace:*",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  }
+}

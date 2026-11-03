@@ -1,0 +1,20 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "tsBuildInfoFile": "../../.artifacts/build/backend.tsbuildinfo"
+  },
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.cts"
+  ],
+  "exclude": [
+    "src/**/*.test.ts"
+  ],
+  "references": [
+    {
+      "path": "../../packages/validation"
+    }
+  ]
+}

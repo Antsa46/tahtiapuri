@@ -2,7 +2,8 @@
 
 Tila: suunnitteluehdotus, päivitetty 3.11.2026.
 [Päätösten tila](../planning/decisions.md) erottaa käyttäjän linjaukset ehdotuksista.
-Alla olevat lähdepolut ovat tulevan rakenteen ehdotus.
+Alla oleva kokonaiskuva sisältää myös tulevat osat. T02:n toteutetun
+statusrungon ja viestisopimuksen omistaa [runkosuunnitelma](initial-skeleton-plan.md#t02n-toteutettu-runko).
 
 ## Ydinajatus
 
@@ -11,7 +12,7 @@ paikallinen backend. Backendin application-kerros koordinoi käyttötapaukset,
 domain omistaa havaintosäännöt ja sovittimet ulkoiset tekniikat.
 Laskenta toimii ilman Electronia, kielimallia tai internetiä.
 
-Backend lisätään ensimmäiseen toteutusrunkoon, jos ehdotus hyväksytään.
+Backend on mukana ensimmäisessä toteutusrungossa.
 Sen ei tarvitse aluksi käyttää verkkoa, tietokantaa tai oikeaa kielimallia.
 [Runkosuunnitelma](initial-skeleton-plan.md) omistaa etenemisjärjestyksen;
 [mallisuunnitelma](local-model-plan.md) mallirajapinnan ja toimituksen.
@@ -207,7 +208,7 @@ ei kuulu Electronin suljettaviin lapsiprosesseihin.
 | Yhteys | Kuljetus ja rajaus |
 | --- | --- |
 | Renderer → main | Nimetyt preload-operaatiot Electron IPC:llä. Main tarkistaa lähettäjän, operaation ja aineiston; vapaata IPC- tai HTTP-proxyä ei tarjota. |
-| Main → backend | Sovittu suora IPC. Main antaa kanavan käynnistämälleen backendille; tämän yhteyden HTTP-palvelinta ei rakenneta. Tarkka IPC-väline ja oikeusrajat täsmennetään toteutussopimuksessa. |
+| Main → backend | Sovittu suora IPC. Main antaa kanavan käynnistämälleen backendille; tämän yhteyden HTTP-palvelinta ei rakenneta. UtilityProcess/parentPort ja T02:n viestisopimus kuvataan [runkosuunnitelmassa](initial-skeleton-plan.md#t02n-toteutettu-runko). |
 | Backend → mallimoottori | Mallisovittimen takana oleva rajattu paikallinen yhteys. Tarkka kuljetus valitaan moottorikokeessa; renderer ja MCP eivät käytä moottorin raakaa APIa. |
 | Backend → säätyöntekijä | Yksityinen, nimettyyn ennustepyyntöön rajattu prosessiyhteys. Työntekijä saa vain ennusteen tarvitsemat tiedot. |
 | Codex → MCP-sovitin | Sovittu stdio-MCP. Kehitysyhteyden sopimuksen ja oikeudet omistaa [mallisuunnitelma](local-model-plan.md#kehitys--ja-diagnostiikkarajapinta-paikalliseen-malliin). |

@@ -1,0 +1,17 @@
+{
+  "files": [],
+  "references": [
+    {
+      "path": "packages/validation"
+    },
+    {
+      "path": "packages/api-client"
+    },
+    {
+      "path": "apps/backend"
+    },
+    {
+      "path": "apps/desktop"
+    }
+  ]
+}

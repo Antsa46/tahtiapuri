@@ -1,0 +1,12 @@
+{
+  "name": "@tahtiapuri/desktop",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./bootstrap": "./dist/main/start-desktop.js"
+  },
+  "dependencies": {
+    "@tahtiapuri/validation": "workspace:*"
+  }
+}

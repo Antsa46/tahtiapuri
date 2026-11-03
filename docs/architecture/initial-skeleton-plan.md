@@ -3,7 +3,8 @@
 Tämä on toteutusvaiheen ehdotus. Päätösten tilan kokoaa
 [päätöshakemisto](../planning/decisions.md). Käyttäjä on valtuuttanut toteutuksen
 aloittamisen issue kerrallaan; ensimmäisen kokeen lähtötiedot ovat
-[kokeen kuvauksessa](../experiments/model-pilot.md). Ajettavaa runkoa ei vielä ole.
+[kokeen kuvauksessa](../experiments/model-pilot.md). T02:n statusrunko on toteutettu;
+varsinaiset havainto- ja mallitoiminnot kuuluvat seuraaviin työpaketteihin.
 Sovellusjaon omistaa [perusarkkitehtuuri](base-architecture.md);
 oikeusrajat ja eristyksen käyttöönoton ehdot
 [turvallisuussuunnitelma](security-and-permissions-plan.md).
@@ -56,8 +57,72 @@ työjonoa tai samaa vaiheistusta erillisenä taulukkona.
   Paketoinnin resurssit määritellään sallittujen tiedostojen listana.
 
 Tarkistukset perustuvat [testausohjeeseen](../ai/testing-rules.md).
-Toteutusvaiheessa määritellään todelliset typecheck-, build- ja testikomennot.
+Todelliset typecheck-, build- ja testikomennot ovat
+[paikallisessa kehitysohjeessa](../development/local-development.md).
 Dokumenttiin kirjoitettu esimerkkipolku tai tuleva tarkistus ei ole ajettu koe.
+
+## T02:n toteutettu runko
+
+Ensimmäinen ajettava runko käyttää valittua apps/- ja packages/-jakoa:
+React-näkymä → rajattu preload → main → UtilityProcess-backend.
+Status ei tarvitse havaintopaikkaa, sääyhteyttä, tietokantaa tai kielimallia.
+Backendin runtime-status on kuljetuksesta riippumaton sovelluskäyttötapaus.
+Astronomian domain-paketti lisätään vasta, kun sillä on oikeita sääntöjä;
+sitä ei ole luotu täytteeksi eikä siihen kytketä Electronia.
+
+### IPC-sopimus
+
+- UI:n ainoa komento on argumentiton window.tahtiapuri.getStatus().
+  Main tarkistaa omistetun WebContentsin, pääkehyksen, tarkan
+  tahtiapuri://app/index.html-osoitteen ja argumenttien puuttumisen.
+- Main ja backend käyttävät yksityistä utilityProcess/parentPort-kanavaa.
+  Mainin satunnainen 256-bittinen istuntoavain välitetään alustusviestissä;
+  sitä ei anneta rendererille, komentoriville, käyttöympäristölle tai lokeihin.
+- Alustus ja valmius käyttävät protokollaversiota 1.
+  Pyyntö sisältää tyypin, version, istunnon, UUID-tunnisteen,
+  nimetyn operaation ja päättymisajan. Tuntemattomat kentät hylätään.
+- Operaatiot ovat runtime.status, runtime.ping ja runtime.shutdown.
+  Pyynnön määräaika on enintään 5 sekunnin päässä; main käyttää 2,5 sekuntia.
+  Väärä istunto, vanha määräaika, tuntematon operaatio ja toistettu tunniste hylätään.
+- Main hyväksyy vain oikeaan istuntoon, vireillä olevaan tunnisteeseen
+  ja operaatioon kuuluvan tarkistetun vastauksen.
+  UI saa vain julkisen statusvastauksen tai UNAVAILABLE-koodin.
+- Vireillä on enintään 14 statuspyyntöä; heartbeatille ja sululle jää kapasiteetti.
+  Heartbeat lähetetään 2 sekunnin välein, yksi kerrallaan.
+  Kapasiteettipaine ei itsessään tarkoita backendin kuolemaa.
+- Backendin 256 viimeisimmän tunnisteen joukko on rajattu.
+  Se ei tarjoa yleistä tiedosto-, URL-, shell- tai viestinvälitystyökalua.
+
+Viestien runtime-validaattorit ovat packages/validation/src/-puussa;
+UI-asiakas käyttää vain julkista sopimusta. Käyttötapaus ja IPC-adapteri
+ovat backendissä, prosessin omistajuus desktop-mainissa.
+
+### Käynnistys, sulku ja käyttöliittymän rajat
+
+Backendin valmiudelle ja ensimmäiselle onnistuneelle UI-statuskierrokselle
+on kummallekin 5 sekunnin aikaraja. Puuttuvat preload/index-resurssit
+havaitaan ennen backendin käynnistystä. UI:n valmius vaatii saman
+lähettäjä- ja vastaustarkistuksen kuin myöhemmät pyynnöt.
+
+Sulku estää uudet kutsut, hylkää vireillä olevat pyynnöt ja lähettää
+omistetulle backendille sulkukäskyn. Main odottaa rajatusti ja tarvittaessa
+päättää juuri omistamansa UtilityProcessin; poistuminen varmistetaan.
+Backendin, rendererin tai käynnistyksen virhe sulkee tämän ensimmäisen
+rungon. Mallin myöhempi kaatuminen on eri käyttötapaus T03:ssa.
+Backendillä on lisäksi 10 sekunnin parent-heartbeat-vahti.
+Tämän toimivuus paketoidussa ohjelmassa varmistetaan toimituskokeessa.
+
+Renderer käyttää sandboxia ja context isolationia, ilman Node-integraatiota.
+Paikallinen protokollakäsittelijä palvelee vain indexin ja hyväksytyt JS/CSS-resurssit.
+CSP ja oman session pyyntösuodatin rajaavat rendererin verkkopyynnöt;
+navigointi, uudet ikkunat, webviewt ja laiteoikeudet on estetty.
+Backendille välitetään erikseen sallittu pieni Windows-ympäristö,
+ei kehittäjän tunnuksia tai Node-käynnistysasetuksia.
+Nämä sovellusrajat eivät toteuta T09:n OS-eristystä.
+
+Ajo- ja tarkistuskomennot omistaa [paikallinen kehitysohje](../development/local-development.md).
+Tämän työpaketin tarkistusten tulokset ja hyväksyntä säilyvät
+[issue #3:ssa](https://github.com/Antsa46/tahtiapuri/issues/3).
 
 ## Ennen verkkokokeilua ratkaistavat asiat
 

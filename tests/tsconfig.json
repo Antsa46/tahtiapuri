@@ -1,0 +1,23 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": false,
+    "noEmit": true
+  },
+  "include": [
+    "integration/**/*.ts",
+    "e2e/**/*.ts",
+    "../apps/web/src/env.d.ts"
+  ],
+  "references": [
+    {
+      "path": "../apps/desktop"
+    },
+    {
+      "path": "../packages/validation"
+    },
+    {
+      "path": "../apps/backend"
+    }
+  ]
+}

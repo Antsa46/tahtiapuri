@@ -6,7 +6,8 @@ Ohjelma ja moottori suunnitellaan samaan asennukseen; Tähtiapurin
 vertailupainot ovat erillisessä paikallisessa mallikansiossa.
 Vain säätyöntekijän ulkoinen verkkolupa on tavoite. Muut alla esitetyt
 oikeustarkennukset ja toteutusmekanismit ovat ehdotuksia, ellei niitä merkitä
-sovituiksi. Sovellusta, eristystä tai MCP-yhteyttä ei ole vielä toteutettu.
+sovituiksi. T02:n statusrunko ja sen IPC-rajat on toteutettu;
+OS-eristystä tai MCP-yhteyttä ei ole vielä toteutettu.
 Päätösten tilan kokoaa [päätöshakemisto](../planning/decisions.md).
 
 Tämä dokumentti omistaa oikeusmatriisin, alustarajauksen vaatimukset ja

@@ -58,6 +58,15 @@ Laajojen testien ja yhteisen apuaineiston sijainnin omistaa
 Jaettu webin sisäinen UI-osa erotetaan vasta todellisesta toistosta.
 packages/ui-pakettia ei perusteta yhden rendererin vuoksi.
 
+## Käyttöön otetut versiot
+
+T02:n Electron/TypeScript/React/Vite-runko on toteutettu. Täsmäversiot
+omistavat työtilan package.json-tiedostot ja pnpm-lock.yaml; työkalujen
+arkistotarkisteet scripts/dev/toolchain.json.
+[Riippuvuuskoonti](../legal/dependencies.md) kirjaa tarkoituksen ja lisenssilähteet,
+[kehitysohje](../development/local-development.md) ajokomennot.
+Alla oleva kartta sisältää edelleen myöhempiä, asentamattomia osia.
+
 ## Alustava riippuvuuskartta
 
 Taulukko kuvaa tarkoitusta ja sijoittelua, ei valmista asennuslistaa.

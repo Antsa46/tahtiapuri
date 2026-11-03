@@ -1,0 +1,11 @@
+{
+  "name": "@tahtiapuri/validation",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./public": "./dist/public-api.js",
+    "./backend": "./dist/backend-protocol.js"
+  },
+  "dependencies": {}
+}

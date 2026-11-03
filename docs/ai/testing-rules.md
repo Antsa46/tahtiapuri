@@ -8,8 +8,9 @@ Käyttäjä jätti sijoittelun ja ylläpidon Codexin harkintaan. Nykyinen
 yhdistelmä säilyy; sijoittelua muutetaan vain todellisen ylläpitohyödyn
 perusteella ja ohje päivitetään samalla.
 Ensimmäisen kokeen testityökalun versio on valittu
-[kokeen lähtötiedoissa](../experiments/model-pilot.md), mutta työkaluja
-tai ajokomentoja ei ole vielä asennettu tai ajettu.
+[kokeen lähtötiedoissa](../experiments/model-pilot.md). T02:ssa on otettu käyttöön
+Vitest ja Playwright; todelliset ajokomennot ja raporttipolut ovat
+[paikallisessa kehitysohjeessa](../development/local-development.md).
 Lähderakenteen omistaa [perusarkkitehtuuri](../architecture/base-architecture.md).
 Alla olevat polut kuvaavat tulevaa rakennetta, eivät olemassa olevaa koodia.
 

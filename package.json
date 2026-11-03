@@ -1,0 +1,31 @@
+{
+  "name": "tahtiapuri",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "apps/desktop/dist/main/index.js",
+  "packageManager": "pnpm@12.16.1",
+  "engines": {
+    "node": ">=24.22.2 <25"
+  },
+  "scripts": {
+    "build": "tsc -b && vite build --config apps/web/vite.config.ts",
+    "typecheck": "tsc -b && tsc --noEmit -p apps/web/tsconfig.json && tsc --noEmit -p tests/tsconfig.json",
+    "start": "node scripts/launch-desktop.mjs",
+    "test": "vitest run",
+    "build:e2e": "tsc -p tests/e2e/tsconfig.json",
+    "test:e2e": "pnpm run build && pnpm run build:e2e && playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1",
+    "@tahtiapuri/desktop": "workspace:*",
+    "@types/node": "24.10.0",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.2.1",
+    "electron": "45.2.1",
+    "typescript": "7.0.2",
+    "vite": "8.3.5",
+    "vitest": "5.1.0"
+  }
+}

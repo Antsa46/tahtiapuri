@@ -23,6 +23,8 @@ vastuurajan, lue myös toisen osapuolen sopimus.
 | Käyttöliittymätekniikka, sääpalveluvertailu ja riippuvuuskartta | [architecture/technology-and-ui-plan.md](architecture/technology-and-ui-plan.md) |
 | Kevyt backend, ensimmäisen rungon vaiheistus ja rakennuksen tarkistukset | [architecture/initial-skeleton-plan.md](architecture/initial-skeleton-plan.md) |
 | Mallirajapinta, asetusten mallinvaihto ja mallikansio, vertailukokoelma, moottorin turvatiedot, lisenssit ja Codexin stdio-MCP-yhteys | [architecture/local-model-plan.md](architecture/local-model-plan.md) |
+| Asennus, rakentaminen ja paikalliset testikomennot Windowsissa | [development/local-development.md](development/local-development.md) |
+| Käyttöön otetut riippuvuudet ja lisenssikoonti | [legal/dependencies.md](legal/dependencies.md) |
 | Kehitystyön pääkehittäjä ja kriittisten muutosten tarkastaja | [AGENTS.md](../AGENTS.md#kehitystyön-roolit-ja-katselmus) |
 | Ensimmäisen oman työskentelyskillin luonnos: tehtävän aloitus ja valmistuminen | [ai/skills/task-start-finish/SKILL.md](ai/skills/task-start-finish/SKILL.md) |
 | Yhteinen kehitystapa, GitHub-tehtävien ja ohjeiden työnjako, kymmenen aloituskohtaa ja rakennemallin nimitys | [ai/project-start-checklist.md](ai/project-start-checklist.md) |

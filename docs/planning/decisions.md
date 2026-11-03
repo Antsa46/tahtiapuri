@@ -13,7 +13,7 @@ valmistumisen näyttö [GitHub-issueissa](https://github.com/Antsa46/tahtiapuri/
 | Aihe | Tila | Omistava dokumentti |
 | --- | --- | --- |
 | Ensimmäinen käyttöversio | Sovittu: kartta, keskusteleva katsaus, kohdetiedot, sää, paikat ja paikallinen historia. | [Tuoterajaus](../product/project-definition.md), [käyttötapaukset](../product/observing-session-use-cases.md) |
-| Sovellus ja kerrokset | Sovittu suunta: Electron/TypeScript, React/Vite/CSS Modules, rakenne A ja main–backend-IPC. | [Perusarkkitehtuuri](../architecture/base-architecture.md), [tekniikkasuunnitelma](../architecture/technology-and-ui-plan.md) |
+| Sovellus ja kerrokset | T02:n statusrunko toteutettu: Electron/TypeScript, React/Vite/CSS Modules, rakenne A ja main–backend-IPC. Laajemmat moduulit myöhemmin. | [Perusarkkitehtuuri](../architecture/base-architecture.md), [tekniikkasuunnitelma](../architecture/technology-and-ui-plan.md) |
 | Mallimoottori | Sovittu arviointisuunta: node-llama-cpp UtilityProcessissa. Tarkka build ja toimivuus ovat kokeella selvitettäviä; llama-server säilyy vaihtoehtona. | [Mallisuunnitelma](../architecture/local-model-plan.md) |
 | Mallit ja painot | Sovittu 4B/8B-aloitus, ulkoinen mallikansio ja mallinvaihto asetuksista. Poro–Ministral-verrokit ovat mukana suunnitelmassa; tarkat paketit ja oletusmalli ovat avoimia. | [Mallivalinta ja toimitus](../architecture/local-model-plan.md) |
 | Avustajan työnkulku | Sovittu: backend koordinoi, moduulit tarkistavat työkalut ja yksi opastajarooli toimii lähtötasona. Usean roolin hyöty mitataan erikseen. | [Orkestrointi](../architecture/assistant-orchestration-plan.md) |
