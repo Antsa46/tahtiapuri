@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { setTimeout as delay } from 'node:timers/promises';
+import { collect, bounded, until, alive, cleanupOwnedRun } from './process-harness.mjs';
 
 if (process.platform !== 'win32') throw new Error('This probe must run with native Windows Node.');
 const directory = dirname(fileURLToPath(import.meta.url));
@@ -46,39 +46,6 @@ async function endpoints() {
     return { ports, counts, accepted, close: async () => { for (const close of resources.reverse()) await close(); } };
   } catch (error) { for (const close of resources.reverse()) await close().catch(() => {}); throw error; }
 }
-function collect(child) {
-  const records = []; let buffered = ''; let stderr = ''; let failure;
-  child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8');
-  child.stdout.on('data', data => {
-    buffered += data;
-    if (buffered.length > 256 * 1024) { failure = new Error('Unbounded probe output.'); child.kill(); return; }
-    let end;
-    while ((end = buffered.indexOf('\n')) >= 0) {
-      const line = buffered.slice(0, end).trim(); buffered = buffered.slice(end + 1);
-      try { if (line) records.push(JSON.parse(line)); } catch { failure = new Error('Malformed native report.'); }
-      if (records.length > 500) { failure = new Error('Too many native records.'); child.kill(); }
-    }
-  });
-  child.stderr.on('data', data => { stderr = (stderr + data).slice(-32768); });
-  const exited = new Promise(done => { child.once('error', error => { failure = error; }); child.once('close', (code, signal) => done({ code, signal })); });
-  return { records, exited, get stderr() { return stderr; }, check: () => { if (failure) throw failure; } };
-}
-async function bounded(promise, milliseconds, label) {
-  let timer;
-  try { return await Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(label)), milliseconds); })]); }
-  finally { clearTimeout(timer); }
-}
-async function helper(args) {
-  const child = spawn(host, args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
-  const report = collect(child);
-  try { const exit = await bounded(report.exited, 7000, 'Cleanup helper timeout.'); report.check(); return { ...exit, records: report.records }; }
-  finally { if (child.exitCode === null && child.signalCode === null) child.kill(); child.stdout.destroy(); child.stderr.destroy(); }
-}
-async function until(check, timeout = 22000) {
-  const deadline = Date.now() + timeout;
-  while (!check()) { if (Date.now() >= deadline) throw new Error('Probe observation deadline exceeded.'); await delay(25); }
-}
-function alive(pid) { try { process.kill(pid, 0); return true; } catch (error) { if (error.code === 'ESRCH') return false; throw error; } }
 function validate(report, mode, counts, accepted, primaryOnly = false) {
   const network = [];
   assert(!report.some(row => row.type === 'error' || row.type === 'probe-error'), 'Native error record.');
@@ -147,7 +114,7 @@ async function runCase(mode, kind, primaryOnly = false) {
       child.kill();
     }
     exit = await bounded(report.exited, 35000, 'Native launcher did not finish.');
-    report.check();
+    report.checkComplete();
     const pids = report.records.filter(row => ['launched', 'token', 'descendant', 'owner-host', 'escaped'].includes(row.type)).map(row => row.pid);
     assert(pids.length > 0, 'No owned process identity observed.');
     await until(() => pids.every(pid => !alive(pid)), 10000);
@@ -169,47 +136,11 @@ async function runCase(mode, kind, primaryOnly = false) {
     }
   }
   finally {
-    if (child.exitCode === null && child.signalCode === null) child.kill();
-    const pids = [...new Set(report.records.filter(row => ['launched', 'token', 'descendant', 'owner-host', 'escaped'].includes(row.type)).map(row => row.pid))];
-    let stopped = false;
-    try { await until(() => pids.every(pid => !alive(pid)), 7000); stopped = true; }
-    catch {
-      result.corePassed = false; result.passed = false;
-      result.cleanupError = 'Job lifecycle failed; emergency cleanup required.';
-      result.emergency = [];
-      // The native helper verifies the image belongs to this unique staged root.
-      for (const pid of pids) if (alive(pid)) {
-        try { result.emergency.push(await helper(['stop-owned', staged, String(pid)])); }
-        catch (error) { result.emergency.push({ failed: error.message }); }
-      }
-      try { await until(() => pids.every(pid => !alive(pid)), 7000); stopped = true; }
-      catch { result.cleanupError = 'Owned processes are still alive; profile and staged data retained.'; }
-    }
-    try { await bounded(report.exited, 3000, 'Inherited stdio stayed open.'); }
-    catch (error) { result.corePassed = false; result.passed = false; result.cleanupError = error.message; }
-    child.stdout.destroy(); child.stderr.destroy(); child.stdin.destroy();
-    let profileClean = !['ac', 'lpac'].includes(mode);
-    if (stopped && !profileClean) {
-      let receiptMatches = false;
-      try { receiptMatches = await fs.readFile(join(staged, 'profile.receipt'), 'utf8') === profile; }
-      catch (error) { if (error.code !== 'ENOENT') result.cleanupError = 'Profile receipt could not be read.'; }
-      if (receiptMatches) {
-        try { result.teardown = await helper(['cleanup', profile, staged]); }
-        catch (error) { result.teardown = { code: null, error: error.message }; }
-        profileClean = result.teardown.code === 0;
-      } else {
-        profileClean = report.records.some(row => row.type === 'error' && row.stage === 'create-profile');
-      }
-      if (!profileClean) { result.corePassed = false; result.passed = false; result.cleanupError = 'Profile ownership/deletion uncertain; staged data retained.'; }
-    }
+    result.cleanup = await cleanupOwnedRun({ child, report, host, staged, profile, restricted: ['ac', 'lpac'].includes(mode) });
+    result.cleanupPassed = result.cleanup.passed;
+    if (!result.cleanupPassed) { result.corePassed = false; result.passed = false; result.primaryDiagnosticPassed = false; result.cleanupError = result.cleanup.errors.join('; '); }
     await servers.close();
     result.exit = exit; result.stderr = report.stderr;
-    if (stopped && profileClean) {
-      try { await fs.rm(staged, { recursive: true }); }
-      catch (error) { result.corePassed = false; result.passed = false; result.cleanupError = `Owned staged deletion failed: ${error.code}`; }
-    }
-    result.cleanupPassed = stopped && profileClean && !result.cleanupError;
-    if (!result.cleanupPassed) result.primaryDiagnosticPassed = false;
     await fs.writeFile(join(caseRoot, 'result.json'), `${JSON.stringify(result, null, 2)}\n`);
     summary.cases.push({ mode, kind, primaryOnly, primaryDiagnosticPassed: result.primaryDiagnosticPassed, cleanupPassed: result.cleanupPassed, expectedCompatibilityFailure: result.expectedCompatibilityFailure, passed: result.passed, corePassed: result.corePassed, networkVerified: result.validation?.networkVerified ?? false, error: result.error, cleanupError: result.cleanupError });
   }

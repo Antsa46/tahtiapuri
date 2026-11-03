@@ -2,7 +2,8 @@
 #include <memory>
 
 static bool ownedProfile(const std::wstring& name) {
-    const std::wstring prefix = L"tahtiapuri.t09a.";
+    const std::wstring b = L"tahtiapuri.t09b.";
+    const std::wstring prefix = name.compare(0, b.size(), b) == 0 ? b : L"tahtiapuri.t09a.";
     if (name.size() != prefix.size() + 32 || name.compare(0, prefix.size(), prefix) != 0) return false;
     return std::all_of(name.begin() + prefix.size(), name.end(), [](wchar_t c) { return (c >= L'0' && c <= L'9') || (c >= L'a' && c <= L'f'); });
 }
@@ -126,9 +127,42 @@ static void prepareResources(const std::wstring& root, PSID sid) {
     setOwnedAcl(root + L"\\scratch", sid, FILE_GENERIC_READ | FILE_GENERIC_WRITE | FILE_GENERIC_EXECUTE | DELETE | FILE_DELETE_CHILD, true);
     lowScratch(root + L"\\scratch");
 }
-static std::wstring environment(const std::wstring& root) {
+static void readOnlyTree(const std::wstring& path, PSID sid, unsigned& remaining, bool apply) {
+    if (remaining-- == 0) throw WinError("package-entry-limit", ERROR_INVALID_DATA);
+    const DWORD attributes = GetFileAttributesW(path.c_str());
+    const bool directory = (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+    regular(path, directory);
+    if (apply) setOwnedAcl(path, sid, FILE_GENERIC_READ | FILE_GENERIC_EXECUTE, directory);
+    if (!directory) return;
+    WIN32_FIND_DATAW data = {}; HANDLE search = FindFirstFileW((path + L"\\*").c_str(), &data);
+    if (search == INVALID_HANDLE_VALUE) throw WinError("package-enumerate");
+    try {
+        do {
+            if (std::wstring(data.cFileName) == L"." || std::wstring(data.cFileName) == L"..") continue;
+            readOnlyTree(path + L"\\" + data.cFileName, sid, remaining, apply);
+        } while (FindNextFileW(search, &data));
+        if (GetLastError() != ERROR_NO_MORE_FILES) throw WinError("package-next");
+    } catch (...) { FindClose(search); throw; }
+    FindClose(search);
+}
+static void prepareElectronResources(const std::wstring& root, PSID sid) {
+    for (const auto& dir : { L"package", L"private", L"scratch", L"launcher" }) regular(root + L"\\" + dir, true);
+    for (const auto& name : { L"package\\electron.exe", L"package\\runtime-probe.mjs", L"package\\allowed.txt", L"package\\module.mjs", L"private\\secret.txt", L"launcher\\host.exe" }) regular(root + L"\\" + name, false);
+    unsigned verified = 2000; readOnlyTree(root, sid, verified, false);
+    setOwnedAcl(root, sid, FILE_TRAVERSE, true);
+    for (const auto& name : { L"owner.marker", L"profile.receipt" }) if (GetFileAttributesW((root + L"\\" + name).c_str()) != INVALID_FILE_ATTRIBUTES) setOwnedAcl(root + L"\\" + name, nullptr, 0, false);
+    setOwnedAcl(root + L"\\launcher", nullptr, 0, true);
+    setOwnedAcl(root + L"\\launcher\\host.exe", nullptr, 0, false);
+    setOwnedAcl(root + L"\\private", nullptr, 0, true);
+    setOwnedAcl(root + L"\\private\\secret.txt", nullptr, 0, false);
+    unsigned remaining = 2000; readOnlyTree(root + L"\\package", sid, remaining, true);
+    setOwnedAcl(root + L"\\scratch", sid, FILE_GENERIC_READ | FILE_GENERIC_WRITE | FILE_GENERIC_EXECUTE | DELETE | FILE_DELETE_CHILD, true);
+    lowScratch(root + L"\\scratch");
+}
+static std::wstring environment(const std::wstring& root, bool electron) {
     wchar_t windows[MAX_PATH] = {}; if (!GetWindowsDirectoryW(windows, MAX_PATH)) throw WinError("windows-directory");
     std::vector<std::wstring> entries = { L"APPDATA=" + root + L"\\scratch", L"LOCALAPPDATA=" + root + L"\\scratch", L"PATH=" + std::wstring(windows) + L"\\System32", L"SystemRoot=" + std::wstring(windows), L"TEMP=" + root + L"\\scratch", L"TMP=" + root + L"\\scratch", L"USERPROFILE=" + root + L"\\scratch", L"WINDIR=" + std::wstring(windows) };
+    if (electron) entries.push_back(L"ELECTRON_RUN_AS_NODE=1");
     std::sort(entries.begin(), entries.end()); std::wstring block;
     for (const auto& entry : entries) { block += entry; block += L'\0'; } block += L'\0'; return block;
 }
@@ -156,13 +190,16 @@ int wmain(int argc, wchar_t** argv) {
             if (!process.value) throw WinError("emergency-open");
             wchar_t image[2048] = {}; DWORD length = 2048;
             if (!QueryFullProcessImageNameW(process.value, 0, image, &length)) throw WinError("emergency-image");
-            if (_wcsicmp(image, (root + L"\\package\\probe.exe").c_str()) != 0 && _wcsicmp(image, (root + L"\\launcher\\host.exe").c_str()) != 0) throw WinError("emergency-identity", ERROR_ACCESS_DENIED);
+            if (_wcsicmp(image, (root + L"\\package\\electron.exe").c_str()) != 0 && _wcsicmp(image, (root + L"\\package\\probe.exe").c_str()) != 0 && _wcsicmp(image, (root + L"\\launcher\\host.exe").c_str()) != 0) throw WinError("emergency-identity", ERROR_ACCESS_DENIED);
             if (!TerminateProcess(process.value, 44) || WaitForSingleObject(process.value, 5000) != WAIT_OBJECT_0) throw WinError("emergency-stop");
             emit("{\"type\":\"emergency-stopped\"}"); return 0;
         }
-        if (argc != 11 || std::wstring(argv[1]) != L"run") throw WinError("arguments", ERROR_INVALID_PARAMETER);
+        if (argc != 11 || (std::wstring(argv[1]) != L"run" && std::wstring(argv[1]) != L"run-electron")) throw WinError("arguments", ERROR_INVALID_PARAMETER);
+        const bool electron = std::wstring(argv[1]) == L"run-electron";
         std::wstring mode(argv[2]); profile = argv[3]; const std::wstring root = ownedRoot(argv[4]);
         if ((mode != L"control" && mode != L"control-inherit" && mode != L"ac" && mode != L"lpac") || !ownedProfile(profile)) throw WinError("profile-arguments", ERROR_INVALID_PARAMETER);
+        const std::wstring purpose = electron ? L"tahtiapuri.t09b." : L"tahtiapuri.t09a.";
+        if (profile.compare(0, purpose.size(), purpose) != 0) throw WinError("profile-purpose", ERROR_INVALID_PARAMETER);
         for (int n = 5; n <= 9; ++n) if (boundedNumber(argv[n], 65535) == 0) throw WinError("port", ERROR_INVALID_PARAMETER);
         const std::wstring life(argv[10]);
         const bool primaryOnly = life == L"primary-once" || life == L"primary-hold" || life == L"primary-fail";
@@ -176,7 +213,7 @@ int wmain(int argc, wchar_t** argv) {
             LPWSTR text = nullptr; if (!ConvertSidToStringSidW(sid, &text)) throw WinError("profile-sid");
             emit("{\"type\":\"profile\",\"name\":\"" + ascii(profile) + "\",\"sid\":\"" + ascii(text) + "\"}"); LocalFree(text);
         }
-        prepareResources(root, sid);
+        if (electron) prepareElectronResources(root, sid); else prepareResources(root, sid);
         job.value = CreateJobObjectW(nullptr, nullptr); if (!job.value) throw WinError("job");
         JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits = {}; limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
         if (!SetInformationJobObject(job.value, JobObjectExtendedLimitInformation, &limits, sizeof(limits))) throw WinError("job-limits");
@@ -194,11 +231,13 @@ int wmain(int argc, wchar_t** argv) {
         if (mode == L"lpac") attributes.put(PROC_THREAD_ATTRIBUTE_ALL_APPLICATION_PACKAGES_POLICY, &policy, sizeof(policy));
         STARTUPINFOEXW startup = {}; startup.StartupInfo.cb = sizeof(startup); startup.lpAttributeList = attributes.list;
         startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES; startup.StartupInfo.hStdInput = inherited[0]; startup.StartupInfo.hStdOutput = inherited[1]; startup.StartupInfo.hStdError = inherited[2];
-        const std::wstring image = root + L"\\package\\probe.exe";
-        std::wstring command = quote(image) + L" " + quote(root);
+        const std::wstring image = root + (electron ? L"\\package\\electron.exe" : L"\\package\\probe.exe");
+        std::wstring command = quote(image);
+        if (electron) command += L" --preserve-symlinks --preserve-symlinks-main " + quote(root + L"\\package\\runtime-probe.mjs");
+        command += L" " + quote(root);
         for (int n = 5; n <= 9; ++n) command += L" " + quote(argv[n]);
         command += L" " + quote(childLife) + L" " + std::to_wstring(reinterpret_cast<ULONG_PTR>(sentinel.value)) + (primaryOnly ? L" primary-only" : L" primary");
-        std::wstring env = environment(root); PROCESS_INFORMATION process = {};
+        std::wstring env = environment(root, electron); PROCESS_INFORMATION process = {};
         if (!CreateProcessW(image.c_str(), &command[0], nullptr, nullptr, TRUE, EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT | CREATE_SUSPENDED | CREATE_NO_WINDOW, &env[0], (root + L"\\package").c_str(), &startup.StartupInfo, &process)) throw WinError("create-child");
         Handle child(process.hProcess), thread(process.hThread);
         BOOL inJob = FALSE; if (!IsProcessInJob(child.value, job.value, &inJob) || !inJob) throw WinError("job-membership");

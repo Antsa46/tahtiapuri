@@ -27,7 +27,8 @@ Lue tehtävän mukaan:
 - oikeudet, ulkoinen syöte, IPC/MCP, verkkokäyttö, tiedostorajat tai tietoturvaan vaikuttava muutos:
   [turvallisuus ja oikeudet](docs/architecture/security-and-permissions-plan.md)
 - Windowsin eristyskokeen natiivi käynnistin, koeoikeudet tai koesiivous:
-  [rajattu Windows-koe](docs/experiments/windows-isolation-probe.md)
+  [rajattu Windows-koe](docs/experiments/windows-isolation-probe.md) ja
+  [Electron Node -yhteensopivuuskoe](docs/experiments/electron-isolation-probe.md)
 - havaintopaikkojen asetukset, tallennus tai observing-IPC:
   [nimetyt havaintopaikat](docs/architecture/observing-places.md)
 - käyttäjätieto, historian säilytys ja poisto, välimuistit tai vienti/palautus:
