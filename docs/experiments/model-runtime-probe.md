@@ -1,6 +1,6 @@
 # Ensimmäinen 4B-malliajo Electronissa
 
-T03 / [issue #4](https://github.com/Antsa46/tahtiapuri/issues/4), 3.11.2026.
+T03 / issue #4, 3.11.2026.
 Tämä raportti omistaa toteutuneen moottorikokeen näytön ja sen rajat.
 [Alkuperäinen 4B/8B-koesuunnitelma](model-pilot.md) ja sen manifesti säilyvät
 vertailun lähtötietoina. T03 ei ole vielä T04:n laatu- tai suorituskykyvertailu.
@@ -14,8 +14,8 @@ vertailun lähtötietoina. T03 ei ole vielä T04:n laatu- tai suorituskykyvertai
   bc640142c66e1fdd12af0bd68f40445458f3869b.
   [Hyväksytty profiili](../../resources/models/qwen3-4b.json) sisältää SHA-256:n,
   chat-templaten tarkisteen ja Apache-2.0-lisenssilähteen.
-- RTX 4070 Laptop GPU, 8188 MiB, NVIDIA-ajuri 621.01. CPU ja CUDA
-  valitaan erikseen. CUDA ei vaihdu virheessä huomaamatta CPU:ksi.
+- CPU ja CUDA valitaan erikseen. CUDA ei vaihdu virheessä huomaamatta CPU:ksi.
+  Laitekokoonpano ja ajotiedot säilyvät paikallisina.
 - Valinnainen, projektikohtainen CUDA-redistrib 13.1.0:
   cuBLAS 13.2.0.9 ja cudart 13.1.80. Lähteet ja ZIP-tarkisteet ovat
   [työkalulukossa](../../scripts/dev/toolchain.json). GPU-ajuria tai
@@ -34,8 +34,8 @@ projektin Gitistä rajattuihin .local/- ja .artifacts/-puihin.
 
 Paikallinen test:model-ajo läpäisi seitsemän tapausta ilman uusintoja:
 
-1. Oikea 4B-vastaus käyttöliittymän kautta CPU:lla; SDK ilmoitti 0 GPU-kerrosta.
-2. Sama synteettinen kysymys CUDA:lla; SDK ilmoitti 37 GPU-kerrosta.
+1. Oikea 4B-vastaus käyttöliittymän kautta CPU:lla; todellinen ajotausta varmistettiin.
+2. Sama synteettinen kysymys CUDA:lla; todellinen ajotausta varmistettiin.
 3. Peruutus ensimmäisen SDK:n tuottaman tekstikatkelman jälkeen, seuraavan
    työn onnistuminen ja perutun työn pysyminen peruttuna.
 4. Hallittu OUT_OF_MEMORY-polku testityöntekijällä; lisäksi yksikkötesti
@@ -50,11 +50,9 @@ Paikallinen test:model-ajo läpäisi seitsemän tapausta ilman uusintoja:
 
 Molemmat varsinaiset vastaukset olivat: ”Jupiterin korkeus on 36,5 astetta.
 Pilvisyys on 20 %.” Arvot annettiin kysymyksessä; ne eivät ole tämän illan
-tähtilaskentaa tai ennustetta. Esimerkkiajossa CPU:n lataus oli noin
-4,54 s ja generointi 3,39 s; CUDA:n lataus 5,45 s ja generointi 0,69 s.
-Lataukseen sisältyy GGUF-tarkistus; generointiin kontekstin luonti.
-Nämä ovat yhden lyhyen vastauksen toimivuusnäytteitä, eivät benchmark,
-ensimmäisen tokenin viive tai mitattu RAM-/VRAM-huippu.
+tähtilaskentaa tai ennustetta. Nämä ovat yhden lyhyen vastauksen
+toimivuusnäytteitä. Konekohtaiset viive- ja muistihavainnot säilyvät
+paikallisissa artefakteissa.
 
 Ajantasaiset testimäärät ja katselmustulos kirjataan issueen. Paikalliset
 raakavastaukset, kuvakaappaukset ja prosessikokeen tulos ovat

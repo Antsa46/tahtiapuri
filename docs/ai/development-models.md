@@ -58,7 +58,9 @@ Vaihtoa ei väitetä tehdyksi ilman vahvistusta.
 Kirjaa jokaisen käsiteltävän issuen valmistumisraporttiin käytetty malli,
 mahdollinen tarkastaja sekä tokenikulutus omana kohtanaan.
 Käytä issueen rajattua mitattua lukemaa, jos sellainen on saatavilla.
-Merkitse lähde, alku- ja loppuraja sekä keskeneräisen snapshotin ulkopuolelle jäävä työ.
+Merkitse lähde, looginen alku- ja loppuraja sekä snapshotin ulkopuolelle jäävä työ.
+Tarkat istuntoaikaleimat ja tunnisteet säilyvät paikallisina; julkiseen issueen
+kirjataan vain tehtävän koontiluvut [yksityisyyslinjan](../privacy/publication.md) mukaan.
 Tämän keskustelun koko historian lukemaa tai tilin käyttörajojen muutosta
 ei kirjata yhden issuen kulutukseksi.
 

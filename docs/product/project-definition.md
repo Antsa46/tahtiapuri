@@ -7,9 +7,9 @@ Aloituskierroksen runko on [aloituslistassa](../ai/project-start-checklist.md).
 
 ## Käyttäjä ja käyttötarve
 
-Ensisijainen käyttäjä on projektin tekijä itse. Hänellä on tähtitaivaan
-perustiedot jo hallussa ja hän harrastaa havainnointia paljain silmin,
-kiikareilla ja kaukoputkella. Välineiden tarkat ominaisuudet ovat avoinna.
+Kohderyhmänä ovat tähtitaivaan perusteet tuntevat harrastajat.
+Ensimmäinen versio painottuu paljain silmin havainnointiin;
+kiikarien ja kaukoputken tarkempi tuki arvioidaan myöhemmin.
 
 Käyttäjä haluaa kokeilla keskustelevaa paikallista tähtiavustajaa.
 Apuri tuntee sovelluksessa käytetyn havaintopaikan ja illan taivaan
@@ -19,8 +19,8 @@ jatkaa keskustelua. Selitysten taso sovitetaan käyttäjän osaamiseen.
 Projektin painopiste on oppia paikallisen kielimallin käyttöä osana toimivaa
 paikallista ohjelmaa. Tähtitaivas antaa tälle käytännön käyttökohteen:
 malli muodostaa katsauksen, keskustelee tarkistetuista tiedoista ja auttaa
-käyttämään ohjelman toimintoja. Kokemuksia hyödynnetään myöhemmin EKYssä
-ja suunnitellussa opinnäytetyössä.
+käyttämään ohjelman toimintoja. Kokeista kootaan yleisiä havaintoja
+paikallisten mallien ja rajattujen työkalujen käytöstä.
 
 Oppimistuloksen osoittamiseen tarvitaan oikealla paikallisella mallilla
 tehty katsaus, jatkokysymys ja ohjelman toimintaan liittyvä pyyntö.

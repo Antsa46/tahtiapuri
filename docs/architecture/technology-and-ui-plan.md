@@ -1,8 +1,8 @@
 # Tekniikkaehdotus ja käyttöliittymän linja
 
 Tila: kohdan 4 suunnitteluehdotus, kirjattu 2.11.2026.
-Käyttäjän vahvistama tavoite on säilyttää EKYn kaltainen tekninen rakenne,
-jotta Tähtiapuri toimii paikallisen mallin ja agenttiohjauksen pilottina.
+Tähtiapuri toimii modulaarisen Electron-rakenteen, paikallisen mallin
+ja rajatun agenttiohjauksen pilottina.
 React/Vite ja oma CSS Modules -tyylitys on hyväksytty tekniseksi suunnaksi.
 Täsmäversiot, asennukset ja muut alla nimetyt uudet kirjastot eivät vielä
 ole hyväksyttyjä riippuvuuksia.
@@ -29,8 +29,8 @@ Täsmäriippuvuudet ja toimivuus varmennetaan Tähtiapurin omissa kokeissa.
 
 | Vaihtoehto | Hyöty | Vaikutus tähän pilottiin |
 | --- | --- | --- |
-| HTML, CSS ja TypeScript ilman komponenttikirjastoa | Suora DOM-toteutus riittää hyvin pieneen näkymään. | Keskustelun, karttavalinnan, keskeytyksen ja rinnakkaisten tilojen hallinta jää omaksi työksi. Poikkeaa EKYn React-rakenteesta. |
-| React, TypeScript, Vite ja oma CSS Modules | Sama UI-tekniikka kuin EKYssä; näkymät ja tilat voidaan jakaa komponenteiksi. | Hyväksytty yleinen suunta. Ulkoasu suunnitellaan Tähtiapurille; täsmäversiot päätetään erikseen. |
+| HTML, CSS ja TypeScript ilman komponenttikirjastoa | Suora DOM-toteutus riittää hyvin pieneen näkymään. | Keskustelun, karttavalinnan, keskeytyksen ja rinnakkaisten tilojen hallinta jää omaksi työksi. Ei tarjoa komponenttien tilanhallintaa valmiina. |
+| React, TypeScript, Vite ja oma CSS Modules | Näkymät ja tilat voidaan jakaa komponenteiksi. | Hyväksytty yleinen suunta. Ulkoasu suunnitellaan Tähtiapurille; täsmäversiot päätetään erikseen. |
 | React ja erillinen UI- tai tyylikirjasto | Valmiit komponentit tai tyylityksen käytännöt voivat vähentää omaa toteutustyötä. | Arvioidaan nimetyn komponenttitarpeen perusteella. Teemat, saavutettavuus, riippuvuudet ja ylläpito pitää silti tarkistaa. |
 
 React omistaa näkymien kokoamisen ja tilaan perustuvan esityksen.
@@ -75,7 +75,7 @@ Yksi rivi voi sisältää useita paketteja ja transitiivisia riippuvuuksia.
 | Osa | Ehdokas tai suunta | Sijoittelu ja peruste |
 | --- | --- | --- |
 | Desktop-runtime | Electron; suunta on jo sovittu | apps/desktop: ikkunat, prosessit, resurssit ja valvottu IPC. |
-| Käyttöliittymä | React ja React DOM | Vain apps/web; EKYn tekniikka ja keskustelun sekä kartan tilallinen UI. |
+| Käyttöliittymä | React ja React DOM | Vain apps/web; keskustelun ja kartan tilallinen UI. |
 | UI:n rakennus | Vite ja React-plugin | Kehitykseen ja rakentamiseen. Paketoitu ohjelma ei tarvitse Vite-palvelinta. |
 | Kieli ja tyypit | TypeScript sekä tarvittavat @types-paketit | Tyypintarkistus erikseen; Viten muunnos ei yksin tarkista tyyppejä. |
 | Paikallinen backend | Node/TypeScript ja rajattu IPC-adapteri | Node Electronin hallitsemassa prosessissa. Main–backend-kuljetus on sovittu IPC:ksi, joten Honoa tai @hono/node-serveriä ei tarvita tähän yhteyteen. Sovelluksen käyttäjältä ei edellytetä Node-asennusta. |
@@ -86,8 +86,8 @@ Yksi rivi voi sisältää useita paketteja ja transitiivisia riippuvuuksia.
 | Sääpalvelu | Ilmatieteen laitoksen avoin data; tarjoaja on sovittu | Yksi tarjoajasovitin rajatussa säätyöntekijässä. HTTP:n perustoteutukseen arvioidaan ensin runtimen valmiit API:t; SDK ei ole oletustarve. |
 | Rajapintojen validointi | Omat pienet validaattorit tai erikseen perusteltu skeemakirjasto | packages/validation ja käyttötapauksen omat tarkistukset. TypeScript-tyyppi ei validoi ulkoista JSONia ajossa. |
 | Testaus | Vitest; Playwright tarvittaville UI-/desktop-poluille | Kehitysriippuvuuksia. Playwrightin Electron-tuki on kokeellinen; paketoidun sovelluksen hyväksyntä ei nojaa vain siihen. |
-| Työtila ja rakennus | pnpm-workspace on EKYn mukainen ehdokas | Lukittu työkaluketju, vain tarpeelliset paketit. Linttaus, formatointi ja tarkat komennot täsmennetään. |
-| Paketointi ja jakelu | Electronin paketointi- ja suojaustyökalut arvioidaan EKYn kokemusten pohjalta | Arvioidaan muun muassa @electron/packager, @electron/asar ja @electron/fuses tarpeen mukaan. Asennin ja päivitysratkaisu päätetään erikseen. |
+| Työtila ja rakennus | pnpm-workspace | Lukittu työkaluketju, vain tarpeelliset paketit. Linttaus, formatointi ja tarkat komennot täsmennetään. |
+| Paketointi ja jakelu | Electronin paketointi- ja suojaustyökalut arvioidaan toimituskokeessa | Arvioidaan muun muassa @electron/packager, @electron/asar ja @electron/fuses tarpeen mukaan. Asennin ja päivitysratkaisu päätetään erikseen. |
 
 Sovelluksen mukana toimitettava koodi ja resurssit erotetaan vain
 kehityksessä tarvittavista työkaluista. Electron kuuluu toimitettavaan
@@ -132,7 +132,7 @@ ei seurata automaattisesti. Verkko- ja käyttöoikeuspolitiikan omistaa
 - [Open-Meteon nykyiset palveluehdot ja rajat](https://open-meteo.com/en/pricing)
 - [Open-Meteon API-kuvaus](https://open-meteo.com/en/docs)
 
-## EKYlle siirtyvä kokeen tulos
+## Modulaarisuuden arviointi
 
 Pidetään ohjelmakohtainen taivaslogiikka erillään seuraavista vastuista:
 
@@ -143,8 +143,8 @@ Pidetään ohjelmakohtainen taivaslogiikka erillään seuraavista vastuista:
 - toistettavat malliarvioinnit ja paketoidun offline-ajon todisteet.
 
 Nämä ovat mahdollisia siirrettäviä sopimuksia ja kokemuksia, eivät vielä
-yhteisen ohjelmakirjaston toteutus. Tähtiapuri ja EKY eivät importoi toistensa
-checkoutia. Yhteinen paketti arvioidaan vasta molemmissa todistetusta tarpeesta.
+yhteisen ohjelmakirjaston toteutus. Muiden projektien checkoutteja ei
+importoida. Yhteinen paketti arvioidaan vasta todistetusta tarpeesta.
 Useat agenttiroolit voidaan ensin toteuttaa samalla mallilla ja pienellä
 eksplisiittisellä työnkululla. Yleistä agenttikehystä ei tarvita alkuun.
 
@@ -162,8 +162,8 @@ lisenssit ja hyväksytty asennuslista käsitellään kohdassa 7.
 
 Pythonia, toista UI-frameworkia, pilvipalvelua, vektoritietokantaa,
 ORM:ää tai ulkoista agenttikehystä ei lisätä ilman konkreettista tarvetta.
-SQLite arvioidaan tiedon elinkaaren yhteydessä kohdassa 5; EKYn SQLite- ja
-PDF-riippuvuudet eivät ole tämän harjoituksen lähtövaatimuksia.
+SQLite arvioidaan tiedon elinkaaren yhteydessä kohdassa 5;
+tietokanta- tai PDF-riippuvuudet eivät ole tämän harjoituksen lähtövaatimuksia.
 Säätyöntekijän käyttöjärjestelmäeristys on avoin tekninen kysymys.
 Prosessien erottaminen tai tietyn kirjaston valinta ei yksin todista eristystä.
 

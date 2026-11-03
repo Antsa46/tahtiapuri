@@ -1,8 +1,8 @@
 # Testien sijainti ja arviointiperiaatteet
 
 Tämä dokumentti omistaa testien sijainnin ja tasojen jaon.
-Käyttäjä pyysi 3.11.2026 yhteistä sijoitteluperiaatetta EKYn kanssa:
-lähteen lähellä olevat testit ja erikseen keskitetyt laajat testit.
+Sijoitteluperiaate on lähteen lähellä olevat testit ja erikseen
+keskitetyt laajat testit.
 Tämä korvaa aiemman kaikkien testien tests/-varjorakenteen.
 Käyttäjä jätti sijoittelun ja ylläpidon Codexin harkintaan. Nykyinen
 yhdistelmä säilyy; sijoittelua muutetaan vain todellisen ylläpitohyödyn
@@ -55,7 +55,7 @@ Lähteen mukana siirtyy sen vieressä oleva testi. Testiperheiden hakukuviot
 erotetaan niin, ettei sama tiedosto ajaudu vahingossa useaan ajoperheeseen.
 Malliarviointi ei ole E2E-testin synonyymi.
 
-Valinnan peruste on vastuun läheisyys ja yhtenäisyys EKYn kanssa.
+Valinnan peruste on vastuun läheisyys ja yhtenäinen ylläpitotapa.
 Sitä ei esitetä yleisesti parhaana AI-kehityksen sijoitteluna:
 [Vitestin ohje](https://main.vitest.dev/guide/learn/writing-tests#test-files)
 kuvaa sekä lähteen vieressä että omassa hakemistossa olevat testit hyväksyttäviksi.
@@ -219,8 +219,8 @@ sidotaan tulokseen.
 
 Mitataan kylmä lataus, lämpimän ajon ensimmäisen vastauksen viive,
 kokonaisviive, RAM-/VRAM-huippu ja käytetty CPU/GPU-jako. Ajot toistetaan;
-yksi nopea vastaus ei osoita mallin paremmuutta. EKYn valinta vaatii sen
-omat tehtävät ja kohdekoneet, vaikka 4B toimisi hyvin Tähtiapurissa.
+yksi nopea vastaus ei osoita mallin paremmuutta. Mallin soveltuvuus
+varmennetaan aina käyttötapauksen ja tuettujen laitteiden perusteella.
 
 Prosessikokeessa erotetaan toimintakyky ja oikeuksien rajaus.
 Varmennetaan todellinen CPU/GPU-ajotapa, kaatuneen lapsen käsittely,

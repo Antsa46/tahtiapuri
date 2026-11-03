@@ -10,7 +10,7 @@ Valintojen tilan kokoaa [päätöshakemisto](../planning/decisions.md).
 [Perusarkkitehtuuri](base-architecture.md) omistaa moduulit ja luottamusrajat.
 [Mallisuunnitelma](local-model-plan.md) omistaa ajomoottorin, mallisovittimen,
 vertailun ja Codexin kehitysrajapinnan. Tämä dokumentti omistaa AI:n
-työnkulun ja roolien vastuut. Se ei muuta EKYn ohjeita tai toteutusta.
+työnkulun ja roolien vastuut.
 
 ## Arkkitehtuurin lähtökohta
 
@@ -122,11 +122,12 @@ Suora mallikoe ei suorita mallin työkalupyyntöjä automaattisesti.
 Käyttötapauskoe kulkee saman koordinaattorin ja politiikan kautta kuin UI.
 Kehitysrajapinnan tekninen sopimus pysyy mallisuunnitelmassa.
 
-## EKYlle siirtyvä oppi ja avoin jatko
+## Ratkaisun siirrettävyys ja avoin jatko
 
 Siirrettävä tulos on kokeiltu työnkulun, mallisovittimen ja nimettyjen
 työkalujen sopimus sekä peruutuksen, resurssirajojen ja virhetilojen näyttö.
-Tähtiapurin taivaslogiikkaa tai yhtä yhteistä pääohjainta ei siirretä EKYyn.
+Taivaslogiikka pysyy sovelluskohtaisena; yksi yhteinen pääohjain ei ole
+yleinen siirrettävä ratkaisu.
 
 Siirrettävän ratkaisun kohdeprojekti määrittelee omat toimija- ja
 oikeusrajansa. Tähtiapurin käyttötapaus ei päätä toisen sovelluksen

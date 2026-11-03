@@ -6,7 +6,7 @@ Suunnittelusuunta ei tarkoita asennettua riippuvuutta tai todennettua toteutusta
 
 Projektin esittely ja yleinen vaihe ovat [READMEssä](../../README.md).
 Etenemisjärjestys on [roadmapissa](roadmap.md), ja toteutustöiden tila sekä
-valmistumisen näyttö [GitHub-issueissa](https://github.com/Antsa46/tahtiapuri/issues).
+valmistumisen näyttö GitHub-issueissa (repositoryn Issues).
 
 ## Suunnittelun lähtökohdat
 
@@ -37,10 +37,11 @@ valmistumisen näyttö [GitHub-issueissa](https://github.com/Antsa46/tahtiapuri/
 - Ensimmäinen synteettinen aineisto on [kokeen lähtötiedoissa](../experiments/model-pilot.md); T04:n tulokset ovat [vertailuraportissa](../experiments/model-comparison.md). Suorituskyvyn hyväksyttävät rajat ja luotettavan havaintoavustajan mallivalinta ovat avoimia.
 - Horisonttiesteiden ja havaintovälineiden tietojen tarkempi käyttötapa.
 
-Ensimmäisen mallikokeen rajaus ja lähtötietojen tarkistus kuuluvat [T01 / #2:een](https://github.com/Antsa46/tahtiapuri/issues/2).
-Projectsia tukevan kehitysyhteyden käyttöönotto on [T00 / #1](https://github.com/Antsa46/tahtiapuri/issues/1).
+Ensimmäisen mallikokeen rajaus ja lähtötietojen tarkistus kuuluvat T01 / #2:een.
+Projectsia tukevan kehitysyhteyden käyttöönotto on T00 / #1.
 Tässä ei ylläpidetä näiden tehtävien elävää tilaa.
 
 Vienti ja palautus, havaintopäiväkirja sekä laajemmat kohde- ja välinetoiminnot
 säilyvät myöhemmiksi rajattuina. Toteutuksen aloitus on valtuutettu;
-asennukset ja ajot tehdään rajattujen toteutusissueiden kautta. EKYä käytetään vain luettavana vertailuna.
+asennukset ja ajot tehdään rajattujen toteutusissueiden kautta.
+Muut projektit pysyvät tarvittaessa luettavina vertailuina.

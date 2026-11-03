@@ -1,6 +1,6 @@
 # Ensimmäisen 4B/8B-mallikokeen lähtötiedot
 
-T01 / [issue #2](https://github.com/Antsa46/tahtiapuri/issues/2), 3.11.2026.
+T01 / issue #2, 3.11.2026.
 Tämä dokumentti omistaa rajatun kehityskokeen toistettavat lähtötiedot.
 Yleisen arviointikäytännön omistaa [testausohje](../ai/testing-rules.md),
 oikeusrajat [turvallisuussuunnitelma](../architecture/security-and-permissions-plan.md).
@@ -83,7 +83,7 @@ Ensimmäinen ajokoe tarkistaa myös omien prosessien sulkeutumisen.
 
 OS-eristyksen näyttö tarvitaan erikseen T09:ssä ja lopulliselle kokoonpanolle
 T16:ssa. Todellinen sääverkkokoe odottaa T09:n hyväksymisporttia.
-Kehityskokeen hyväksyntä ei siirry EKYn tuotantoratkaisuksi.
+Kehityskokeen hyväksyntä ei ole käyttöversion turvallisuushyväksyntä.
 
 ## Aineisto, template ja suoritus
 

@@ -11,6 +11,7 @@ vastuurajan, lue myös toisen osapuolen sopimus.
 
 | Aihe | Omistava dokumentti |
 | --- | --- |
+| Julkisten tiedostojen, issueiden ja raporttien yksityisyys | [privacy/publication.md](privacy/publication.md) |
 | Suunnittelun lähtökohdat, päätösten tila ja avoimet valinnat | [planning/decisions.md](planning/decisions.md) |
 | Koko projektin vaiheet, työpaketit ja käyttötapausten jäljitettävyys | [planning/roadmap.md](planning/roadmap.md) |
 | Kehityksen GPT-mallien tehtäväkohtaiset suositukset | [ai/development-models.md](ai/development-models.md) |

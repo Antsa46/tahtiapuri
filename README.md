@@ -4,10 +4,8 @@ Tähtiapuri on kehitteillä oleva työpöytäsovellus tähtitaivaan havainnointi
 Paikallinen kielimalli auttaa keskustelemaan siitä, mitä valitussa paikassa
 näkyy nyt tai myöhemmin illalla.
 
-Projekti on henkilökohtainen harjoitus- ja referenssiprojekti. Sen avulla
-opetellaan paikallisten kielimallien, rajattujen agenttiroolien ja
-AI-avusteisen ohjelmistokehityksen käyttöä. Oppeja on tarkoitus hyödyntää
-myöhemmin toisessa Electron-sovelluksessa.
+Tähtiapuri on harjoitus- ja referenssiprojekti paikallisten kielimallien,
+rajattujen agenttiroolien ja AI-avusteisen ohjelmistokehityksen tutkimiseen.
 
 **Nykytila:** Electron-sovelluksessa voi keskustella paikallisen Qwen3-4B-mallin
 kanssa CPU:lla tai CUDA:lla. Malli toimii erillisessä UtilityProcessissa;
@@ -94,7 +92,7 @@ täydennetään toimitettavan sisällön mukaan. Ensimmäinen mallikoe käyttä�
 4B/8B-malleille yhteistä synteettistä aineistoa.
 
 - [Roadmap ja työpaketit](docs/planning/roadmap.md)
-- [GitHub-työjono](https://github.com/Antsa46/tahtiapuri/issues)
+- GitHub-työjono (repositoryn Issues)
 - [Käyttötapaukset](docs/product/observing-session-use-cases.md)
 - [Arkkitehtuuri](docs/architecture/base-architecture.md)
 - [Dokumenttien hakemisto](docs/README.md)

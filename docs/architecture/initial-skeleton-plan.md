@@ -50,7 +50,7 @@ työjonoa tai samaa vaiheistusta erillisenä taulukkona.
 - Pakettien rakennus seuraa riippuvuuksia: puhdas domain ja rajapinnat ennen
   niiden kuluttajia. Ulkoisia kirjastoja ei niputeta domainin vastuuksi.
 - Monorepon paketinhallinta, testityökalut, versiot ja komennot sovitaan
-  ennen käyttöönottoa. EKYn komentoja tai asetuksia ei kopioida sokkona.
+  ennen käyttöönottoa. Muiden projektien komentoja tai asetuksia ei kopioida sokkona.
 - Kehitys-, testi- ja käyttäjädata pidetään erillään. Testit käyttävät omaa
   tilapäistä datajuurta; testikomentoja ei lisätä tuotannon rajapintaan.
 - Rakennus ei lataa mallia tai lähetä sijaintia sivuvaikutuksena.
@@ -122,7 +122,7 @@ Nämä sovellusrajat eivät toteuta T09:n OS-eristystä.
 
 Ajo- ja tarkistuskomennot omistaa [paikallinen kehitysohje](../development/local-development.md).
 Tämän työpaketin tarkistusten tulokset ja hyväksyntä säilyvät
-[issue #3:ssa](https://github.com/Antsa46/tahtiapuri/issues/3).
+issue #3:ssa.
 
 ## T03:n mallitoiminnon lisäys
 

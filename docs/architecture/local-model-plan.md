@@ -254,11 +254,11 @@ pohjamallin alkuperää ei pidetä samana asiana.
 [Mallikortti](https://huggingface.co/LumiOpen/Llama-Poro-2-8B-Instruct)
 
 Poron mallikortin ilmoittama Llama 3.3 Community License sallii suunnitellun
-henkilökohtaisen käytön ja voi sallia myös EKYn kaltaisen yrityskäytön
+henkilökohtaisen käytön ja voi sallia myös yrityskäytön
 ehtoja noudattaen. Kaupallisuus ei yksin sulje mallia pois. Tarkistetaan
 valitun mallipaketin ehdot ja hyväksyttävän käytön säännöt; jakelussa
 säilytetään vaaditut lisenssi- ja tekijämerkinnät sekä Built with Llama
--merkintä. EKYn oma mallivalinta ja käyttöönotto päätetään sen projektissa.
+-merkintä. Mallivalinta ja käyttöönotto arvioidaan aina erikseen.
 [Alkuperäinen lisenssi](https://github.com/meta-llama/llama-models/blob/main/models/llama3_3/LICENSE)
 
 Poron tekijöiden raportoimat suomenkieliset testit tukevat mallin ottamista
@@ -268,7 +268,7 @@ arvioidaan samassa omassa tehtäväjoukossa.
 
 ## Mahdolliset lisäehdokkaat ja kevyempi kohdekone
 
-Pienemmän EKY-kohdekoneen myöhempään arviointiin säilyvät alla olevat
+Vähämuistisempien kohdelaitteiden myöhempään arviointiin säilyvät alla olevat
 vaihtoehdot. Ne eivät kuulu yllä ehdotettuun Tähtiapurin viiden mallin
 kokoelmaan. Myös Ministral 3 14B on vaihtoehtoinen kokovertauskohde;
 sen lisäämistä Qwen-vertailun rinnalle ei tarvita aluksi.
@@ -285,12 +285,12 @@ Nämä ovat myöhempiä ehdotuksia, eivät asennuksia tai sovitun vertailun
 laajennuksia. Valmistajan yleinen monikielisyys- tai agenttiväite ei todista
 meidän tehtäviemme suomenkielistä laatua.
 
-Tähtiapurin kehityskoneella tehty koe ei määrää EKYn oletusmallia.
+Yksittäinen kehityskoe ei määrää yleistä oletusmallia.
 Vähämuistiselle kohdekoneelle arvioidaan erikseen pieni kvantisoitu malli,
 CPU-ajo, lyhyt rajattu konteksti ja yksi tehtävä kerrallaan. Kokonaismuistiin
 kuuluvat myös käyttöjärjestelmä, Electron, backend ja muu sovelluskuorma.
 Näytönohjaimen olemassaoloa, sen muistia tai sujuvaa ajoa ei oleteta.
-Tämä on suunnitteluperiaate, ei todennettu hyväksyntä tietylle EKY-laitteelle.
+Tämä on suunnitteluperiaate, ei todennettu hyväksyntä tietylle kohdelaitteelle.
 
 ## Moottorin julkaistujen turvatietojen arvio 2.11.2026
 
@@ -366,8 +366,8 @@ Koneen resurssit on tarkistettu ja 4B:n CPU-/CUDA-toimivuus todettu.
 Laajempi viive- ja muistivertailu on vielä tekemättä. Asennettujen
 binääriehdokkaiden tarkisteet säilyvät paikallisessa koe-artefaktissa;
 [moottorikokeen raportti](../experiments/model-runtime-probe.md) kokoaa jaettavan näytön.
-EKYn mallivalinta vaatii sen omat tehtävät ja kohdekoneet:
-Tähtiapurissa pärjäävä 4B on ehdokas, ei EKYn hyväksytty tuotantomalli.
+Mallivalinta vaatii käyttötapaus- ja kohdelaitetestit:
+pilotissa pärjäävä 4B on ehdokas, ei hyväksytty tuotantomalli.
 
 ## Roolikokeen tarkoitus
 
@@ -406,8 +406,8 @@ Ensimmäinen toimituskoe varmistaa, että paketoitu desktop käynnistää
 valitun moottorin ja käyttää hyväksyttyä ulkoista mallia offline.
 Koko mallikirjastoa ei kopioida buildiin. Mallin puuttuminen, siirtäminen
 ja poistaminen testataan. Yhden pienen mallin paketoiminen mukaan voidaan
-myöhemmin arvioida erillisenä EKYyn siirrettävänä kokeena; se ei ole
-Tähtiapurin ensimmäisen toimituskokeen vaatimus eikä EKYn toteutuspäätös.
+myöhemmin arvioida erillisenä toimituskokeena; se ei ole
+Tähtiapurin ensimmäisen toimituskokeen vaatimus.
 
 Natiivimoottori ja tarvittavat kirjastot ovat todellisia resurssitiedostoja
 ASAR-arkiston ulkopuolella. CPU-ominaisuudet, runtime-kirjastot ja GPU-ajurit

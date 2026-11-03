@@ -41,15 +41,15 @@ Lue tehtävän mukaan:
 
 Lue mahdollinen kohdealueen oma AGENTS.md ennen siihen kohdistuvaa työtä.
 Lisää aluekohtainen ohje vasta, kun alue tarvitsee omia tarkennuksia.
-EKYn ohjeita ei tarvitse lukea jokaisessa Tähtiapurin tehtävässä.
 
 ## Työn rajat
 
 - Tämä on oma kokeiluprojekti laboratorion alikansiossa.
 - Pidä työn painopiste paikallisen kielimallin käytön oppimisessa toimivan
   ohjelman osana. Arvioi lisäominaisuudet tätä tavoitetta vasten.
-- EKYä saa tarvittaessa lukea vertailuksi. Sinne ei kirjoiteta, siellä ei
-  ajeta tilaa muuttavia komentoja eikä sen tiedostoja kopioida automaattisesti.
+- Muiden projektien hakemistoja saa tarvittaessa lukea vertailuksi.
+  Niihin ei kirjoiteta, niissä ei ajeta tilaa muuttavia komentoja eikä
+  niiden tiedostoja kopioida automaattisesti.
 - Käyttäjä ja Codex kehittävät sovelluksen. Ajonaikaiset paikalliset mallit
   auttavat havaintojen suunnittelussa; niille ei anneta koodaus- tai shell-oikeutta.
 - Noudata käyttäjän nykyistä tehtävärajausta. Suunnitteluteksti tai toisen
@@ -78,6 +78,13 @@ EKYn ohjeita ei tarvitse lukea jokaisessa Tähtiapurin tehtävässä.
   rajattu sääsovitin ennalta päätettyyn APIin.
 - Älä tallenna oikeita koordinaatteja, keskusteluja tai käyttäjäaineistoa
   testifixtureihin, yhteisiin lokeihin tai jaettavaan dokumentaatioon.
+
+## Julkisen aineiston yksityisyys
+
+Noudata [julkaisun yksityisyyslinjaa](docs/privacy/publication.md) myös
+issueissa, kommenteissa ja committiviesteissä. Tarkista julkaistava diff
+ennen jokaista julkaisua. Konekohtainen aineisto ja yksityinen taustatieto
+säilyvät paikallisina; julkiset tekstit kuvaavat vain tätä projektia.
 
 ## Testit
 

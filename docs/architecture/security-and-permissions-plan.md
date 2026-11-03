@@ -72,7 +72,7 @@ Käyttäjä hyväksyi erillisen käyttöjärjestelmätasolla rajatun malliproses
 ja yhteisen asentimen suunnittelupäälinjan 3.11.2026.
 Windowsin AppContainer/LPAC on arvioitava toteutusmekanismi; sen tarkkaa
 käyttöä, paikallista viestintää ja GPU-yhteensopivuutta ei ole valittu tai
-todistettu. Oppien siirrettävyys EKYyn ja käyttäjän yksi asennus säilyvät
+todistettu. Modulaarinen toteutus ja yksi sovellusasennus säilyvät
 tavoitteina. Kontti ja virtuaalikone säilyvät vertailu- ja mahdollisina
 koeympäristöinä. Aiemmin arvioidut vaihtoehdot:
 
@@ -163,7 +163,7 @@ Synteettinen aineisto ei itsessään ole käyttöjärjestelmäeristys.
 Vain säätyöntekijä nettiin säilyy havaintokäytön tavoitteena.
 Tavallista malliprosessia ei merkitä tämän vaatimuksen täyttäväksi.
 Jos OS-rajaa halutaan keventää laboratoriokäytössä, se päätetään erikseen
-eikä sitä siirretä automaattisesti EKYyn. AppContainer/LPAC pysyy avoimena
+eikä päätös korvaa käyttöversion eristysnäyttöä. AppContainer/LPAC pysyy avoimena
 mekanismina. Tarkat binäärit, CUDA-runtimet, ajurit ja valitun Electron-
 version oikeudet tarkistetaan ennen toimivuus- tai turvallisuuslupausta.
 [node-llama-cpp:n CUDA-ohje](https://node-llama-cpp.withcat.ai/guide/CUDA)
@@ -233,10 +233,10 @@ Tarvittava eristys ei saa poistua CPU-varatilassa tai virheestä palautumisessa.
 Työmäärä tarkennetaan kokeen jälkeen. Täysi verkkoraja hyväksytään erikseen
 [testausohjeen](../ai/testing-rules.md) näytöllä.
 
-EKYyn siirrettäviä oppeja ovat mallin sovitin, rajattu käynnistys,
+Yleisiä arvioitavia vastuita ovat mallin sovitin, rajattu käynnistys,
 kontekstin välitys, resurssit, elinkaari ja niiden testit.
-EKYn tulevia pilvi- tai integraatioyhteyksiä ei tarvitse antaa malliprosessille,
-eikä Tähtiapurin koko verkkopolitiikkaa siirretä sellaisenaan EKYyn.
+Sovelluksen mahdollisia pilvi- tai integraatioyhteyksiä ei tarvitse antaa
+malliprosessille. Verkkopolitiikka suunnitellaan aina käyttötapauksen mukaan.
 Kontti säilyy vertailu- ja laboratoriovaihtoehtona.
 
 ### Olemassa olevat vertailutoteutukset

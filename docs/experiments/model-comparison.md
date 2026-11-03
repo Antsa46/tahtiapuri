@@ -1,47 +1,26 @@
 # Qwen3 4B- ja 8B-mallien paikallinen vertailu
 
-T04 / [issue #5](https://github.com/Antsa46/tahtiapuri/issues/5).
+T04 / issue #5.
 Tämä dokumentti omistaa vertailun menetelmän, tulosten tulkinnan ja rajat.
 Ensimmäinen täysi vertailu on ajettu 3.11.2026; tulokset ja niiden rajat ovat alla.
 
 ## Toteutunut tulos 3.11.2026
 
-Täysi ajo `2026-11-03T14-51-07-266Z-7fd324f9` tuotti kaikki 96 vastausta
+Täysi vertailukoe tuotti kaikki 96 vastausta
 ja 12 lämmittelyä. Kaikki 12 työntekijälohkoa päättyivät koodiin 0.
 Aikakatkaisuja, puuttuvia tapaustuloksia tai automaattisia uusintoja ei ollut.
 24 erilaista tapaus–vastauksen tarkisteparia luettiin käsin; samaan tapaukseen
 kuuluvat identtiset toistot perivät saman arvion. Nollalämpötilan kolme
 samaa vastausta eivät ole kolme riippumatonta laatukoetta.
 
-Koekone: AMD Ryzen 9 8945HS (16 loogista säiettä), Windows x64
-10.0.26300, OS:n raportoima RAM 33 555 271 680 tavua (noin 31,25 GiB),
-Electron 45.2.1 ja node-llama-cpp 3.22.2. SDK käyttää enintään kuutta
-CPU-säiettä. RTX 4070 Laptop GPU:n 8188 MiB:n muistilla ja ajurilla 621.01 saatiin:
+Koe toteutettiin Windows x64 -kohdealustalla lukituilla Electron- ja
+node-llama-cpp-versioilla. CPU- ja CUDA-ajot sekä lataus-, ensiteksti-,
+kokonaisaika- ja muistimittaukset toistettiin sovitun menetelmän mukaan.
 
-| Malli | Tausta | Uusi prosessi valmiina s | Ensiteksti s | Kokonaisaika s | RAM RSS GiB | GPU koko laite MiB |
-| --- | --- | --- | --- | --- | --- | --- |
-| 4B | CUDA | 6,25 | 0,24 | 0,91 | 2,88 | 5629 |
-| 4B | CPU | 5,91 | 6,21 | 8,78 | 4,79 | 2320 |
-| 8B | CUDA | 10,16 | 0,41 | 2,48 | 4,92 | 7588 |
-| 8B | CPU | 10,41 | 11,32 | 22,14 | 8,31 | 2364 |
-
-
-Uuden prosessin latausluvut ovat kolmen kierroksen mediaaneja; vastausajat
-24 eri tapausyrityksen mediaaneja per malli/tausta. Vastauspituus ja tehtävän
-onnistuminen vaihtelevat. 4B:n lyhyempi, vääränmuotoinen JSON-vastaus ei ole
-onnistuneen 8B-katsauksen nopeusverrokki. Koontia ei käytetä nopeusvoittajan valintaan.
-
-RAM-sarake on lohkon tapausten ja lämmittelyn havaittujen RSS-huippujen
-suurin arvo, josta otetaan kolmen lohkon mediaani. GPU-sarake sisältää
-myös latausvaiheen näytteet ja koko laitteen muun käytön. CPU-rivien
-GPU-luku ei ole CPU-mallille osoitettua käyttöä. CUDA käytti kummallakin
-mallilla 37 GPU-kerrosta, CPU 0:aa. Kaikissa 96 tapauksessa saatiin
-ensiteksti-, RAM- ja GPU-näytteet.
-
-Ensimmäisen latauslohkon GPU-alkunäyte puuttui, koska jatkuva mittari ei
-ollut vielä antanut näytettä ennen ensimmäistä forkia. Arvo säilyy nullina;
-huippunäytteet saatiin. Sulun 750 ms jälkinäytteet vaihtelivat laitteen
-muun käytön mukana; täydellistä VRAM:n palautumista ei tällä todeta.
+Laitekokoonpano, ajotunnisteet, numeeriset suorituskykymittaukset ja
+palautumisen havainnot säilyvät vain paikallisissa artefakteissa.
+Julkinen raportti esittää menetelmän ja laadulliset tulokset eikä ole
+laitteiden välinen suorituskykyvertailu.
 
 ### Päätökset ja sisällön laatu
 
@@ -71,7 +50,7 @@ oikeana. Numeron esiintyminen ei yksin todista sujuvaa tai luotettavaa selityst�
 
 Vertailu valmistui, mutta kumpaakaan mallia ei hyväksytä tämän perusteella
 havaintokäytön luotetuksi avustajaksi. 8B onnistui joissakin puuttuvan tiedon
-tehtävissä paremmin, ja 4B oli kevyempi. Nykyinen koeohje ohjaa molempia
+tehtävissä paremmin. Nykyinen koeohje ohjaa molempia
 ajoittain JSON-ehdotuksiin myös tekstitehtävissä. Tämä on tämän
 malli–ohje–template-yhdistelmän tulos, ei yleinen paremmuusjärjestys.
 
@@ -186,7 +165,7 @@ hyväksy puuttuvaa arviointia automaattisesti. Painot, raakavastaukset ja
 konekohtaiset ajotiedot jäävät paikallisiksi. Julkinen dokumentti sisältää
 vain tarpeellisen synteettisen yhteenvedon.
 
-Tämä vertailu ei hyväksy mallia EKYyn tai tuotantoon. OS-eristys,
+Tämä vertailu ei hyväksy mallia tuotantoon. OS-eristys,
 käyttäjäaineisto, todellinen sää, paketointi ja MCP ovat omia työpakettejaan.
 
 ## Mittauslähteet

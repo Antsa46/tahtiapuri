@@ -19,12 +19,12 @@ Sen ei tarvitse aluksi käyttää verkkoa, tietokantaa tai oikeaa kielimallia.
 
 ## Kansiorakenteen vaihtoehdot
 
-Käyttäjä valitsi A-vaihtoehdon kevyen EKY-pilotin pohjaksi.
+A-vaihtoehto on valittu kevyen paikallismallipilotin pohjaksi.
 B säilyy arvioituna vaihtoehtona. Rakennevalinta ei aloita toteutusta:
 sovelluskansioita, paketteja tai koodia ei luoda tämän kuvan perusteella.
 Alla olevat tarkat lähdepolut käyttävät valitun A-rakenteen nimityksiä.
 
-### Vaihtoehto A: kevyt EKYn mukainen workspace
+### Vaihtoehto A: kevyt sovellus- ja pakettityötila
 
 ~~~text
 Tähtiapuri/
@@ -69,10 +69,10 @@ Tähtiapuri/
     support/
 ~~~
 
-Suositus tähän projektiin: A. EKYn apps/- ja packages/-logiikka säilyy,
-mutta yhteisiä paketteja ehdotetaan vain kolmeen todelliseen vastuuseen.
-Electronin, backendin ja mallisovittimen kokemukset ovat tällöin suoraan
-vertailtavissa EKYn vastaaviin rajoihin.
+Suositus tähän projektiin: A. apps/- ja packages/-jako erottaa sovellukset
+ja yhteiset vastuut. Yhteisiä paketteja ehdotetaan vain kolmeen todelliseen
+vastuuseen. Electronin, backendin ja mallisovittimen rajat pysyvät
+selkeästi katselmoitavina.
 
 Yksikkö-, komponentti- ja moduulikohtaiset integraatiotestit ovat lähdekoodin
 vieressä. Testiperheet ja yhteisen tests/-puun tarkat rajat omistaa
@@ -118,17 +118,17 @@ rendereriin.
 
 | Kysymys | A | B |
 | --- | --- | --- |
-| Yhdenmukaisuus EKYn kanssa | Lähin sama sovellus- ja pakettijako. | Samat kerrokset, erilainen lähdekoodin järjestys. |
+| Sovellus- ja pakettijako | Sovellukset ja yhteiset paketit erotettu. | Samat kerrokset yhden lähdepuun sisällä. |
 | Työkaluketjun määrä | Workspace ja muutama rajattu paketti. | Yksi paketti, useat rakennuskohteet. |
 | Muistin ja prosessien tarve | Valittu ajotapa ja malli ratkaisevat. | Sama; kansiopuun tiivistys ei pienennä kielimallia. |
 | Testit | Yksikkö-, komponentti- ja moduulitestit lähteen vieressä; laajat testit tests/-puussa. | Sama sijoitteluperiaate src/-rakenteessa. |
 
-A on valittu tämän projektin EKY-oppimistavoitteen vuoksi.
+A on valittu modulaarisen paikallismallipilotin tarpeisiin.
 Tämä ei tarkoita, että monorepo olisi aina parempi pieneen sovellukseen.
 Hakemistoja ja paketteja luodaan vasta niiden todelliseen tarpeeseen.
 Reactin ja muiden työkalujen valinta on erillinen asia.
-[UI- ja tekniikkaehdotus](technology-and-ui-plan.md) vertaa EKYn nykyistä
-pinoa ja omistaa alustavan riippuvuuskartan sekä sääpalveluvertailun.
+[UI- ja tekniikkaehdotus](technology-and-ui-plan.md) omistaa
+alustavan riippuvuuskartan sekä sääpalveluvertailun.
 React/Vite ja oma CSS Modules -tyylitys on hyväksytty tekniseksi suunnaksi.
 Main–backend-yhteys on sovittu suoraan IPC:hen; siihen ei lisätä
 HTTP-frameworkia. Mahdollinen myöhempi HTTP-sovitin arvioidaan erikseen.
@@ -143,16 +143,15 @@ Paketoitava moottori ja malli voidaan myöhemmin liittää hyväksytystä resurs
 
 ## Pilotin laajuus
 
-Käyttäjä pyysi arvioimaan kevyempää rakennetta, josta olisi silti hyötyä
-EKYn paikallisen mallin toteutuksessa. Suositus on säilyttää sama kerrosjako
-ja luottamusrajat, mutta toteuttaa vain ensimmäisen käyttäjäpolun vastuut.
+Kevyt rakenne säilyttää kerrosjaon ja luottamusrajat, mutta toteuttaa
+aluksi vain ensimmäisen käyttäjäpolun vastuut.
 Taulukot kuvaavat omistajuutta; jokainen vastuu ei tarvitse omaa pakettia,
 prosessia, palvelua tai ennakkoon luotua kansiota.
 
 Alkuun riittävät käyttöliittymä, Electron-main ja pieni backend sekä
 ensimmäisessä mallikokeessa erillinen mallimoottori. Säätyöntekijä tulee
 verkkokokeeseen. Yksi ladattu malli ja yksi opastajarooli luovat lähtötason.
-Yhteistä EKY-kirjastoa, yleistä agenttialustaa, pilveä, yritysrooleja,
+Yhteistä sovelluskehystä, yleistä agenttialustaa, pilveä, yritysrooleja,
 synkronointia tai laajaa tallennusta ei rakenneta etukäteen.
 
 Siirrettävyys tarkoittaa ensin mallisovittimen, työkalupolitiikan, elinkaaren
@@ -248,7 +247,7 @@ vaihtoehdoissa. Nyt valitaan vain mainin ja backendin yhteyttä.
 | Toteutettava sopimus | HTTP tarjoaa yleiset pyyntö- ja vastausrakenteet; omat tietotyypit, oikeudet ja tehtävärajat tarvitaan silti. | Operaatiot, pyyntöjen ja vastausten yhdistäminen, virheet, peruutus ja rajat määritellään viestisopimukseen. |
 | Testaus | HTTP-rajalle on valmiita testausvälineitä; portin ja käyttöoikeustodisteen elinkaari testataan erikseen. | Kanavalle tarvitaan oma pieni testiasiakas; käyttötapaukset testataan edelleen ilman Electronia porttien kautta. |
 | Myöhempi erillinen palvelu | HTTP-sovitin on jo olemassa, mutta etäkäyttö vaatii erillisen turvallisuus- ja identiteettimallin. | HTTP-sovitin voidaan lisätä myöhemmin samoihin käyttötapauksiin; sitä ei synny ilmaiseksi. |
-| EKY-pilotin hyöty | Harjoittelee tuttua API-kuljetusta ja sen suojauksia. | Harjoittelee samoja moduulirajoja, mallijonoa ja elinkaarta eri kuljetussovittimella. |
+| Oppimistavoite | Harjoittelee API-kuljetusta ja sen suojauksia. | Harjoittelee moduulirajoja, mallijonoa ja elinkaarta prosessikanavalla. |
 
 Kummassakin backend validoi pyynnöt ja omistaa toimintojen oikeustarkistukset.
 Prosessikanava ei eristä tiedosto- tai verkkokäyttöä. Myös loopback-palvelun
@@ -316,7 +315,7 @@ ja valvotun UI-välityksen. Domain ja omistavat moduulit säilyttävät säänt�
 
 [Avustajan työnkulkusuunnitelma](assistant-orchestration-plan.md) omistaa
 ohjelmakoodin koordinaattorin, malliroolien, delegoinnin ja työkalujen
-työnkulun sekä EKY-vertailun. [Mallisuunnitelma](local-model-plan.md)
+työnkulun ja sen arviointiperiaatteet. [Mallisuunnitelma](local-model-plan.md)
 omistaa mallisovittimen, moottorin, mallivertailun ja kehitysrajapinnan.
 
 Renderer näyttää kartan ja keskustelun sekä lähettää nimettyjä pyyntöjä.

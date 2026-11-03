@@ -1,7 +1,6 @@
 # Yhteinen kehitystapa ja uuden projektin aloitus
 
-Kirjattu 2.11.2026. Käyttäjän linjaus on kehittää Tähtiapuriin ja EKYyn
-yhtenäistä suunnittelun, toteutuksen ja ylläpidon tapaa.
+Tämä ohje kokoaa yhtenäisen suunnittelun, toteutuksen ja ylläpidon tavan.
 Alla olevat kymmenen aloituskohtaa ovat ehdotus tämän toteuttamiseksi.
 Projektikohtaiset vastaukset sovitaan erikseen.
 
@@ -67,7 +66,7 @@ ja moduulirajoista.
 [Testausohje](testing-rules.md) omistaa tarkat sijaintisäännöt.
 Skill voi ohjata toistuvan työn aloitusta ja lopetusta; se ei korvaa
 koneellista tarkistusta tai katselmusta. Yhden kokeen tulos arvioidaan
-ennen työtavan laajentamista tai EKYyn ehdottamista.
+ennen työtavan laajentamista.
 
 ## Kymmenen kohtaa ennen ensimmäistä toteutusta
 
@@ -146,17 +145,17 @@ Tähtiapurin esittely on [READMEssä](../../README.md), valintojen tila
 
 ## Rakennemallin nimitys
 
-EKYn arkkitehtuuridokumentteihin perustuva tiivis kuvaus on
+Suunnitellun arkkitehtuurin tiivis kuvaus on
 **local-first modulaarinen monoliitti, jossa on sipuliarkkitehtuurin kerrokset**.
 Moduulit jakavat toiminnalliset vastuut; domain pysyy teknologioista
 riippumattomana ja ulkoiset tekniikat ovat porttien ja sovittimien takana.
 
-EKYn alkuperäinen kuvaus käyttää sipuli- ja puumallin yhdistelmää:
+Rakennetta voi kuvata sipuli- ja puumallin yhdistelmänä:
 sipuli kuvaa kerroksia ja puu toiminnallisia moduuleja.
 Monorepo kuvaa sovellusten ja pakettien järjestämistä samaan repositorioon;
 Electron kuvaa desktop-runtimea. Kehitystapaa kuvaa vaiheittainen työ
 pienillä pystysuorilla toteutuspaloilla.
 
-Tämä on suunnitellun rakennemallin nimitys, ei arvio siitä, että EKYn
-jokainen nykyinen tiedosto noudattaisi sitä. Tähtiapurin omat vastuut
+Tämä on suunnitellun rakennemallin nimitys, ei jokaisen tiedoston
+vaatimustenmukaisuuden arvio. Tähtiapurin vastuut
 omistaa [perusarkkitehtuuri](../architecture/base-architecture.md).
