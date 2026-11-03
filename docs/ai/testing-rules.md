@@ -88,9 +88,13 @@ viimeistelyä. Ensimmäinen pari on 4B- ja 8B-kokoluokka.
 [Lukitut kokeen lähtötiedot](../experiments/model-pilot.md) omistavat
 paketit, synteettiset tapaukset, oikeusprofiilin ja tulosten kirjaustavan.
 
-Koe käyttää sovelluksen omaa mallisovitinta, jonoa ja rajattuja
-vastaussopimuksia. Sama vakioitu havaintopaikka, aika, taivastiedot ja
-sääfixture annetaan kummallekin mallille. Oikeaa sää-APIa tai käyttäjän
+T03 todentaa sovelluksen oman mallisovittimen ja jonon integraation.
+T04:n laatuvertailu käyttää erillistä tests-puun UtilityProcess-ajuria,
+samaa lukittua SDK:ta ja tarkistettuja GGUF-/template-profiileja sekä
+4B/8B:lle yhteisiä generointiasetuksia. Se lisää vain testiin annetun
+historian, JSON-grammatiikan ja mittaukset; se ei laajenna tuotannon
+IPC:tä tai todenna UI-/MCP-integraatiota. Sama vakioitu havaintopaikka,
+aika, taivastiedot ja sääfixture annetaan kummallekin mallille. Oikeaa sää-APIa tai käyttäjän
 keskusteluja ei tarvita. Tuotannon kartan ja käyttöliittymän viimeistely
 ei ole tämän teknisen kokeen edellytys.
 

@@ -39,7 +39,9 @@ haetaan erikseen rajatun API-yhteyden kautta.
 Ensimmäiset mallikokeet tehdään 4B- ja 8B-kokoluokissa. GGUF-painot
 säilytetään sovelluksen ulkopuolisessa paikallisessa mallikansiossa,
 ja muistissa pidetään yhtä mallia kerrallaan. 4B:n CPU-/CUDA-ajot on
-todennettu kehityskokeessa; 8B-vertailu ja asetusten mallinvaihto tulevat myöhemmin.
+todennettu kehityskokeessa. Ensimmäinen
+[4B/8B-laatuvertailu](docs/experiments/model-comparison.md) on tehty;
+asetusten mallinvaihto tulee myöhemmin.
 
 ## Arkkitehtuuri
 

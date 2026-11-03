@@ -6,7 +6,9 @@ import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 const root = fileURLToPath(new URL("../../", import.meta.url));
-const profile = JSON.parse(await readFile(join(root, "resources/models/qwen3-4b.json"), "utf8"));
+const size = process.argv[2];
+if (size !== "4b" && size !== "8b") throw new Error("Choose the approved 4b or 8b profile.");
+const profile = JSON.parse(await readFile(join(root, "resources/models/qwen3-" + size + ".json"), "utf8"));
 const directory = join(root, ".local/models");
 await mkdir(directory, { recursive: true });
 async function checksum(path) {

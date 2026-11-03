@@ -1,5 +1,5 @@
 param(
-  [ValidateSet("install", "build", "typecheck", "test", "test:e2e", "test:model", "models:prepare", "cuda:prepare", "start")]
+  [ValidateSet("install", "build", "typecheck", "test", "test:e2e", "test:model", "models:prepare", "models:prepare:8b", "test:compare", "test:compare:smoke", "comparison:report", "cuda:prepare", "start")]
   [string]$Task = "start"
 )
 $ErrorActionPreference = "Stop"

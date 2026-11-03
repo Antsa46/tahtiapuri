@@ -1,0 +1,15 @@
+{
+  "id": "qwen3-8b-q4-k-m",
+  "publisher": "Qwen",
+  "repository": "Qwen/Qwen3-8B-GGUF",
+  "revision": "7c41481f57cb95916b40956ab2f0b139b296d974",
+  "file": "Qwen3-8B-Q4_K_M.gguf",
+  "bytes": 5027783488,
+  "sha256": "d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785",
+  "downloadUrl": "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/7c41481f57cb95916b40956ab2f0b139b296d974/Qwen3-8B-Q4_K_M.gguf",
+  "license": "Apache-2.0",
+  "licenseUrl": "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/7c41481f57cb95916b40956ab2f0b139b296d974/LICENSE",
+  "licenseSha256": "5de36594c10839788a8c589443a8ef9d8b8d17c65a1b5807206ae037fc36c6bd",
+  "expectedChatTemplateSha256": "57f1fd00f0013a2be96aa79b857391f27e23df5b5f847072b524c897e24d0361",
+  "engineVersion": "3.22.2"
+}

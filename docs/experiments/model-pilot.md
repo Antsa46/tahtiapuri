@@ -40,7 +40,8 @@ Mallin latausosoite käyttää revision SHA:ta, ei liikkuvaa main-haaraa.
 | Paikalliset testit | Vitest 5.1.0 | Sopimusten ja moduulien testaus; Node-testiajuri olisi kevyempi vaihtoehto. |
 
 Versiot tarkistettiin julkaisijoiden metatiedoista T01:ssä. T03:ssa 4B:n
-CPU-/CUDA-yhteensopivuus on todennettu; 8B-vertailu on vielä tekemättä.
+CPU-/CUDA-yhteensopivuus on todennettu. T04:n erillinen
+[4B/8B-vertailu](model-comparison.md) on tehty; se ei muuta tätä alkuperäistä lähtömanifestia.
 [Toteutuneen moottorikokeen raportti](model-runtime-probe.md) omistaa
 asennetun kokoonpanon ja ajon näytön. Manifesti säilyy alkuperäisenä lähtötietona.
 CPU-paketin SRI ja Electronin Windows-runtime-ZIPin SHA-256 ovat manifestissa.

@@ -1,0 +1,6 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "composite": false, "rootDir": ".", "outDir": "../../.artifacts/tests/evaluation-build", "declaration": false },
+  "include": ["local-model/**/*.ts"],
+  "exclude": ["**/*.test.ts"]
+}

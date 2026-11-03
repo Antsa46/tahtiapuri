@@ -28,7 +28,8 @@ Qwen3-4B Q4_K_M -GGUF:n ja lisenssin .local/models/-kansioon; noin 2,50 GB.
 Olemassa oleva tiedosto tarkistetaan uudelleen. Kesken jäänyttä .part-tiedostoa
 ei käytetä; poista kyseinen keskeneräinen tiedosto ennen uutta valmistelua.
 build ja start eivät lataa mallia, binäärejä tai käännä natiivimoottoria.
-8B:n valmistelu ja asetusten mallikansiovalitsin eivät vielä kuulu runkoon.
+8B:n valmistelu kuuluu alla kuvattuun erilliseen vertailuun.
+Asetusten mallikansiovalitsin ei vielä kuulu runkoon.
 
 Käyttöliittymässä valitaan CPU tai CUDA ja lähetetään kysymys.
 Ensimmäinen kysymys tarkistaa ja lataa mallin; taustan vaihtaminen pysäyttää
@@ -87,6 +88,26 @@ Virhetilat, apulapsen instrumentointi ja testipreload ovat vain tests/e2e/-puuss
 Tuotannon IPC:ssä tai asetuksissa ei ole testitilaa.
 Playwrightin tilapäiset debug-yhteydet kuuluvat testiajuriin.
 Kehitysajo toimii tavallisen käyttäjän oikeuksilla; testaus ei osoita OS-verkkokieltoa.
+
+## Erillinen 4B/8B-laatuvertailu
+
+Vain vertailua varten valmistele myös hyväksytty noin 5,03 GB:n 8B-paino:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev.ps1 models:prepare:8b
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev.ps1 test:compare:smoke
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev.ps1 test:compare
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev.ps1 comparison:report
+```
+
+Nämä ovat erikseen käynnistettäviä hitaita malliajoja, eivät osa tavallista
+test-komentoa. Ne vaativat myös yllä kuvatun CUDA-valmistelun ja NVIDIA-ajurin.
+smoke sisältää vain katsauksen per malli/tausta; täysi ajo sisältää 96 vastausta
+ja 12 lämmittelyä. Aja yksi vertailu kerrallaan. Tuotannon UI käyttää edelleen 4B:tä.
+comparison:report päättyy koodiin 2, jos sarja tai käsinarviointi on kesken;
+se ei täytä puuttuvia arvioita. Tulos on paikallisessa aikaleimatussa ajokansiossa.
+[Vertailun menetelmä](../experiments/model-comparison.md) määrittää mittarien ja
+käsinarvioinnin merkityksen.
 
 ## Tiedostot ja vian selvitys
 

@@ -129,7 +129,8 @@ Sovitin ei anna rendererille mallimoottorin yleistä APIa.
 Ensimmäisen kokeen täsmäversiot on lukittu
 [kokeen lähtötietoihin](../experiments/model-pilot.md). T03:n 4B-ajo todensi
 node-llama-cpp 3.22.2:n UtilityProcess-yhteensopivuuden paikallisessa
-Windows-kehityskokoonpanossa. 8B ja paketoitu ajo ovat vielä kokeilematta.
+Windows-kehityskokoonpanossa. T04:n erillinen [4B/8B-laatuvertailu](../experiments/model-comparison.md)
+on tehty; paketoitu ajo on vielä kokeilematta.
 Electronin kokeellinen electron/llm näyttää vastaavan prosessijaon.
 Sitä käytetään vertailuna, ei automaattisesti sovelluksen riippuvuutena.
 Tarkat binäärit, CUDA-runtimet, ajurit ja paketoitu offline-käyttö
@@ -155,7 +156,8 @@ Käyttäjä hyväksyi rajatun Windows-kehityskokeen ennen OS-eristyskoetta.
 Sen oikeudet, projektikohtaiset asennuspolut ja toistettavat syötteet
 omistaa [kokeen lähtötieto](../experiments/model-pilot.md).
 Sovellusrungon ja oikean 4B-mallin ajon näyttö on tehty T02/T03:ssa.
-Alla kuvattu 8B-laatuvertailu ja kehitys-MCP kuuluvat seuraaviin työpaketteihin.
+T04:n [4B/8B-laatuvertailu](../experiments/model-comparison.md) on tehty
+erillisessä testiajurissa. Kehitys-MCP on seuraava työpaketti.
 
 ## T03:n toteutettu malliraja
 
@@ -206,14 +208,15 @@ Qwen3.5-4B jää erilliseksi myöhemmäksi ehdokkaaksi.
 Ensimmäiset Qwen3-4B/8B Q4_K_M -paketit ja moottorin npm-versio ovat
 [lukittuina kokeeseen](../experiments/model-pilot.md). Toteutuneen 4B-ajon
 kokoonpano on [moottorikokeen raportissa](../experiments/model-runtime-probe.md).
-8B:tä ei ole vielä ladattu tai ajettu; 14B:n ja muiden perheiden paketit ovat avoimia.
+8B on ladattu ja ajettu T04:n erillisessä laatuvertailussa;
+14B:n ja muiden perheiden paketit ovat avoimia.
 
 | Ehdokas | Tila ja kokeen tarkoitus | Avoin osa |
 | --- | --- | --- |
 | LumiOpen Llama-Poro-2-8B-Instruct | Sovittu: suomenkielinen keskustelu ja työkalutehtävät mitattavina. | GGUF-alkuperä, tarkka kvantisointi, chat-template, käyttöehdot ja oma arviointi. |
 | Ministral 3 8B Instruct 2512 | Sovittu: eurooppalainen keskustelu- ja työkalumallin verrokki. | Tarkka GGUF ja kvantisointi; suomen kieli, faktat ja työkalut mitataan. |
-| Qwen3-4B Q4_K_M | T03:n oikea CPU-/CUDA-vastaus ja elinkaarikokeet läpäisty. | T04:n laatu-, työkalupäätös-, viive- ja muistivertailu. |
-| Qwen3-8B Q4_K_M | Valittu saman perheen 8B-verrokiksi; lähtötiedot lukittu. | Samat tehtävät ja asetusten kirjaaminen; paremmuutta ei oleteta. |
+| Qwen3-4B Q4_K_M | T03:n oikea CPU-/CUDA-vastaus ja elinkaarikokeet läpäisty. | T04:n vertailu tehty; puutteet ja jatkokoe [vertailuraportissa](../experiments/model-comparison.md). |
+| Qwen3-8B Q4_K_M | T04:n toistettu CPU-/CUDA-laatuvertailu tehty. | Ohjeiden laadun kehityskoe; havaintokäytön mallia ei vielä hyväksytty. |
 | Qwen3-14B IQ3_M tai Q3_K_M | Ehdotus: suurempi malli pienemmällä painotarkkuudella. Q4_K_M säilyy erillisenä vertailukohtana. | Todellinen VRAM, konteksti ja laatu mitataan. Pieni tiedostokoko ei takaa koko ajon mahtumista näytönohjaimelle. |
 
 Tiedostokokoja tarkistettiin 3.11.2026: Qwenin oma 4B Q4_K_M on noin

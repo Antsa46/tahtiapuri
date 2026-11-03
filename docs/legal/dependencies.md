@@ -16,7 +16,7 @@ asennuspaketin lisenssiliite. Se viimeistellään T17:ssä toimitetun sisällön
 | @types/node 24.10.0, @types/react ja @types/react-dom 19.3.0 | Käännösaikaiset tyypit. | MIT |
 | node-llama-cpp 3.22.2 ja sen Windows CPU-/CUDA-binäärit | Erillisen mallityöntekijän llama.cpp-sovitin. | MIT; binäärien mukana tulevat llama.cpp- ja muut ilmoitukset säilytetään. |
 | simple-git 4.0.2 ja argv-parser 2.0.1 | SDK:n transitiivinen Git-kirjasto, rajattu turvallisuuspäivityksen override. Rakennuspolku ei käytössä malliajossa. | MIT |
-| Qwen3-4B Q4_K_M GGUF | Ensimmäinen paikallinen keskustelumalli, erillinen painotiedosto. | Apache-2.0; tarkka revisio ja LICENSE-tarkiste malliprofiilissa. |
+| Qwen3-4B ja Qwen3-8B Q4_K_M GGUF | Paikallinen keskustelumalli ja erillisen vertailun 8B-paino. | Apache-2.0; tarkka revisio ja LICENSE-tarkiste malliprofiilissa. |
 | NVIDIA cuBLAS 13.2.0.9 ja CUDA Runtime 13.1.80 | Valinnainen CUDA-tausta; projektikohtaiset DLL:t. | NVIDIA CUDA Toolkit -lisenssi ja komponenttien mukana toimitetut LICENSE-tiedostot. |
 | Node 24.22.2 ja pnpm 12.16.1 | Projektikohtainen kehitystyökaluketju. | MIT; mukana toimitettujen osien omat ilmoitukset säilytetään. |
 

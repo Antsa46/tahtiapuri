@@ -15,8 +15,12 @@
     "test": "vitest run",
     "build:e2e": "tsc -p tests/e2e/tsconfig.json",
     "test:e2e": "pnpm run build && pnpm run build:e2e && playwright test",
-    "models:prepare": "node scripts/models/prepare-4b.mjs",
-    "test:model": "pnpm build && pnpm build:e2e && playwright test --config playwright.model.config.ts"
+    "models:prepare": "node scripts/models/prepare-model.mjs 4b",
+    "test:model": "pnpm build && pnpm build:e2e && playwright test --config playwright.model.config.ts",
+    "models:prepare:8b": "node scripts/models/prepare-model.mjs 8b",
+    "test:compare": "tsc -p tests/evaluations/tsconfig.json && node tests/evaluations/local-model/launch-comparison.mjs",
+    "test:compare:smoke": "pnpm run test:compare smoke",
+    "comparison:report": "node tests/evaluations/local-model/summarize.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.64.1",
@@ -28,6 +32,7 @@
     "electron": "45.2.1",
     "typescript": "7.0.2",
     "vite": "8.3.5",
-    "vitest": "5.1.0"
+    "vitest": "5.1.0",
+    "node-llama-cpp": "3.22.2"
   }
 }

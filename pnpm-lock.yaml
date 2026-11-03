@@ -190,6 +190,9 @@ importers:
       electron:
         specifier: 45.2.1
         version: 45.2.1
+      node-llama-cpp:
+        specifier: 3.22.2
+        version: 3.22.2(typescript@7.0.2)
       typescript:
         specifier: 7.0.2
         version: 7.0.2
