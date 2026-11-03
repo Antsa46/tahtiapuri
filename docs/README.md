@@ -19,6 +19,7 @@ vastuurajan, lue myös toisen osapuolen sopimus.
 | Nykyhetken kartta, katsaus, keskustelun karttaohjaus, sääasetukset ja poikkeukset | [product/observing-session-use-cases.md](product/observing-session-use-cases.md) |
 | Valittu kansiorakenne A, moduulit, kerrokset ja prosessien kulkureitit | [architecture/base-architecture.md](architecture/base-architecture.md) |
 | Osien oikeudet, malliprosessin ajotapa ja eristyksen vaiheistus sekä Windows-/kontti-/VM-vertailu | [architecture/security-and-permissions-plan.md](architecture/security-and-permissions-plan.md) |
+| Natiivin AppContainer/LPAC-kokeen rajaus, toistaminen ja rajattu näyttö | [experiments/windows-isolation-probe.md](experiments/windows-isolation-probe.md) |
 | Havaintopaikkojen asetukset, viimeksi käytetty paikka ja observing-IPC | [architecture/observing-places.md](architecture/observing-places.md) |
 | Käyttäjätiedot, keskusteluhistoria ja mallin konteksti, poisto, välimuistit ja vienti/palautus | [architecture/data-lifecycle-plan.md](architecture/data-lifecycle-plan.md) |
 | Tähtilaskenta, UTC/paikallisaika, koordinaatit, magnitudit ja paikallinen katalogi | [architecture/sky-calculation.md](architecture/sky-calculation.md) |

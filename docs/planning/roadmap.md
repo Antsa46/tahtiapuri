@@ -104,6 +104,12 @@ sääkoetoiminto ja käytössä oleva MCP-sovitin. Se ei odota T14:n valmista
 mallivalikkoa tai T15:n käyttöversion asenninta. Rajat osoitetaan tässä
 koekokoonpanossa myös GPU-ajossa ja virheestä palautuessa.
 
+T09a (#24) erottaa ensimmäisen synteettisen natiivikokeen:
+token, koeaineiston tiedostorajat, paikalliset verkkoverrokit ja prosessien
+elinkaari. [Koesuunnitelma](../experiments/windows-isolation-probe.md)
+erottaa sen Electron-/malli- ja täyden minipaketin jatkoporteista.
+Osakoe ei yksin täytä T09:n hyväksymisehtoja.
+
 T15 rakentaa lopullisen asentimen, ja T16 toistaa oikeusrajojen
 hyväksymisnäytön lopullisella toimitettavalla kokoonpanolla.
 Pelkkä prosessijako, CSP tai työkalujen sallittujen lista ei todista

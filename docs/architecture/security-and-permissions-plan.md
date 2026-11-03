@@ -7,7 +7,9 @@ vertailupainot ovat erillisessä paikallisessa mallikansiossa.
 Vain säätyöntekijän ulkoinen verkkolupa on tavoite. Muut alla esitetyt
 oikeustarkennukset ja toteutusmekanismit ovat ehdotuksia, ellei niitä merkitä
 sovituiksi. T02:n statusrunko ja sen IPC-rajat on toteutettu;
-OS-eristystä ei ole vielä toteutettu. T05:n rajattu stdio-MCP-yhteys
+Sovelluksen OS-eristystä ei ole vielä toteutettu.
+Erillinen [natiivikoe](../experiments/windows-isolation-probe.md)
+rajaa T09a:n synteettisen koepaketin ja sen näyttöportit. T05:n rajattu stdio-MCP-yhteys
 käyttää Windowsin capability-todennettua named pipe -sovitinta;
 [mallisuunnitelma](local-model-plan.md#kehitys--ja-diagnostiikkarajapinta-paikalliseen-malliin)
 omistaa toteutetun sopimuksen. Se ei ole koko sovelluksen OS-eristys.

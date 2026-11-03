@@ -286,3 +286,11 @@ Testimäärä raportoidaan nimetystä ajosta ja sen kohdejoukosta.
 Testitiedostojen määrä ei ole testitapausten määrä. Parametrisoidut tapaukset,
 eri projektien/selainten ajot ja uusinnat eritellään tarvittaessa;
 lukumäärä ei yksin osoita testien hyödyllisyyttä tai kattavuutta.
+
+## Natiivin Windows-eristyksen erillinen koe
+
+T09a:n tests/e2e/isolation/-koe ajetaan erikseen omalla run.ps1:llä.
+Se ei kuulu tavalliseen test:e2e-ajoon: koe luo uniikin oman
+AppContainer-profiilin ja muuttaa vain oman staged-aineistonsa oikeuksia.
+Menetelmän, tarvitun olemassa olevan kääntäjän, siivouksen ja näyttörajan
+omistaa [eristyskokeen ohje](../experiments/windows-isolation-probe.md).
