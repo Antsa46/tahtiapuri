@@ -1,5 +1,6 @@
 #include "common.h"
 #include <memory>
+#include <tlhelp32.h>
 
 static bool ownedProfile(const std::wstring& name) {
     for (const std::wstring prefix : { L"tahtiapuri.t09a.", L"tahtiapuri.t09b.", L"tahtiapuri.t09c." }) {
@@ -150,9 +151,10 @@ static void readOnlyTree(const std::wstring& path, PSID sid, unsigned& remaining
     } catch (...) { FindClose(search); throw; }
     FindClose(search);
 }
-static void prepareElectronResources(const std::wstring& root, PSID sid, bool sdk) {
+static void prepareRuntimeResources(const std::wstring& root, PSID sid, bool sdk, const std::wstring& image) {
     for (const auto& dir : { L"package", L"private", L"scratch", L"launcher" }) regular(root + L"\\" + dir, true);
-    for (const auto& name : { L"package\\electron.exe", L"package\\allowed.txt", L"package\\module.mjs", L"private\\secret.txt", L"launcher\\host.exe" }) regular(root + L"\\" + name, false);
+    regular(image, false);
+    for (const auto& name : { L"package\\allowed.txt", L"package\\module.mjs", L"private\\secret.txt", L"launcher\\host.exe" }) regular(root + L"\\" + name, false);
     regular(root + (sdk ? L"\\package\\sdk-probe.mjs" : L"\\package\\runtime-probe.mjs"), false);
     unsigned verified = sdk ? 25000 : 2000; readOnlyTree(root, sid, verified, false);
     setOwnedAcl(root, sid, FILE_TRAVERSE, true);
@@ -217,7 +219,36 @@ static void relayWorker(HANDLE input, std::string& pending, size_t& total, bool 
     }
     if (final && !pending.empty()) throw WinError("worker-unterminated-output", ERROR_INVALID_DATA);
 }
-static void inspectSdkChild(HANDLE job, DWORD parent, DWORD& observed, const std::wstring& root, const std::wstring& nonce, const TokenView& primary, HANDLE ack) {
+static void inspectOwnConsole(Handle& console) {
+    DWORD clients[2] = {};
+    if (GetConsoleProcessList(clients, 2) != 1 || clients[0] != GetCurrentProcessId()) throw WinError("console-ownership", ERROR_ACCESS_DENIED);
+    const HWND window = GetConsoleWindow(); DWORD pid = 0;
+    if (window && IsWindowVisible(window)) throw WinError("console-window", ERROR_ACCESS_DENIED);
+    // CREATE_NO_WINDOW can provide a console without a window handle.
+    // Require its sole console host to be a direct child of this launcher.
+    Handle snapshot(CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0));
+    if (snapshot.value == INVALID_HANDLE_VALUE) throw WinError("console-snapshot");
+    PROCESSENTRY32W entry = {}; entry.dwSize = sizeof(entry);
+    if (!Process32FirstW(snapshot.value, &entry)) throw WinError("console-enumeration");
+    do {
+        if (entry.th32ParentProcessID == GetCurrentProcessId() && _wcsicmp(entry.szExeFile, L"conhost.exe") == 0) {
+            if (pid) throw WinError("console-count", ERROR_ACCESS_DENIED);
+            pid = entry.th32ProcessID;
+        }
+    } while (Process32NextW(snapshot.value, &entry));
+    if (GetLastError() != ERROR_NO_MORE_FILES || !pid) throw WinError("console-parent", ERROR_ACCESS_DENIED);
+    if (window) { DWORD windowPid = 0; if (!GetWindowThreadProcessId(window, &windowPid) || windowPid != pid) throw WinError("console-window-owner", ERROR_ACCESS_DENIED); }
+    Handle candidate(OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, FALSE, pid));
+    if (!candidate.value) throw WinError("console-process");
+    wchar_t image[2048] = {}, system[2048] = {}; DWORD size = 2048;
+    const UINT length = GetSystemDirectoryW(system, 2048);
+    if (!length || length >= 2048 || !QueryFullProcessImageNameW(candidate.value, 0, image, &size) ||
+        _wcsicmp(image, (std::wstring(system) + L"\\conhost.exe").c_str()) != 0 || WaitForSingleObject(candidate.value, 0) != WAIT_TIMEOUT)
+        throw WinError("console-image", ERROR_ACCESS_DENIED);
+    console.value = candidate.value; candidate.value = nullptr;
+    emit("{\"type\":\"console-host\",\"pid\":" + std::to_string(pid) + ",\"soleClient\":true,\"hidden\":true,\"imageVerified\":true}");
+}
+static void inspectSdkChild(HANDLE job, DWORD parent, DWORD& observed, const std::wstring& nonce, const TokenView& primary, HANDLE ack, const std::wstring& expectedImage) {
     std::vector<BYTE> storage(sizeof(JOBOBJECT_BASIC_PROCESS_ID_LIST) + sizeof(ULONG_PTR) * 7);
     auto members = reinterpret_cast<JOBOBJECT_BASIC_PROCESS_ID_LIST*>(storage.data());
     if (!QueryInformationJobObject(job, JobObjectBasicProcessIdList, members, static_cast<DWORD>(storage.size()), nullptr)) throw WinError("sdk-job-members");
@@ -231,7 +262,13 @@ static void inspectSdkChild(HANDLE job, DWORD parent, DWORD& observed, const std
         BOOL member = FALSE;
         if (!IsProcessInJob(child.value, job, &member) || !member || WaitForSingleObject(child.value, 0) != WAIT_TIMEOUT) throw WinError("sdk-child-job", ERROR_ACCESS_DENIED);
         wchar_t image[2048] = {}; DWORD length = 2048;
-        if (!QueryFullProcessImageNameW(child.value, 0, image, &length) || _wcsicmp(image, (root + L"\\package\\electron.exe").c_str()) != 0) throw WinError("sdk-child-image", ERROR_ACCESS_DENIED);
+        if (!QueryFullProcessImageNameW(child.value, 0, image, &length)) throw WinError("sdk-child-image-query");
+        if (_wcsicmp(image, expectedImage.c_str()) != 0) {
+            // Private stderr only; never accept or silently exclude an unexpected Job member.
+            char utf8[8192] = {}; const int bytes = WideCharToMultiByte(CP_UTF8, 0, image, -1, utf8, sizeof(utf8), nullptr, nullptr);
+            if (bytes > 0) { DWORD written = 0; WriteFile(GetStdHandle(STD_ERROR_HANDLE), utf8, static_cast<DWORD>(bytes - 1), &written, nullptr); }
+            throw WinError("sdk-child-image", ERROR_ACCESS_DENIED);
+        }
         const auto token = inspectToken(child.value);
         if (token.app != primary.app || token.sid != primary.sid || token.capabilities != 0 || token.integrity != primary.integrity || token.lpac != primary.lpac || token.lpacQueryError != primary.lpacQueryError) throw WinError("sdk-child-token", ERROR_ACCESS_DENIED);
         emit("{\"type\":\"inspected-child\",\"pid\":" + std::to_string(pid) + ",\"job\":true,\"imageVerified\":true,\"appContainer\":" + (token.app ? "true" : "false") + ",\"sid\":\"" + ascii(token.sid) + "\",\"capabilities\":" + std::to_string(token.capabilities) + ",\"integrity\":" + std::to_string(token.integrity) + ",\"lpac\":" + jsonFlag(token.lpac) + "}");
@@ -241,7 +278,7 @@ static void inspectSdkChild(HANDLE job, DWORD parent, DWORD& observed, const std
     }
 }
 int wmain(int argc, wchar_t** argv) {
-    PSID sid = nullptr; std::wstring profile; bool created = false; int result = 1; Handle job;
+    PSID sid = nullptr; std::wstring profile; bool created = false; int result = 1; Handle job, console;
     try {
         if (argc == 4 && std::wstring(argv[1]) == L"cleanup" && ownedProfile(argv[2])) {
             receipt(ownedRoot(argv[3]), argv[2], false);
@@ -254,13 +291,14 @@ int wmain(int argc, wchar_t** argv) {
             if (!process.value) throw WinError("emergency-open");
             wchar_t image[2048] = {}; DWORD length = 2048;
             if (!QueryFullProcessImageNameW(process.value, 0, image, &length)) throw WinError("emergency-image");
-            if (_wcsicmp(image, (root + L"\\package\\electron.exe").c_str()) != 0 && _wcsicmp(image, (root + L"\\package\\probe.exe").c_str()) != 0 && _wcsicmp(image, (root + L"\\launcher\\host.exe").c_str()) != 0) throw WinError("emergency-identity", ERROR_ACCESS_DENIED);
+            if (_wcsicmp(image, (root + L"\\package\\node.exe").c_str()) != 0 && _wcsicmp(image, (root + L"\\package\\electron.exe").c_str()) != 0 && _wcsicmp(image, (root + L"\\package\\probe.exe").c_str()) != 0 && _wcsicmp(image, (root + L"\\launcher\\host.exe").c_str()) != 0) throw WinError("emergency-identity", ERROR_ACCESS_DENIED);
             if (!TerminateProcess(process.value, 44) || WaitForSingleObject(process.value, 5000) != WAIT_OBJECT_0) throw WinError("emergency-stop");
             emit("{\"type\":\"emergency-stopped\"}"); return 0;
         }
-        if (argc != 11 || (std::wstring(argv[1]) != L"run" && std::wstring(argv[1]) != L"run-electron" && std::wstring(argv[1]) != L"run-sdk")) throw WinError("arguments", ERROR_INVALID_PARAMETER);
-        const bool sdk = std::wstring(argv[1]) == L"run-sdk";
-        const bool electron = sdk || std::wstring(argv[1]) == L"run-electron";
+        if (argc != 11 || (std::wstring(argv[1]) != L"run" && std::wstring(argv[1]) != L"run-electron" && std::wstring(argv[1]) != L"run-sdk" && std::wstring(argv[1]) != L"run-sdk-node")) throw WinError("arguments", ERROR_INVALID_PARAMETER);
+        const bool node = std::wstring(argv[1]) == L"run-sdk-node";
+        const bool sdk = node || std::wstring(argv[1]) == L"run-sdk";
+        const bool electron = !node && (sdk || std::wstring(argv[1]) == L"run-electron");
         std::wstring mode(argv[2]); profile = argv[3]; const std::wstring root = ownedRoot(argv[4]);
         if ((mode != L"control" && mode != L"control-inherit" && mode != L"ac" && mode != L"lpac") || !ownedProfile(profile)) throw WinError("profile-arguments", ERROR_INVALID_PARAMETER);
         const std::wstring purpose = sdk ? L"tahtiapuri.t09c." : electron ? L"tahtiapuri.t09b." : L"tahtiapuri.t09a.";
@@ -279,7 +317,9 @@ int wmain(int argc, wchar_t** argv) {
             LPWSTR text = nullptr; if (!ConvertSidToStringSidW(sid, &text)) throw WinError("profile-sid");
             emit("{\"type\":\"profile\",\"name\":\"" + ascii(profile) + "\",\"sid\":\"" + ascii(text) + "\"}"); LocalFree(text);
         }
-        if (electron) prepareElectronResources(root, sid, sdk); else prepareResources(root, sid);
+        const std::wstring image = root + (node ? L"\\package\\node.exe" : electron ? L"\\package\\electron.exe" : L"\\package\\probe.exe");
+        if (node) inspectOwnConsole(console);
+        if (electron || node) prepareRuntimeResources(root, sid, sdk, image); else prepareResources(root, sid);
         job.value = CreateJobObjectW(nullptr, nullptr); if (!job.value) throw WinError("job");
         JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits = {}; limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
         if (!SetInformationJobObject(job.value, JobObjectExtendedLimitInformation, &limits, sizeof(limits))) throw WinError("job-limits");
@@ -302,14 +342,16 @@ int wmain(int argc, wchar_t** argv) {
         if (mode == L"lpac") attributes.put(PROC_THREAD_ATTRIBUTE_ALL_APPLICATION_PACKAGES_POLICY, &policy, sizeof(policy));
         STARTUPINFOEXW startup = {}; startup.StartupInfo.cb = sizeof(startup); startup.lpAttributeList = attributes.list;
         startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES; startup.StartupInfo.hStdInput = inherited[0]; startup.StartupInfo.hStdOutput = inherited[1]; startup.StartupInfo.hStdError = inherited[2];
-        const std::wstring image = root + (electron ? L"\\package\\electron.exe" : L"\\package\\probe.exe");
         std::wstring command = quote(image);
-        if (electron) command += L" --preserve-symlinks --preserve-symlinks-main " + quote(root + (sdk ? L"\\package\\sdk-probe.mjs" : L"\\package\\runtime-probe.mjs"));
+        if (electron || node) command += L" --preserve-symlinks --preserve-symlinks-main " + quote(root + (sdk ? L"\\package\\sdk-probe.mjs" : L"\\package\\runtime-probe.mjs"));
         command += L" " + quote(root);
         for (int n = 5; n <= 9; ++n) command += L" " + quote(argv[n]);
         command += L" " + quote(childLife) + L" " + std::to_wstring(reinterpret_cast<ULONG_PTR>(sentinel.value)) + (primaryOnly ? L" primary-only" : L" primary");
         std::wstring env = environment(root, electron, sdk); PROCESS_INFORMATION process = {};
-        if (!CreateProcessW(image.c_str(), &command[0], nullptr, nullptr, TRUE, EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT | CREATE_SUSPENDED | CREATE_NO_WINDOW, &env[0], (root + L"\\package").c_str(), &startup.StartupInfo, &process)) throw WinError("create-child");
+        // Node and its unchanged SDK fork share the host's hidden console. Creating
+        // a second console would add conhost.exe to the strictly two-process Job.
+        const DWORD consoleFlags = node ? 0 : CREATE_NO_WINDOW;
+        if (!CreateProcessW(image.c_str(), &command[0], nullptr, nullptr, TRUE, EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT | CREATE_SUSPENDED | consoleFlags, &env[0], (root + L"\\package").c_str(), &startup.StartupInfo, &process)) throw WinError("create-child");
         Handle child(process.hProcess), thread(process.hThread);
         if (sdk) { CloseHandle(workerWrite.value); workerWrite.value = nullptr; }
         BOOL inJob = FALSE; if (!IsProcessInJob(child.value, job.value, &inJob) || !inJob) throw WinError("job-membership");
@@ -324,7 +366,7 @@ int wmain(int argc, wchar_t** argv) {
         for (;;) {
             if (WaitForSingleObject(child.value, 20) == WAIT_OBJECT_0) break;
             if (sdk) relayWorker(workerRead.value, pendingOutput, outputBytes, false);
-            if (sdk) inspectSdkChild(job.value, process.dwProcessId, inspected, root, profile.substr(purpose.size()), view, ack.value);
+            if (sdk) inspectSdkChild(job.value, process.dwProcessId, inspected, profile.substr(purpose.size()), view, ack.value, image);
             DWORD available = 0;
             if (!PeekNamedPipe(GetStdHandle(STD_INPUT_HANDLE), nullptr, 0, nullptr, &available, nullptr)) { ownerGone = true; break; }
             if (available > 0) { ownerGone = true; break; }
@@ -350,6 +392,12 @@ int wmain(int argc, wchar_t** argv) {
     if (job.value) {
         processesStopped = stopJob(job.value); CloseHandle(job.value); job.value = nullptr;
         if (!processesStopped) { result = 1; try { emit("{\"type\":\"error\",\"stage\":\"error-path-job-cleanup\"}"); } catch (...) {} }
+    }
+    if (console.value) {
+        const bool detached = FreeConsole() != FALSE;
+        const bool stopped = WaitForSingleObject(console.value, 3000) == WAIT_OBJECT_0;
+        try { emit("{\"type\":\"console-finished\",\"detached\":" + std::string(detached ? "true" : "false") + ",\"stopped\":" + (stopped ? "true" : "false") + "}"); } catch (...) {}
+        if (!detached || !stopped) result = 1;
     }
     if (sid) FreeSid(sid);
     if (created && processesStopped) {

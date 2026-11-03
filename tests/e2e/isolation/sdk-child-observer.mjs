@@ -3,7 +3,8 @@ import { createRequire, syncBuiltinESMExports } from 'node:module';
 import { createInterface } from 'node:readline';
 import { resolve } from 'node:path';
 const require = createRequire(import.meta.url);
-export function observeSdkChild({ helper, preload, nonce, emit, hold }) {
+export function observeSdkChild({ runtimeKind, helper, preload, nonce, emit, hold }) {
+  assert(['electron', 'node'].includes(runtimeKind));
   const cp = require('node:child_process'); const originalFork = cp.fork; let child; let originalEmit; let expectedPid; let acked = false; let terminal = false;
   let resolveAck, rejectAck;
   const acknowledgement = new Promise((yes, no) => { resolveAck = yes; rejectAck = no; });
@@ -22,7 +23,7 @@ export function observeSdkChild({ helper, preload, nonce, emit, hold }) {
   const timer = setTimeout(() => rejectAck(new Error('Host child-token acknowledgement timed out.')), 10000);
   cp.fork = function(file, args, options) {
     assert(!child, 'Only one SDK test child is expected.'); assert.equal(resolve(file), resolve(helper)); assert.deepEqual(args, []);
-    assert.equal(options.detached, false); assert.equal(options.env.ELECTRON_RUN_AS_NODE, '1'); assert.equal(options.env.TEST_BINDING_CP, 'true');
+    assert.equal(options.detached, false); assert.equal(options.env.ELECTRON_RUN_AS_NODE, runtimeKind === 'electron' ? '1' : undefined); assert.equal(options.env.TEST_BINDING_CP, 'true');
     assert.equal(options.execArgv, undefined); assert.deepEqual(process.execArgv, ['--preserve-symlinks', '--preserve-symlinks-main']);
     const flags = [...process.execArgv, '--require', preload];
     emit({ type: 'sdk-phase', phase: 'fork-call', started: true });

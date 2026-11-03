@@ -22,7 +22,7 @@ vastuurajan, lue myös toisen osapuolen sopimus.
 | Natiivin AppContainer/LPAC-kokeen rajaus, toistaminen ja rajattu näyttö | [experiments/windows-isolation-probe.md](experiments/windows-isolation-probe.md) |
 | Electronin Node-tilan eristyskäynnistyksen synteettinen yhteensopivuuskoe | [experiments/electron-isolation-probe.md](experiments/electron-isolation-probe.md) |
 | SDK:n CPU-alustus, riippuvuuksien kopiointi ja instrumentoidun binäärilapsen eristyskoe | [experiments/sdk-isolation-probe.md](experiments/sdk-isolation-probe.md) |
-| Putkinimiavaruuden diagnoosi ja korjatun runtime-vertailun valmistelu | [experiments/runtime-comparison.md](experiments/runtime-comparison.md) |
+| Putkinimiavaruuden diagnoosi ja korjattu Node-/SDK-runtimevertailu | [experiments/runtime-comparison.md](experiments/runtime-comparison.md) |
 | Havaintopaikkojen asetukset, viimeksi käytetty paikka ja observing-IPC | [architecture/observing-places.md](architecture/observing-places.md) |
 | Käyttäjätiedot, keskusteluhistoria ja mallin konteksti, poisto, välimuistit ja vienti/palautus | [architecture/data-lifecycle-plan.md](architecture/data-lifecycle-plan.md) |
 | Tähtilaskenta, UTC/paikallisaika, koordinaatit, magnitudit ja paikallinen katalogi | [architecture/sky-calculation.md](architecture/sky-calculation.md) |

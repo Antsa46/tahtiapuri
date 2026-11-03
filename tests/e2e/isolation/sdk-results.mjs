@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { validateRuntimeEvidence } from './sdk-runtime.mjs';
 const policyNames=['package-read','scratch-write','outside-read','outside-write','code-write'];
 export function validateSdkEvidence(records,mode,{requireChild=false}={}) {
   const launches=records.filter(r=>r.type==='launched'&&r.source==='host');assert.equal(launches.length,1);
@@ -15,14 +16,14 @@ export function validateSdkEvidence(records,mode,{requireChild=false}={}) {
   }
   return {main,child,inspected,policy};
 }
-export function classifySdkFailure(records,mode,exit) {
+export function classifySdkFailure(records,mode,exit,runtime) {
   // Validate every received permission/identity record even when the SDK also failed.
   const evidence=validateSdkEvidence(records,mode);
   const errors=records.filter(r=>r.type==='sdk-error');assert.equal(errors.length,1);const error=errors[0];assert.equal(error.source,'worker');
   const finishes=records.filter(r=>r.type==='finished'&&r.source==='host');assert.equal(finishes.length,1);assert.equal(exit.code,1);assert.notEqual(finishes[0].exitCode,0);assert.equal(finishes[0].activeProcesses,0);
   const passed=phase=>records.some(r=>r.source==='worker'&&r.type==='sdk-phase'&&r.phase===phase&&r.passed===true);
   assert(passed('integrity'),'Package integrity must have completed.');
-  assert(records.some(r=>r.source==='worker'&&r.type==='sdk-phase'&&r.phase==='electron-resolution'&&r.passed===true&&r.resolved==='electron:electron'),'Electron ESM builtin resolution must have completed.');
+  validateRuntimeEvidence(records,runtime);
   if(['import','public-cpu'].includes(error.phase)) {
     assert(!evidence.child&&!evidence.inspected&&!evidence.policy,'Unexpected child on the public CPU path.');
     if(error.phase==='public-cpu')assert(passed('import'));

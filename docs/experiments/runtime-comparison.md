@@ -1,4 +1,4 @@
-# Korjatun runtime-polun vertailun valmistelu
+# Korjatun Node-/SDK-polun vertailu
 
 Tämä jatkaa [SDK-koetta](sdk-isolation-probe.md) ja issuea #26.
 Tila: **kokeella selvitettävä**. Node-/Electron-runtimen vaihtoa sovellukseen
@@ -66,7 +66,7 @@ Windows-nightly-merkinnät ilmoittivat edelleen libuv 1.52.1:n.
 Node-projektin libuv 1.53 -päivitys oli avoin. Pelkkä uuden version lataus
 ei siksi ole osoitettu korjattu vertailukohta.
 
-Ehdotus on kertaluonteinen Node 24.22.2 -lähdevertailu:
+Vertailu käyttää kertaluonteista Node 24.22.2 -lähdekäännöstä:
 
 - Virallinen Node 24.22.2 on alkuperäinen julkaisuvertailu.
 - Sama lähde rakennetaan ensin muuttamattomana ja sitten vain libuvin
@@ -82,34 +82,82 @@ Ehdotus on kertaluonteinen Node 24.22.2 -lähdevertailu:
 - Node saa oman kiinteän image-/käynnistyssopimuksen; sitä ei nimetä
   electron.exe:ksi eikä Electronin ESM-guardia vain poisteta.
 
-## Työkaluketjuehdotus — ei asennettu
+## Käännöksen työkalut ja rajaus
 
-Node 24:n virallinen ohje vaatii Windowsissa ClangCL:n. Tuettu vaihtoehto
-on Build Tools for Visual Studio 2022 Current 17.14 tai Visual Studio 2026.
-Ehdotettu 2022-kokoonpano on C++ build tools, MSVC v143 x64/x86,
-Windows 11 SDK 10.0.26100 sekä seuraavat komponentit:
+Rajattu Visual Studio Community 2022 -asennus sisältää C++-työkalut,
+MSVC v143 x64/x86:n, Clang 19.1.5:n, ClangCL-toolsetin ja Windows SDK
+10.0.26100:n. Mitattu asennusversio on 17.14.37827.9. Python 3.11.9
+valitaan vain käännösprosessin ympäristössä. Asennus on kehitystyökalu;
+sovelluksen käyttäjä ei tarvitse Visual Studiota mallin suorittamiseen.
 
-- Microsoft.VisualStudio.Component.VC.Llvm.Clang (luettelossa Clang 19.1.5)
-- Microsoft.VisualStudio.Component.VC.Llvm.ClangToolset
+Communityn yksittäisen kehittäjän lisenssi sallii omien sovellusten
+kehittämisen. Build Toolsin avoimen lähdekoodin poikkeus ei yleisesti kata
+riippuvuuden kehittämistä tai testaamista. Tässä muutetaan ja testataan
+libuvia, joten pelkkää riippuvuuden kääntämistä koskevaa poikkeusta ei käytetä
+lisenssiperusteena. Mahdollisen organisaatiokäytön ehdot arvioidaan erikseen.
 
-Tarkat asentimen ja komponenttien revisiot lukitaan hankintavaiheessa.
-Python valitaan Noden tukemasta versiosta käännösprosessin omalla PATHilla.
-NASM voidaan jättää pois käyttämällä molemmissa koebuildeissa
-openssl-no-asm-optiota; ero viralliseen binääriin kirjataan.
+Molempien paikallisten varianttien käännöskomento on sama:
 
-Build Tools ei ole pelkkä projektikansioon purettava työkalu: Installer,
-jaetut komponentit ja osa SDK:sta kirjoittavat järjestelmäalueille myös
-mukautettua asennuspolkua käytettäessä. Sen asennus tarvitsee erillisen
-käyttäjäpäätöksen. Projektin lähteet ja tulokset pysyvät omissa paikallisissa
-hakemistoissa. Käännöspolun välilyöntien tuki tarkistetaan erikseen;
-projektia ei siirretä tai asemakytkentää luoda hiljaisesti.
+```text
+vcbuild.bat release projgen x64 vs2022 clang-cl openssl-no-asm nonpm nocorepack no-cctest
+```
 
-Asennus vaatii useita gigatavuja latausta ja levytilaa; tarkka valinnan
-koko saadaan asentimesta. Microsoftin Build Tools -vaatimus on valinnoista
-riippuen 2,3–60 Gt, eikä sitä pidetä tämän rajatun valinnan kokomittauksena.
-Käännöstuotokset tarvitsevat lisäksi omaa tilaa. Build Tools poistetaan
-Installerista; pelkkä projektikansion poistaminen ei poista asennusta eikä
-jaettuja komponentteja luvata automaattisesti poistuviksi.
+Käännösprosessissa `NUMBER_OF_PROCESSORS=2` ja
+`msbuild_args=/m:1 /nodeReuse:false /p:MultiProcMaxCount=2
+/p:EnforceProcessCountAcrossBuilds=true /p:UseMultiToolTask=true` rajaavat kuormaa.
+Raja asetetaan MSBuild-ominaisuutena, koska Visual Studion ympäristö voi
+korvata pelkän NUMBER_OF_PROCESSORS-arvon. PATH ja PATHEXT
+asetetaan vain tätä prosessia varten. `release` ottaa tässä lähdeversiossa
+käyttöön myös `--with-ltcg`-option. `openssl-no-asm` välttää erillisen NASM-
+työkalun; omat koebinäärit eivät siksi vastaa virallisen julkaisun optimointeja.
+Tämä ero on molemmille paikallisille varianteille yhteinen.
+
+Lähteet, binäärit, valmisteluskriptit ja alkuperäiset epäonnistumiset
+säilytetään projektin ohitetuissa paikallishakemistoissa. Lyhyt lähdepolku
+välttää generoitujen tiedostojen Windows-polkurajan. Koneen yleistä
+pitkien polkujen asetusta, PATHia tai asemakytkentöjä ei muuteta.
+Asennin ja työkalut ovat järjestelmäasennus; niitä ei voi poistaa poistamalla
+projektin kansiota. Uusi asennus voidaan poistaa Visual Studio Installerista,
+mutta jaettujen komponenttien poistumista ei oleteta.
+
+## Runtimen ja koekonsolin sopimus
+
+`run.ps1 -Probe sdk -SdkRuntime official|local-unpatched|local-patched`
+valitsee erillisen kiinteän Node-polun. Oletus `electron` säilyttää aiemman
+Electron-kokeen. Node-varianttien versio- ja SHA-256-tiedot luetaan paikallisesta
+`.artifacts/tests/t09c-node/runtimes.json`-manifestista. Puuttuva tai poikkeava
+manifesti ei käynnistä koetta. Binääriä ei nimetä Electroniksi.
+
+Guard tarkistaa binäärin tarkisteen, version, arkkitehtuurin, prosessikuvan
+ja runtime-kohtaisen ympäristön ennen SDK-importtia. Electronilta vaaditaan
+yhä `electron:electron`-ESM-resoluutio. Node-polku hylkää Electron-version,
+ELECTRON_RUN_AS_NODE-tilan ja ylimääräiset NODE_OPTIONS/NODE_PATH-asetukset.
+Sama SDK-lähde, CPU-binääri ja lapsiprotokolla säilyvät kaikissa varianteissa.
+Koepaketin oma minimaalinen package.json katkaisee Node-pakettikontekstin
+haun koepuun sisälle. Ilman sitä virallinen Node pysähtyi kahdesti
+ERR_INVALID_PACKAGE_CONFIG-virheeseen yrittäessään lukea ylemmän projektin
+manifestia. Alkuperäisiä SDK-manifesteja tai lähdeprojektin ACL-oikeuksia
+ei tämän vuoksi muuteta. Epäonnistuneet ajot säilyvät erillisinä.
+
+Node on konsolisovellus. Uuden piilotetun konsolin luonti lisäsi conhost.exe:n
+kahteen prosessiin rajattuun Job-objektiin ja pysäytti kontrollin. Node-polku
+käyttää siksi testihostin omaa piilotettua konsolia. Host varmistaa ennen
+käynnistystä, että se on konsolin ainoa asiakas, konsoli ei ole näkyvä ja
+konsoli-isäntä on sen oma yksikäsitteinen suora lapsi täsmällisessä Windowsin
+järjestelmäpolussa. Konsoli-isännän prosessikahva pidetään poistumisen
+varmistamista varten. Epäselvä omistajuus keskeyttää kokeen.
+
+Jaettu koekonsoli on erillinen kommunikaatiopinta stdio-putkien lisäksi;
+tämä ei ole tuotannon konsolieristyksen hyväksyntä. Rajoitetun Jobin
+jäsenmäärää, prosessikuvia, tokeneita tai ACK-ehtoja ei lievennetä.
+Normaali- ja virhepolulla host vapauttaa konsolin ja odottaa sen poistumisen.
+Owner-loss-polulla omistajan viestireitti katkaistaan tarkoituksella, joten
+ajuri vaatii konsolin tunnistamisen ennen katkaisua ja tarkistaa poistumisen
+ulkopuolelta siivouksessa. Ajuri ei pakkotapa yleisiä järjestelmäprosesseja.
+
+`run-node-fork.mjs` tekee ensin oman pienen PING/PONG-fork-kokeen ilman SDK:ta.
+Sen tulos on vain runtime-/IPC-näyttöä. Varsinainen hyväksymisportti on edelleen
+SDK:n koko kontrolli/AC-matriisi.
 
 Vaihtoehto on odottaa korjauksen sisältävää virallista yhteensopivaa
 runtimea. Bunin tai vanhan Node-version käyttö muuttaisi useampaa muuttujaa;
@@ -127,3 +175,8 @@ arvioidaan kokeen jälkeen erikseen.
 - [Build Tools -komponentit](https://learn.microsoft.com/en-us/visualstudio/install/workload-component-id-vs-build-tools)
 - [Asennuskohteiden rajat](https://learn.microsoft.com/en-us/visualstudio/install/change-installation-locations)
 - [Build Tools -levytilavaatimus](https://learn.microsoft.com/en-us/visualstudio/releases/2026/vs-system-requirements#microsoft-visual-studio-build-tools-system-requirements)
+
+- [Communityn lisenssiehdot](https://visualstudio.microsoft.com/license-terms/vs2022-ga-community/)
+- [Microsoftin Visual Studio -lisenssiohje](https://www.microsoft.com/licensing/guidance/Visual-Studio)
+- [Windowsin prosessinluontiliput](https://learn.microsoft.com/en-us/windows/win32/procthread/process-creation-flags)
+- [Konsolin luonti ja periytyminen](https://learn.microsoft.com/en-us/windows/console/creation-of-a-console)

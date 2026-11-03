@@ -28,7 +28,7 @@ foreach ($name in @('host', 'probe', 'pipe-probe')) {
   $source = Join-Path $PSScriptRoot "native/$name.cpp"
   $binary = Join-Path $outputRoot "bin/$name.exe"
   $object = Join-Path $outputRoot "$name.obj"
-  $lines += 'cl.exe /nologo /std:c++17 /EHsc /utf-8 /O2 /W4 /WX /MT /guard:cf /DUNICODE /D_UNICODE "' + $source + '" /Fo:"' + $object + '" /Fe:"' + $binary + '" /link /DYNAMICBASE /NXCOMPAT userenv.lib advapi32.lib ws2_32.lib'
+  $lines += 'cl.exe /nologo /std:c++17 /EHsc /utf-8 /O2 /W4 /WX /MT /guard:cf /DUNICODE /D_UNICODE "' + $source + '" /Fo:"' + $object + '" /Fe:"' + $binary + '" /link /DYNAMICBASE /NXCOMPAT userenv.lib advapi32.lib ws2_32.lib user32.lib'
   $lines += 'if errorlevel 1 exit /b 1'
 }
 $lines += 'exit /b 0'
@@ -42,7 +42,11 @@ $stderr = Join-Path $outputRoot 'build.stderr.txt'
 $previousPath = $env:Path
 $env:Path = "$($env:SystemRoot)\System32;$($env:SystemRoot);$previousPath"
 try {
-$p = Start-Process -FilePath (Join-Path $env:SystemRoot 'System32/cmd.exe') -ArgumentList ('/d /s /c ""' + $wrapper + '""') -WorkingDirectory $outputRoot -RedirectStandardOutput $stdout -RedirectStandardError $stderr -NoNewWindow -Wait -PassThru
+$p = Start-Process -FilePath (Join-Path $env:SystemRoot 'System32/cmd.exe') -ArgumentList ('/d /s /c ""' + $wrapper + '""') -WorkingDirectory $outputRoot -RedirectStandardOutput $stdout -RedirectStandardError $stderr -NoNewWindow -PassThru
+# Wait for cmd itself: Start-Process -Wait also follows a persistent console host.
+$null = $p.Handle
+$p.WaitForExit()
+$p.Refresh()
 } finally { $env:Path = $previousPath }
 Get-Content -LiteralPath $stdout
 Get-Content -LiteralPath $stderr

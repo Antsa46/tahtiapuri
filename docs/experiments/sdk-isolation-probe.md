@@ -16,7 +16,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\e2e\isolation\run.ps
 
 Koe käyttää olemassa olevaa lukittua Electron-arkistoa ja node-llama-cpp
 3.22.2:n paikallista asennusta sekä @node-llama-cpp/win-x64 3.22.2:ta.
-Mitään ei asenneta tai ladata. build=never ja skipDownload=true asetetaan
+Koeajon aikana mitään ei asenneta tai ladata. Node-vertailun työkalujen
+hankinta ja käännös ovat erillinen [valmisteluvaihe](runtime-comparison.md).
+build=never ja skipDownload=true asetetaan
 julkisessa CPU-kutsussa. GPU-vaihtoehto on yksiselitteisesti false.
 
 package-stager.mjs kopioi nykyiset riippuvuudet NPM-rakenteeseen, säilyttää
@@ -43,8 +45,9 @@ Tämä sisäinen testiriippuvuus on sidottu SDK-versioon ja tiedoston SHA-256:ee
 sitä ei viedä sovelluksen tuotantorajapintaan eikä paketoida yhdeksi bundlen
 osaksi. Apurin oma tiedostonimitarkistus ja lähderakenne säilyvät.
 
-Ennen SDK-importtia guard vaatii Electronin ESM-resoluutioksi täsmälleen
-`electron:electron`. Se tarkistaa nykyisen apurin käyttämän ESM-polun, jotta
+Electron-polulla ennen SDK-importtia guard vaatii ESM-resoluutioksi täsmälleen
+`electron:electron`. Node-polulla vaaditaan erillinen kiinteä prosessikuva, versio ja tarkiste.
+Electronin guard tarkistaa nykyisen apurin käyttämän ESM-polun, jotta
 koe ei putoa npm:n Electron-asennuswrapperiin. Tämä ei ole yleinen CommonJS-
 resoluution tai kaikkien riippuvuuksien tiedostopääsyn eristys. Guardin,
 eheyden tai instrumentoinnin virhe pysäyttää kokeen. Niitä tai havaittua
@@ -66,7 +69,10 @@ binäärin latauksen start-viestiä. Tämä ei ole ennen ensimmäistä käskyä 
 lapsitarkistus. SDK-parentin alkuperäinen token tarkistetaan ennen ResumeThreadiä.
 
 Kuittaus on kokeen nonceen ja PID:hen sidottu yksi viesti vain hostin
-kirjoittamassa stdin-putkessa. Workerille periytyy vain sen lukupää.
+kirjoittamassa stdin-putkessa. Tästä kuittausputkesta workerille periytyy vain lukupää.
+Node-vertailun jaettu oma koekonsoli ja sen poistuminen kuvataan
+[vertailusopimuksessa](runtime-comparison.md); putkien kahvalista ei yksin
+kuvaa kaikkia kommunikaatiopintoja.
 Owner-liveness on eri putki; kumpikaan kirjoituspää ei periydy SDK-workerille.
 Host ei avaa workerin muokattavaa scratch-polkua tarkistuksen jälkeen.
 

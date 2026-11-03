@@ -6,7 +6,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 export function collect(child, { workerEnvelope = false } = {}) {
   const records = []; let buffered = ''; let outputBytes = 0; let stderrBytes = 0; let stderr = ''; let failure; let ended = false; let closed = false;
   const fail = message => { failure ??= new Error(message); child.kill(); };
-  const pidTypes = new Set(['launched', 'token', 'descendant', 'owner-host', 'escaped', 'runtime', 'sdk-child', 'inspected-child']);
+  const pidTypes = new Set(['launched', 'token', 'descendant', 'owner-host', 'escaped', 'runtime', 'sdk-child', 'inspected-child', 'console-host']);
   child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8');
   child.stdout.on('data', data => {
     outputBytes += Buffer.byteLength(data);
@@ -25,7 +25,7 @@ export function collect(child, { workerEnvelope = false } = {}) {
             if (!['sdk-phase','sdk-child','sdk-child-message','sdk-policy','sdk-held','sdk-child-exit','sdk-ready','sdk-error','sdk-expected-failure','sdk-instrumentation-error'].includes(row?.type)) throw new Error('Worker cannot emit host records.');
             row = { ...row, source: 'worker' };
           } else {
-            if (!['profile','launched','inspected-child','finished','error','cleanup','owner-host'].includes(row?.type)) throw new Error('Invalid host record.');
+            if (!['profile','launched','inspected-child','finished','error','cleanup','owner-host','console-host','console-finished'].includes(row?.type)) throw new Error('Invalid host record.');
             row = { ...row, source: 'host' };
           }
         }
@@ -84,6 +84,11 @@ export async function cleanupOwnedRun({ child, report, host, staged, profile, re
   }
   try { await bounded(report.exited, 3000, 'Inherited stdio stayed open.'); }
   catch (error) { result.errors.push(error.message); }
+  const consoles = report.records.filter(row => row.type === 'console-host' && row.source === 'host').map(row => row.pid);
+  if (consoles.length) {
+    try { await until(() => consoles.every(pid => !alive(pid)), 7000); result.consoleStopped = true; }
+    catch { result.consoleStopped = false; result.errors.push('Owned console remains alive; no system process was force-killed.'); }
+  }
   child.stdout.destroy(); child.stderr.destroy(); child.stdin.destroy();
   if (result.stopped && restricted) {
     let matches = false;

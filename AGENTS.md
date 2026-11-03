@@ -30,7 +30,7 @@ Lue tehtävän mukaan:
   [rajattu Windows-koe](docs/experiments/windows-isolation-probe.md) ja
   [Electron Node -yhteensopivuuskoe](docs/experiments/electron-isolation-probe.md) sekä
   [SDK:n ja binäärilapsen koe](docs/experiments/sdk-isolation-probe.md) sekä
-  [runtime-vertailun valmistelu](docs/experiments/runtime-comparison.md)
+  [Node-/SDK-runtimevertailu](docs/experiments/runtime-comparison.md)
 - havaintopaikkojen asetukset, tallennus tai observing-IPC:
   [nimetyt havaintopaikat](docs/architecture/observing-places.md)
 - käyttäjätieto, historian säilytys ja poisto, välimuistit tai vienti/palautus:

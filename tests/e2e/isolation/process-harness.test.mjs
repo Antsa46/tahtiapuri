@@ -45,3 +45,7 @@ test('worker cannot forge a trusted token inspection', async () => {
 test('a raw SDK worker record cannot impersonate the host transport', async () => {
   const { child, report } = fixture({ workerEnvelope: true }); child.stdout.write('{"type":"sdk-child","pid":102}\n'); await finish(child); await report.exited; assert.throws(report.checkComplete, /Malformed/);
 });
+
+test('worker cannot forge console ownership evidence', async () => {
+  const { child, report } = fixture({ workerEnvelope: true }); child.stdout.write(envelope({ type: 'console-host', pid: 102, soleClient: true })); await finish(child); await report.exited; assert.throws(report.checkComplete, /Malformed/);
+});

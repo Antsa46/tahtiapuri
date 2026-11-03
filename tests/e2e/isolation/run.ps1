@@ -1,5 +1,6 @@
-param([switch]$SkipBuild, [ValidateSet("native", "electron", "sdk", "pipe")][string]$Probe = "native")
+param([switch]$SkipBuild, [ValidateSet("native", "electron", "sdk", "pipe")][string]$Probe = "native", [ValidateSet("electron", "official", "local-unpatched", "local-patched")][string]$SdkRuntime = "electron")
 $ErrorActionPreference = 'Stop'
+if ($Probe -ne 'sdk' -and $SdkRuntime -ne 'electron') { throw 'SdkRuntime applies only to the SDK probe.' }
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '../../..')).Path
 if (!$SkipBuild) {
   $build = Start-Process -FilePath (Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe') -ArgumentList ('-NoProfile -ExecutionPolicy Bypass -File "' + (Join-Path $PSScriptRoot 'build.ps1') + '"') -NoNewWindow -Wait -PassThru
@@ -9,5 +10,7 @@ $tools = Get-Content -LiteralPath (Join-Path $projectRoot 'scripts/dev/toolchain
 $node = Join-Path $projectRoot ('.local/toolchain/node-v' + $tools.node.version + '-win-x64/node.exe')
 if (!(Test-Path -LiteralPath $node)) { throw 'The existing pinned project Node runtime is required. Nothing was installed.' }
 $entry = if ($Probe -eq 'pipe') { 'run-pipe.mjs' } elseif ($Probe -eq 'sdk') { 'run-sdk.mjs' } elseif ($Probe -eq 'electron') { 'run-electron.mjs' } else { 'run-synthetic.mjs' }
-$run = Start-Process -FilePath $node -ArgumentList ('"' + (Join-Path $PSScriptRoot $entry) + '"') -WorkingDirectory $projectRoot -NoNewWindow -Wait -PassThru
+$nodeArguments = '"' + (Join-Path $PSScriptRoot $entry) + '"'
+if ($Probe -eq 'sdk') { $nodeArguments += ' ' + $SdkRuntime }
+$run = Start-Process -FilePath $node -ArgumentList $nodeArguments -WorkingDirectory $projectRoot -NoNewWindow -Wait -PassThru
 if ($run.ExitCode -ne 0) { throw 'Synthetic isolation probe failed. Read the ignored local artifacts.' }

@@ -3,6 +3,7 @@ import { promises as fs, createReadStream } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { verifyRuntimeIdentity } from './sdk-runtime.mjs';
 import { observeSdkChild } from './sdk-child-observer.mjs';
 const root = process.argv[2], life = process.argv[8];
 assert(root && ['once','hold','missing-binary'].includes(life));
@@ -17,8 +18,17 @@ let llama, observer; let phase = 'integrity';
 try {
   assert.equal(await hash(helper), profile.helperSha256); assert.equal(await hash(binding), profile.bindingSha256);
   emit({ type: 'sdk-phase', phase, passed: true });
-  phase = 'electron-resolution'; const resolvedElectron = import.meta.resolve('electron'); assert.equal(resolvedElectron, 'electron:electron', 'Only the Electron ESM builtin is allowed; npm installer wrappers are excluded.');
-  emit({ type: 'sdk-phase', phase, passed: true, resolved: resolvedElectron, electron: process.versions.electron, node: process.versions.node, uv: process.versions.uv }); phase = 'import';
+  phase = 'runtime-contract';
+  const runtime = profile.runtime;
+  const identity = verifyRuntimeIdentity(runtime, {
+    platform: process.platform, arch: process.arch, node: process.versions.node,
+    electron: process.versions.electron, uv: process.versions.uv,
+    execPath: process.execPath, expectedExecPath: join(root, 'package', runtime.kind === 'node' ? 'node.exe' : 'electron.exe'),
+    sha256: await hash(process.execPath), runAsNode: process.env.ELECTRON_RUN_AS_NODE,
+    nodeOptions: process.env.NODE_OPTIONS, nodePath: process.env.NODE_PATH,
+    resolved: runtime.kind === 'electron' ? import.meta.resolve('electron') : undefined
+  });
+  emit({ type: 'sdk-phase', phase, passed: true, ...identity }); phase = 'import';
   const { getLlama, getModuleVersion } = await import('node-llama-cpp');
   phase = 'import-contract'; assert.equal(await getModuleVersion(), profile.version); emit({ type: 'sdk-phase', phase: 'import', passed: true });
   phase = 'public-cpu';
@@ -27,7 +37,7 @@ try {
   emit({ type: 'sdk-phase', phase: 'public-cpu', passed: true, gpu: llama.gpu, buildType: llama.buildType });
   phase = 'public-dispose'; emit({ type: 'sdk-phase', phase, started: true }); await llama.dispose(); llama = undefined; emit({ type: 'sdk-phase', phase, passed: true });
   phase = 'instrumentation-setup'; emit({ type: 'sdk-phase', phase, started: true });
-  observer = observeSdkChild({ helper, preload: join(root, 'package/child-policy-preload.cjs'), nonce: profile.nonce, emit, hold: life === 'hold' });
+  observer = observeSdkChild({ runtimeKind: profile.runtime.kind, helper, preload: join(root, 'package/child-policy-preload.cjs'), nonce: profile.nonce, emit, hold: life === 'hold' });
   emit({ type: 'sdk-phase', phase, passed: true }); phase = 'helper-import'; emit({ type: 'sdk-phase', phase, started: true });
   const { testBindingBinary } = await import(pathToFileURL(helper).href); emit({ type: 'sdk-phase', phase, passed: true });
   phase = 'instrumented-binary-test'; emit({ type: 'sdk-phase', phase, started: true });
