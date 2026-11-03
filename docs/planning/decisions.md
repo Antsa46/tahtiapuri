@@ -14,8 +14,8 @@ valmistumisen näyttö [GitHub-issueissa](https://github.com/Antsa46/tahtiapuri/
 | --- | --- | --- |
 | Ensimmäinen käyttöversio | Sovittu: kartta, keskusteleva katsaus, kohdetiedot, sää, paikat ja paikallinen historia. | [Tuoterajaus](../product/project-definition.md), [käyttötapaukset](../product/observing-session-use-cases.md) |
 | Sovellus ja kerrokset | T02:n statusrunko toteutettu: Electron/TypeScript, React/Vite/CSS Modules, rakenne A ja main–backend-IPC. Laajemmat moduulit myöhemmin. | [Perusarkkitehtuuri](../architecture/base-architecture.md), [tekniikkasuunnitelma](../architecture/technology-and-ui-plan.md) |
-| Mallimoottori | Sovittu arviointisuunta: node-llama-cpp UtilityProcessissa. Tarkka build ja toimivuus ovat kokeella selvitettäviä; llama-server säilyy vaihtoehtona. | [Mallisuunnitelma](../architecture/local-model-plan.md) |
-| Mallit ja painot | Sovittu 4B/8B-aloitus, ulkoinen mallikansio ja mallinvaihto asetuksista. Poro–Ministral-verrokit ovat mukana suunnitelmassa; tarkat paketit ja oletusmalli ovat avoimia. | [Mallivalinta ja toimitus](../architecture/local-model-plan.md) |
+| Mallimoottori | T03: node-llama-cpp 3.22.2 toimii UtilityProcessissa, 4B:n CPU-/CUDA-kehitysajot todennettu. Paketoitu ajo ja OS-eristys avoinna. | [Mallisuunnitelma](../architecture/local-model-plan.md) |
+| Mallit ja painot | Qwen3-4B Q4_K_M on otettu käyttöön projektin paikallisesta kansiosta. Sovittu 4B/8B-vertailu ja mallinvaihto asetuksista. Poro–Ministral-verrokit ovat mukana suunnitelmassa; tarkat paketit ja oletusmalli ovat avoimia. | [Mallivalinta ja toimitus](../architecture/local-model-plan.md) |
 | Avustajan työnkulku | Sovittu: backend koordinoi, moduulit tarkistavat työkalut ja yksi opastajarooli toimii lähtötasona. Usean roolin hyöty mitataan erikseen. | [Orkestrointi](../architecture/assistant-orchestration-plan.md) |
 | Verkon ja tiedostojen oikeudet | Sovittu tavoite: vain säätyöntekijän rajattu ulkoinen yhteys. OS-mekanismi, GPU ja eristyksen näyttö ovat avoimia; AppContainer/LPAC on vaihtoehto. | [Turvallisuus ja oikeudet](../architecture/security-and-permissions-plan.md) |
 | Kehityksen MCP | Sovittu: rajattu stdio-yhteys ja asetusten kytkin, oletuksena pois joka käynnistyksessä. Todellinen yhteys ja oikeusrajat testataan. | [MCP-sopimus](../architecture/local-model-plan.md#kehitys--ja-diagnostiikkarajapinta-paikalliseen-malliin) |
@@ -27,9 +27,9 @@ valmistumisen näyttö [GitHub-issueissa](https://github.com/Antsa46/tahtiapuri/
 
 ## Ennen riippuvaa toteutusta ratkaistavat asiat
 
-- Ensimmäisen kokeen [paketit, työkaluketju ja Windows-kehitysoikeudet](../experiments/model-pilot.md) on määritelty. Asennus, natiivibuildin tunnisteet ja ajo ovat todentamatta.
+- Ensimmäisen kokeen [paketit, työkaluketju ja Windows-kehitysoikeudet](../experiments/model-pilot.md) on määritelty. T03:n [4B-moottorikoe](../experiments/model-runtime-probe.md) todentaa asennuksen ja CPU-/CUDA-ajon; 8B:n vertailunäyttö puuttuu.
 - Varhaisen ja lopullisen kokoonpanon OS-turvanäyttö; muiden malliperheiden tarkat paketit.
-- Tuettu Windows-/CPU/GPU-kokoonpano ja näkyvä CPU-varatila.
+- Laajemmin tuettu Windows-/CPU/GPU-kokoonpano; T03:ssa CPU ja CUDA valitaan näkyvästi ilman hiljaista fallbackia.
 - Katalogin rajaus, laskentasovitin, FMI-kysely ja käynnistyskatsauksen aikarajat.
 - Mallivalinnan ja mallikansion muistaminen sekä puuttuvan mallin käsittely.
 - Tallennuksen tekninen toteutus, MCP:n todentaminen ja resurssirajat.

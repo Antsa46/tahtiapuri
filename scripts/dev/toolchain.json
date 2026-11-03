@@ -15,5 +15,19 @@
     "file": "electron-v45.2.1-win32-x64.zip",
     "sha256": "7c342aee45d5b4ccafe5dfe9037028796b082735a576e21e2b4e2d8422ebb727",
     "url": "https://github.com/electron/electron/releases/download/v45.2.1/electron-v45.2.1-win32-x64.zip"
+  },
+  "cuda": {
+    "release": "13.1.0",
+    "metadataUrl": "https://developer.download.nvidia.com/compute/cuda/redist/redistrib_13.1.0.json",
+    "components": [
+      {
+        "relativePath": "libcublas/windows-x86_64/libcublas-windows-x86_64-13.2.0.9-archive.zip",
+        "sha256": "ffefe0885c8d94d07eb544e5f9520d0c56c0726df5f16e8db9803d9628832f5d"
+      },
+      {
+        "relativePath": "cuda_cudart/windows-x86_64/cuda_cudart-windows-x86_64-13.1.80-archive.zip",
+        "sha256": "e6f76dba2be1850a08168e90d868b12368aacb6c7d71871efb019f2d9648e877"
+      }
+    ]
   }
 }

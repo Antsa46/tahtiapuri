@@ -11,3 +11,7 @@ minimumReleaseAgeExclude:
   - '@vitest/mocker@5.1.0'
   - '@vitest/spy@5.1.0'
   - 'vitest@5.1.0'
+ignoredOptionalDependencies:
+  - '@node-llama-cpp/win-x64-vulkan'
+overrides:
+  'node-llama-cpp@3.22.2>simple-git': 4.0.2

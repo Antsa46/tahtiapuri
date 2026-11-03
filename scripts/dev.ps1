@@ -1,5 +1,5 @@
 param(
-  [ValidateSet("install", "build", "typecheck", "test", "test:e2e", "start")]
+  [ValidateSet("install", "build", "typecheck", "test", "test:e2e", "test:model", "models:prepare", "cuda:prepare", "start")]
   [string]$Task = "start"
 )
 $ErrorActionPreference = "Stop"
@@ -51,7 +51,13 @@ try {
   $pnpmBinaryDir = Join-Path $pnpmRoot "node_modules/@pnpm/exe.win32-x64"
   if (!(Test-Path -LiteralPath (Join-Path $pnpmBinaryDir "pnpm.exe"))) { throw "Pinned pnpm native package missing." }
   $env:Path = "$pnpmBinaryDir;$($env:Path)"
-  if ($Task -eq "install") {
+  if ($Task -eq "cuda:prepare") {
+    foreach ($component in $tools.cuda.components) {
+      $url = "https://developer.download.nvidia.com/compute/cuda/redist/" + $component.relativePath
+      $archive = Get-VerifiedArchive $url (Split-Path $component.relativePath -Leaf) $component.sha256
+      Expand-Archive -LiteralPath $archive -DestinationPath (Join-Path $toolRoot "cuda") -Force
+    }
+  } elseif ($Task -eq "install") {
     if (Test-Path -LiteralPath "pnpm-lock.yaml") {
       Invoke-ProjectNode $pnpmEntry install --frozen-lockfile --ignore-scripts
     } else {

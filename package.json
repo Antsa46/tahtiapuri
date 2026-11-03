@@ -14,7 +14,9 @@
     "start": "node scripts/launch-desktop.mjs",
     "test": "vitest run",
     "build:e2e": "tsc -p tests/e2e/tsconfig.json",
-    "test:e2e": "pnpm run build && pnpm run build:e2e && playwright test"
+    "test:e2e": "pnpm run build && pnpm run build:e2e && playwright test",
+    "models:prepare": "node scripts/models/prepare-4b.mjs",
+    "test:model": "pnpm build && pnpm build:e2e && playwright test --config playwright.model.config.ts"
   },
   "devDependencies": {
     "@playwright/test": "1.64.1",

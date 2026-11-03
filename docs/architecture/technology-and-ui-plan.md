@@ -81,7 +81,7 @@ Yksi rivi voi sisältää useita paketteja ja transitiivisia riippuvuuksia.
 | Paikallinen backend | Node/TypeScript ja rajattu IPC-adapteri | Node Electronin hallitsemassa prosessissa. Main–backend-kuljetus on sovittu IPC:ksi, joten Honoa tai @hono/node-serveriä ei tarvita tähän yhteyteen. Sovelluksen käyttäjältä ei edellytetä Node-asennusta. |
 | Taivaan laskenta | Astronomy Engine | Backendin sky-laskentasovitin; oma laskenta- ja koordinaattisopimus säilyy. |
 | Kartan piirto | D3-Celestial ja sen tarvitsemat paikalliset resurssit | Rendererissä rajatun karttasovittimen takana. D3-yhteensopivuus, lisäriippuvuudet ja aineistojen oikeudet tarkistetaan ennen valintaa. |
-| Mallimoottori | llama.cpp / llama-server | Erillinen hallittu natiiviprosessi. Oma mallisovitin; ei sovelluksen agenttikehystä. |
+| Mallimoottori | node-llama-cpp / llama.cpp | T03:n UtilityProcess-toteutus. Oma mallisovitin; llama-server säilyy vaihtoehtona. |
 | Mallin painot | Vaihdettavia GGUF-malleja erillisessä paikallisessa kansiossa; yksi muistissa kerrallaan | Mallikansio ja 4B/8B/14B-vertailu kuvataan [mallisuunnitelmassa](local-model-plan.md). Painot eivät kuulu tavalliseen sovellusbuildiin. |
 | Sääpalvelu | Ilmatieteen laitoksen avoin data; tarjoaja on sovittu | Yksi tarjoajasovitin rajatussa säätyöntekijässä. HTTP:n perustoteutukseen arvioidaan ensin runtimen valmiit API:t; SDK ei ole oletustarve. |
 | Rajapintojen validointi | Omat pienet validaattorit tai erikseen perusteltu skeemakirjasto | packages/validation ja käyttötapauksen omat tarkistukset. TypeScript-tyyppi ei validoi ulkoista JSONia ajossa. |

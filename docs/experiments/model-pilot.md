@@ -39,8 +39,10 @@ Mallin latausosoite käyttää revision SHA:ta, ei liikkuvaa main-haaraa.
 | Kieli | TypeScript 7.0.2 | Sovittu kieli ja erillinen tyypintarkistus. |
 | Paikalliset testit | Vitest 5.1.0 | Sopimusten ja moduulien testaus; Node-testiajuri olisi kevyempi vaihtoehto. |
 
-Versiot on tarkistettu julkaisijoiden metatiedoista. Yhdistelmää ei ole
-vielä asennettu tai ajettu; natiiviyhteensopivuus varmennetaan T02/T03:ssa.
+Versiot tarkistettiin julkaisijoiden metatiedoista T01:ssä. T03:ssa 4B:n
+CPU-/CUDA-yhteensopivuus on todennettu; 8B-vertailu on vielä tekemättä.
+[Toteutuneen moottorikokeen raportti](model-runtime-probe.md) omistaa
+asennetun kokoonpanon ja ajon näytön. Manifesti säilyy alkuperäisenä lähtötietona.
 CPU-paketin SRI ja Electronin Windows-runtime-ZIPin SHA-256 ovat manifestissa.
 Transitiiviset riippuvuudet lukitaan asennuksessa. Natiivibinäärien sisäiset
 build-tunnisteet ja paikalliset tarkisteet tallennetaan ennen ajoa;

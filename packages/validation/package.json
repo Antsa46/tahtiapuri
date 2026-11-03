@@ -5,7 +5,9 @@
   "type": "module",
   "exports": {
     "./public": "./dist/public-api.js",
-    "./backend": "./dist/backend-protocol.js"
+    "./backend": "./dist/backend-protocol.js",
+    "./assistant": "./dist/assistant.js",
+    "./model-wire": "./dist/model-wire.js"
   },
   "dependencies": {}
 }

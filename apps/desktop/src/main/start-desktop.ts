@@ -1,3 +1,6 @@
+import { ModelHost } from "./model-host.js";
+import { ASSISTANT_CHANNELS, isModelInput, isJobId } from "@tahtiapuri/validation/assistant";
+import type { ApprovedModel } from "@tahtiapuri/validation/model-wire";
 import { app, BrowserWindow, ipcMain, protocol, session, utilityProcess } from "electron";
 import { mkdirSync } from "node:fs";
 import { access } from "node:fs/promises";
@@ -9,7 +12,7 @@ import { childEnvironment } from "./child-environment.js";
 import { isTrustedSender } from "./sender-policy.js";
 import { PAGE_URL, localPageResponse } from "./local-page.js";
 
-export type DesktopPaths = { backendEntry: string; preload: string; renderer: string; data: string };
+export type DesktopPaths = { backendEntry: string; preload: string; renderer: string; data: string; model?: { entry: string; profile: ApprovedModel; cudaPaths: string[] } };
 export function startDesktop(paths: DesktopPaths) {
   protocol.registerSchemesAsPrivileged([{ scheme: "tahtiapuri", privileges: { standard: true, secure: true } }]);
   mkdirSync(paths.data, { recursive: true });
@@ -19,18 +22,25 @@ export function startDesktop(paths: DesktopPaths) {
   let window: BrowserWindow | undefined;
   let rendererTimer: NodeJS.Timeout | undefined;
   let shutdownPromise: Promise<void> | undefined;
+  const model = paths.model ? new ModelHost(() => utilityProcess.fork(paths.model!.entry, [], {
+    serviceName: "Tahtiapuri Model", execArgv: [], cwd: paths.data, stdio: "ignore",
+    env: { ...childEnvironment(process.env), PATH: [...paths.model!.cudaPaths, join(process.env.SystemRoot ?? "C:\\Windows", "System32")].join(";") },
+  }), paths.model.profile) : undefined;
   const backend = new BackendController(
     () => utilityProcess.fork(paths.backendEntry, [], {
       serviceName: "Tahtiapuri Backend",
       env: childEnvironment(process.env), execArgv: [], cwd: paths.data, stdio: "ignore",
     }),
     () => { void shutdown(1); },
+    model,
   );
   function shutdown(code: number): Promise<void> {
     shutdownPromise ??= (async () => {
       clearTimeout(rendererTimer);
       ipcMain.removeHandler(STATUS_CHANNEL);
+      for (const channel of Object.values(ASSISTANT_CHANNELS)) ipcMain.removeHandler(channel);
       try { await backend.stop(); } catch { code = 1; }
+      try { await model?.stop(); } catch { code = 1; }
       if (window && !window.isDestroyed()) window.destroy();
       app.exit(code);
     })();
@@ -79,6 +89,17 @@ export function startDesktop(paths: DesktopPaths) {
         return { ok: true, status };
       } catch { return { ok: false, code: "UNAVAILABLE" }; }
     });
+    for (const [name, channel] of Object.entries(ASSISTANT_CHANNELS)) {
+      ipcMain.handle(channel, async (event, ...args) => {
+        if (!isTrustedSender(event, owner, PAGE_URL) || shutdownPromise || args.length !== 1
+          || !(name === "submit" ? isModelInput(args[0]) : isJobId(args[0]))) throw new Error("Request denied.");
+        const operation = ("assistant." + name) as "assistant.submit" | "assistant.get" | "assistant.cancel";
+        try {
+          const result = await backend.assistant(operation, args[0]);
+          return isTrustedSender(event, owner, PAGE_URL) && !shutdownPromise ? result : { ok: false, code: "ENGINE_UNAVAILABLE" };
+        } catch { return { ok: false, code: "ENGINE_UNAVAILABLE" }; }
+      });
+    }
     window.on("close", event => { event.preventDefault(); void shutdown(0); });
     await Promise.all([window.loadURL(PAGE_URL), rendererReady]);
     clearTimeout(rendererTimer);

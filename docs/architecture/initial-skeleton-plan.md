@@ -4,7 +4,7 @@ Tämä on toteutusvaiheen ehdotus. Päätösten tilan kokoaa
 [päätöshakemisto](../planning/decisions.md). Käyttäjä on valtuuttanut toteutuksen
 aloittamisen issue kerrallaan; ensimmäisen kokeen lähtötiedot ovat
 [kokeen kuvauksessa](../experiments/model-pilot.md). T02:n statusrunko on toteutettu;
-varsinaiset havainto- ja mallitoiminnot kuuluvat seuraaviin työpaketteihin.
+T03 lisäsi ensimmäisen 4B-mallitoiminnon. Havaintotoiminnot tulevat myöhemmin.
 Sovellusjaon omistaa [perusarkkitehtuuri](base-architecture.md);
 oikeusrajat ja eristyksen käyttöönoton ehdot
 [turvallisuussuunnitelma](security-and-permissions-plan.md).
@@ -72,7 +72,7 @@ sitä ei ole luotu täytteeksi eikä siihen kytketä Electronia.
 
 ### IPC-sopimus
 
-- UI:n ainoa komento on argumentiton window.tahtiapuri.getStatus().
+- T02:n statuskomento on argumentiton window.tahtiapuri.getStatus().
   Main tarkistaa omistetun WebContentsin, pääkehyksen, tarkan
   tahtiapuri://app/index.html-osoitteen ja argumenttien puuttumisen.
 - Main ja backend käyttävät yksityistä utilityProcess/parentPort-kanavaa.
@@ -87,7 +87,7 @@ sitä ei ole luotu täytteeksi eikä siihen kytketä Electronia.
 - Main hyväksyy vain oikeaan istuntoon, vireillä olevaan tunnisteeseen
   ja operaatioon kuuluvan tarkistetun vastauksen.
   UI saa vain julkisen statusvastauksen tai UNAVAILABLE-koodin.
-- Vireillä on enintään 14 statuspyyntöä; heartbeatille ja sululle jää kapasiteetti.
+- Vireillä on enintään 14 sovelluspyyntöä; heartbeatille ja sululle jää kapasiteetti.
   Heartbeat lähetetään 2 sekunnin välein, yksi kerrallaan.
   Kapasiteettipaine ei itsessään tarkoita backendin kuolemaa.
 - Backendin 256 viimeisimmän tunnisteen joukko on rajattu.
@@ -108,7 +108,7 @@ Sulku estää uudet kutsut, hylkää vireillä olevat pyynnöt ja lähettää
 omistetulle backendille sulkukäskyn. Main odottaa rajatusti ja tarvittaessa
 päättää juuri omistamansa UtilityProcessin; poistuminen varmistetaan.
 Backendin, rendererin tai käynnistyksen virhe sulkee tämän ensimmäisen
-rungon. Mallin myöhempi kaatuminen on eri käyttötapaus T03:ssa.
+rungon. Mallin kaatuminen käsitellään erikseen T03:ssa: UI ja backend jatkavat.
 Backendillä on lisäksi 10 sekunnin parent-heartbeat-vahti.
 Tämän toimivuus paketoidussa ohjelmassa varmistetaan toimituskokeessa.
 
@@ -123,6 +123,19 @@ Nämä sovellusrajat eivät toteuta T09:n OS-eristystä.
 Ajo- ja tarkistuskomennot omistaa [paikallinen kehitysohje](../development/local-development.md).
 Tämän työpaketin tarkistusten tulokset ja hyväksyntä säilyvät
 [issue #3:ssa](https://github.com/Antsa46/tahtiapuri/issues/3).
+
+## T03:n mallitoiminnon lisäys
+
+Preload tarjoaa lisäksi nimetyt assistant.submit/get/cancel-kutsut.
+Ne käyttävät samoja mainin lähettäjä- ja argumenttitarkistuksia kuin status.
+Backendin assistant-moduuli omistaa rajatun työjonon; main välittää sen
+hyväksytyt mallityöt erilliseen UtilityProcessiin yksityisellä kanavalla.
+Main ei importoi mallimoottoria tai tee inferenssiä itse.
+
+Mallin lataus on laiska: ensimmäinen kysymys käynnistää valitun CPU-/CUDA-taustan.
+Main pysäyttää mallityöntekijän sovelluksen mukana. Tarkat mallirajat omistaa
+[mallisuunnitelma](local-model-plan.md#t03n-toteutettu-malliraja), ajon näytön
+[moottorikoe](../experiments/model-runtime-probe.md).
 
 ## Ennen verkkokokeilua ratkaistavat asiat
 

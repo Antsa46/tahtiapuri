@@ -118,8 +118,10 @@ offline-aineistolla. Käyttöjärjestelmäasetuksia ei muuteta suunnittelun aika
 
 ### Malliprosessin ajotapa ja eristyksen vaiheistus
 
-Arvio 3.11.2026 on lähde- ja suunnitteluarvio; CPU/GPU-ajoa tai
-AppContainer-yhteensopivuutta ei ole testattu. Käyttäjä vahvisti mallikokeen
+T03:ssa 3.11.2026 on testattu Qwen3-4B:n CPU-/CUDA-ajo erillisessä
+UtilityProcessissa. [Moottorikokeen raportti](../experiments/model-runtime-probe.md)
+erottaa tämän kehitysnäytön OS-eristyksestä. AppContainer-yhteensopivuutta
+ja paketoitua kokoonpanoa ei ole testattu. Käyttäjä vahvisti mallikokeen
 aloittamisen 4B:llä ja 8B:llä sekä alla kuvatun arviointisuunnan.
 Käyttäjä hyväksyi 3.11.2026 rajatun Windows-kehityskokeen tavallisen käyttäjän
 oikeuksilla ennen AppContainer/LPAC-koetta. Kokeen rajaus ja sallitut syötteet
@@ -129,7 +131,8 @@ havaintokäytön verkko- ja tiedostorajaa.
 Sovittu arviointisuunta on kokeilla node-llama-cpp:tä erillisessä
 UtilityProcessissa ennen oman Windows-käynnistäjän laajaa toteutusta. Electronin kokeellinen
 electron/llm näyttää tällaisen prosessijaon. Tämä ei valitse pakettia
-riippuvuudeksi eikä todista CUDA-ajon tai paketoinnin toimivuutta.
+riippuvuudeksi. T03 todentaa valitun node-llama-cpp:n CUDA-kehitysajon,
+ei eristyksen tai paketoinnin toimivuutta.
 llama-server erillisenä prosessina säilyy vaihtoehtona.
 [Electronin vertailutoteutus](https://github.com/electron/llm)
 

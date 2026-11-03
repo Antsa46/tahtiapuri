@@ -1,3 +1,5 @@
+import { isModelRun, isModelCancel } from "@tahtiapuri/validation/model-wire";
+import { isEngineReply, isAssistantResult, type EngineReply, type ModelInput, type AssistantResult } from "@tahtiapuri/validation/assistant";
 import { EventEmitter } from "node:events";
 import { randomBytes, randomUUID } from "node:crypto";
 import { isReady, isResponse, type Operation, type Response } from "@tahtiapuri/validation/backend";
@@ -24,7 +26,7 @@ export class BackendController {
   private readonly pending = new Map<string, Pending>();
   private stopPromise: Promise<void> | undefined;
 
-  constructor(private readonly fork: () => ChildPort, private readonly onUnexpectedExit: () => void) {}
+  constructor(private readonly fork: () => ChildPort, private readonly onUnexpectedExit: () => void, private readonly model?: { run(id: string, input: ModelInput, progress: () => void): Promise<EngineReply>; cancel(id: string): void }) {}
 
   start(): Promise<void> {
     if (this.child || this.closing) return Promise.reject(new Error("Backend already started or closed."));
@@ -34,8 +36,24 @@ export class BackendController {
       try {
         const child = this.fork();
         this.child = child;
-        child.on("spawn", () => child.postMessage({ type: "initialize", protocol: 1, session: this.session }));
+        child.on("spawn", () => {
+          try { child.postMessage({ type: "initialize", protocol: 1, session: this.session }); }
+          catch { this.rejectStart?.(new Error("Backend channel closed during startup.")); }
+        });
         child.on("message", (message: unknown) => {
+          if (isModelCancel(message, this.session)) { this.model?.cancel(message.id); return; }
+          if (this.ready && !this.closing && isModelRun(message, this.session)) {
+            const unavailable: EngineReply = { text: "", error: "ENGINE_UNAVAILABLE", info: null };
+            void (this.model?.run(message.id, message.input, () => {
+              if (!this.closing) { try { child.postMessage({ type: "model.progress", session: this.session, id: message.id }); } catch { this.onUnexpectedExit(); } }
+            }) ?? Promise.resolve(unavailable)).catch(() => ({ ...unavailable, error: "ENGINE_CRASHED" as const })).then(reply => {
+              if (!this.closing && !this.exited && isEngineReply(reply)) {
+                try { child.postMessage({ type: "model.result", session: this.session, id: message.id, reply }); }
+                catch { this.onUnexpectedExit(); }
+              }
+            });
+            return;
+          }
           if (!this.ready && !this.closing && isReady(message, this.session)) {
             this.ready = true;
             clearTimeout(this.startTimer);
@@ -80,11 +98,11 @@ export class BackendController {
     this.pending.clear();
   }
 
-  private request(operation: Operation): Promise<Response> {
+  private request(operation: Operation, input?: unknown): Promise<Response> {
     const child = this.child;
     if (!child || !this.ready || this.exited || (this.closing && operation !== "runtime.shutdown"))
       return Promise.reject(new Error("Backend unavailable."));
-    if (operation === "runtime.status" && this.pending.size >= 14)
+    if ((operation === "runtime.status" || operation.startsWith("assistant.")) && this.pending.size >= 14)
       return Promise.reject(new Error("Backend request limit reached."));
     if (this.pending.size >= 16) return Promise.reject(new Error("Backend request limit reached."));
     const id = randomUUID();
@@ -98,6 +116,7 @@ export class BackendController {
         child.postMessage({
           type: "request", protocol: 1, session: this.session, id, operation,
           expiresAtUnixMs: Date.now() + 2500,
+          ...(operation.startsWith("assistant.") ? { input } : {}),
         });
       } catch {
         clearTimeout(timer);
@@ -111,6 +130,11 @@ export class BackendController {
     const response = await this.request("runtime.status");
     if (!isRuntimeStatus(response.result)) throw new Error("Invalid backend status.");
     return response.result;
+  }
+
+  async assistant(operation: "assistant.submit" | "assistant.get" | "assistant.cancel", input: unknown): Promise<AssistantResult> {
+    const response = await this.request(operation, input);
+    return isAssistantResult(response.result) ? response.result : { ok: false, code: "ENGINE_UNAVAILABLE" };
   }
 
   stop(): Promise<void> {

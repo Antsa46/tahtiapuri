@@ -2,17 +2,19 @@
 
 Tämä dokumentti kuvaa mallirajapinnan ja toimituksen suunnitelman.
 Ensimmäisen kokeen 4B/8B-paketit ja työkaluketju on lukittu
-[kokeen lähtötietoihin](../experiments/model-pilot.md). Mitään mallia tai moottoria
-ei ole vielä asennettu tai ajettu.
+[kokeen lähtötietoihin](../experiments/model-pilot.md). T03:ssa Qwen3-4B on
+ajettu erillisessä UtilityProcessissa sekä CPU:lla että CUDA:lla;
+[toteutuneen moottorikokeen raportti](../experiments/model-runtime-probe.md)
+omistaa näytön ja toimituksen avoimet ehdot.
 [Päätösten tila](../planning/decisions.md) omistaa valintojen hyväksynnän,
 [turvallisuussuunnitelma](security-and-permissions-plan.md) yleiset oikeusrajat ja
 [testausohje](../ai/testing-rules.md) arviointiaineistot ja tulosten raportoinnin.
 
 ## Suositus: vakaa rajapinta ensin, mallivalinta kokeilemalla
 
-Oma mallirajapinta otetaan mukaan ensimmäiseen runkoon. Sen ensimmäinen
-testitoteutus palauttaa vakioidun vastauksen. Oikea paikallinen moottori
-liitetään varhain samaan rajaan. Käyttäjä vahvisti 4B- ja 8B-mallien
+Oma mallirajapinta erottaa backendin käyttötapauksen natiivimoottorista.
+T03:n toteutus käyttää oikeaa paikallista moottoria saman portin takana;
+virhefixturet ovat vain testipuussa. Käyttäjä vahvisti 4B- ja 8B-mallien
 kokeilemisen ensin. Vertailukokoelmassa ovat myös sovitut Poro 2 8B
 Instruct ja Ministral 3 8B Instruct kvantisoituina. Mallit arvioidaan
 samoilla suomenkielisillä tehtävillä ja ajetaan vuorotellen.
@@ -125,8 +127,9 @@ omistaa tehtäväjonon, kontekstin ja työkalujen tarkistukset.
 Sovitin ei anna rendererille mallimoottorin yleistä APIa.
 
 Ensimmäisen kokeen täsmäversiot on lukittu
-[kokeen lähtötietoihin](../experiments/model-pilot.md), mutta yhdistelmää
-ei ole vielä asennettu tai ajettu. Yleinen arviointisuunta ei todista yhteensopivuutta.
+[kokeen lähtötietoihin](../experiments/model-pilot.md). T03:n 4B-ajo todensi
+node-llama-cpp 3.22.2:n UtilityProcess-yhteensopivuuden paikallisessa
+Windows-kehityskokoonpanossa. 8B ja paketoitu ajo ovat vielä kokeilematta.
 Electronin kokeellinen electron/llm näyttää vastaavan prosessijaon.
 Sitä käytetään vertailuna, ei automaattisesti sovelluksen riippuvuutena.
 Tarkat binäärit, CUDA-runtimet, ajurit ja paketoitu offline-käyttö
@@ -151,7 +154,41 @@ erikseen rajattava kehityskoe, ei osoitus verkkokiellon täyttymisestä.
 Käyttäjä hyväksyi rajatun Windows-kehityskokeen ennen OS-eristyskoetta.
 Sen oikeudet, projektikohtaiset asennuspolut ja toistettavat syötteet
 omistaa [kokeen lähtötieto](../experiments/model-pilot.md).
-Sovellusrungon ja oikean mallin ajon näyttö tehdään T02/T03:ssa.
+Sovellusrungon ja oikean 4B-mallin ajon näyttö on tehty T02/T03:ssa.
+Alla kuvattu 8B-laatuvertailu ja kehitys-MCP kuuluvat seuraaviin työpaketteihin.
+
+## T03:n toteutettu malliraja
+
+Kulkureitti on UI → rajattu preload → main → backendin assistant-jono →
+mainin ModelHost → erillinen mallityöntekijä. Main omistaa molemmat
+UtilityProcessit; vain mallityöntekijä importoi natiivisovittimen.
+Backendin application-kerros riippuu omasta ModelEngine-portista.
+
+- Julkiset kutsut ovat assistant.submit/get/cancel. Syöte sisältää vain
+  1–2000 merkin kysymyksen ja eksplisiittisen cpu/cuda-valinnan; ei
+  tiedostopolkua, URLia, malliparametreja tai ohjelmakomentoa.
+- Backendissä on enintään yksi aktiivinen ja yksi odottava työ sekä
+  kuusi muistissa säilyvää työnäkymää. Työtunniste on backendin UUID.
+- Main–mallityöntekijä käyttää omaa 256-bittistä istuntoa, tiukkoja
+  viestimuotoja ja yhtä aktiivista työtä. Hyväksytty GGUF-profiili ja
+  työkalupolut tulevat mainin tunnetusta kokoonpanosta.
+- Mallin latausraja on 120 s, generoinnin 60 s. Peruutus käyttää ensin
+  SDK:n AbortSignalia ja tarvittaessa pysäyttää työntekijän 5 s jälkeen.
+  Backendin 185 s ulkoraja kattaa myös alustuksen ja siivouksen.
+- loading kattaa tarkistuksen, latauksen ja valmistelun; running alkaa
+  ensimmäisestä SDK:n tekstikatkelmasta. UI saa lopuksi rajatun vastauksen,
+  virhekoodin ja todellisen ajotaustan/GPU-kerrokset; raakaa natiivivirhettä
+  tai paikallisia polkuja ei palauteta.
+- Perutun työn myöhäinen tulos ei muuta tilaa. Aikakatkaisussa tai
+  pakotetussa peruutuksessa vanha työntekijä poistuu ennen uuden työn ajoa.
+- Jokaisella työllä on uusi konteksti. Malli ei suorita työkaluja;
+  nykyinen vastaus renderöidään tekstinä. Historia ja karttatoiminnot
+  lisätään omissa työpaketeissaan.
+
+Tämä on yhden hyväksytyn 4B-profiilin kehitysrunko, ei vielä asetuksista
+vaihdettava yleinen mallikirjasto. CPU-/CUDA-valinta ja työn peruutus
+toimivat jo UI:ssa. Tarkat natiiviyhteensopivuuden havainnot ja avoin
+RunAsNode-fuse-ehto ovat [moottorikokeessa](../experiments/model-runtime-probe.md).
 
 ## Moottorin tausta ja vertailuehdokkaat
 
@@ -167,15 +204,15 @@ Käyttäjä vahvisti aloituksen 4B- ja 8B-malleilla. Suositus on Qwen3-perheen
 4B/8B/14B-vertailu, jolloin sukupolvi ei vaihdu kokoluokan mukana.
 Qwen3.5-4B jää erilliseksi myöhemmäksi ehdokkaaksi.
 Ensimmäiset Qwen3-4B/8B Q4_K_M -paketit ja moottorin npm-versio ovat
-[lukittuina kokeeseen](../experiments/model-pilot.md). Natiivibinäärin ajossa
-käytetty build kirjataan ennen ajoa; 14B:n ja muiden perheiden paketit ovat avoimia.
-Mitään mallia ei ole ladattu tai ajettu.
+[lukittuina kokeeseen](../experiments/model-pilot.md). Toteutuneen 4B-ajon
+kokoonpano on [moottorikokeen raportissa](../experiments/model-runtime-probe.md).
+8B:tä ei ole vielä ladattu tai ajettu; 14B:n ja muiden perheiden paketit ovat avoimia.
 
 | Ehdokas | Tila ja kokeen tarkoitus | Avoin osa |
 | --- | --- | --- |
 | LumiOpen Llama-Poro-2-8B-Instruct | Sovittu: suomenkielinen keskustelu ja työkalutehtävät mitattavina. | GGUF-alkuperä, tarkka kvantisointi, chat-template, käyttöehdot ja oma arviointi. |
 | Ministral 3 8B Instruct 2512 | Sovittu: eurooppalainen keskustelu- ja työkalumallin verrokki. | Tarkka GGUF ja kvantisointi; suomen kieli, faktat ja työkalut mitataan. |
-| Qwen3-4B Q4_K_M | Valittu ensimmäisen kokeen 4B-paketiksi; lähtötiedot lukittu. | Suomen kieli, aineiston tulkinta, työkalut sekä CPU-/GPU-viive ja ajomuisti. |
+| Qwen3-4B Q4_K_M | T03:n oikea CPU-/CUDA-vastaus ja elinkaarikokeet läpäisty. | T04:n laatu-, työkalupäätös-, viive- ja muistivertailu. |
 | Qwen3-8B Q4_K_M | Valittu saman perheen 8B-verrokiksi; lähtötiedot lukittu. | Samat tehtävät ja asetusten kirjaaminen; paremmuutta ei oleteta. |
 | Qwen3-14B IQ3_M tai Q3_K_M | Ehdotus: suurempi malli pienemmällä painotarkkuudella. Q4_K_M säilyy erillisenä vertailukohtana. | Todellinen VRAM, konteksti ja laatu mitataan. Pieni tiedostokoko ei takaa koko ajon mahtumista näytönohjaimelle. |
 
@@ -322,8 +359,10 @@ Suurempi malli ei automaattisesti voita pienempää. Osa painoista voidaan
 ajaa CPU:lla ja osa GPU:lla; viive mitataan valitulla kontekstilla.
 Myös GPU:lla suoritettava ajo käyttää keskusmuistia.
 
-Koneen resurssit on aiemmin tarkistettu, mutta malleja ei ole ajettu.
-Konekohtainen inventaario säilyy keskustelussa, ei jaettavissa ohjeissa.
+Koneen resurssit on tarkistettu ja 4B:n CPU-/CUDA-toimivuus todettu.
+Laajempi viive- ja muistivertailu on vielä tekemättä. Asennettujen
+binääriehdokkaiden tarkisteet säilyvät paikallisessa koe-artefaktissa;
+[moottorikokeen raportti](../experiments/model-runtime-probe.md) kokoaa jaettavan näytön.
 EKYn mallivalinta vaatii sen omat tehtävät ja kohdekoneet:
 Tähtiapurissa pärjäävä 4B on ehdokas, ei EKYn hyväksytty tuotantomalli.
 

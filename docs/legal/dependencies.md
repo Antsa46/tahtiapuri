@@ -14,6 +14,10 @@ asennuspaketin lisenssiliite. Se viimeistellään T17:ssä toimitetun sisällön
 | Vitest 5.1.0 | Paikalliset yksikkö- ja integraatiotestit. | MIT |
 | @playwright/test 1.64.1 | Oikean Electronin E2E-testit. | Apache-2.0 |
 | @types/node 24.10.0, @types/react ja @types/react-dom 19.3.0 | Käännösaikaiset tyypit. | MIT |
+| node-llama-cpp 3.22.2 ja sen Windows CPU-/CUDA-binäärit | Erillisen mallityöntekijän llama.cpp-sovitin. | MIT; binäärien mukana tulevat llama.cpp- ja muut ilmoitukset säilytetään. |
+| simple-git 4.0.2 ja argv-parser 2.0.1 | SDK:n transitiivinen Git-kirjasto, rajattu turvallisuuspäivityksen override. Rakennuspolku ei käytössä malliajossa. | MIT |
+| Qwen3-4B Q4_K_M GGUF | Ensimmäinen paikallinen keskustelumalli, erillinen painotiedosto. | Apache-2.0; tarkka revisio ja LICENSE-tarkiste malliprofiilissa. |
+| NVIDIA cuBLAS 13.2.0.9 ja CUDA Runtime 13.1.80 | Valinnainen CUDA-tausta; projektikohtaiset DLL:t. | NVIDIA CUDA Toolkit -lisenssi ja komponenttien mukana toimitetut LICENSE-tiedostot. |
 | Node 24.22.2 ja pnpm 12.16.1 | Projektikohtainen kehitystyökaluketju. | MIT; mukana toimitettujen osien omat ilmoitukset säilytetään. |
 
 Lähteenä käytetään kunkin lukitun npm-julkaisun package.json/LICENSE-tiedostoja.
@@ -30,7 +34,18 @@ UI-buildiin. Myös näiden ilmoitukset huomioidaan toimituksessa.
 Muut yllä mainitut työkalut eivät automaattisesti kuulu loppukäyttäjän pakettiin.
 Rungolle ei ole vielä tehty asennuspakettia.
 
-Paikallisten mallien painoja tai node-llama-cpp:tä ei ole vielä asennettu.
-Niiden kokeeseen valitut lisenssit ja alkuperät ovat
-[mallikokeen manifestissa](../../tests/evaluations/local-model/pilot-manifest.json).
+T03:ssa node-llama-cpp ja yksi 4B-malli on asennettu projektin omaan puuhun.
+Mallin alkuperä, lisenssilähde ja tarkiste ovat
+[hyväksytyssä profiilissa](../../resources/models/qwen3-4b.json).
+NVIDIA-komponentit ovat virallisen CUDA 13.1.0 -redistrib-julkaisun
+ZIP-arkistoista; versiot, lähde ja SHA-256:t ovat
+[työkalulukossa](../../scripts/dev/toolchain.json). Molempien arkistojen
+LICENSE säilyy puretun komponentin juuressa. Tämä ei oleta oikeutta
+jakaa koko CUDA Toolkitia uudelleen; lopulliset jaettavat DLL:t,
+soveltuvat ehdot ja ilmoitukset tarkistetaan toimituksen T17-katselmuksessa.
+Ks. [NVIDIA CUDA Toolkit -lisenssi](https://docs.nvidia.com/cuda/eula/index.html).
+Mallipainoja ei tässä projektissa sisällytetä asennuspakettiin.
 Tämä koonti ei valitse projektin oman lähdekoodin lisenssiä.
+
+SDK:n Git-aliriippuvuuden rajatun yliajon syy, lähteet ja tarkistusraja ovat
+[moottorikokeen raportissa](../experiments/model-runtime-probe.md#aliriippuvuuden-audit-ja-rajattu-poikkeama).

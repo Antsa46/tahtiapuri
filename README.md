@@ -9,9 +9,9 @@ opetellaan paikallisten kielimallien, rajattujen agenttiroolien ja
 AI-avusteisen ohjelmistokehityksen käyttöä. Oppeja on tarkoitus hyödyntää
 myöhemmin toisessa Electron-sovelluksessa.
 
-**Nykytila:** ajettava Electron–backend-kehitysrunko. React-näkymän
-paikallinen statuskysely kulkee rajatun IPC:n kautta erilliseen backendiin.
-Kielimalli, tähtikartta ja sää liitetään mukaan seuraavissa vaiheissa.
+**Nykytila:** Electron-sovelluksessa voi keskustella paikallisen Qwen3-4B-mallin
+kanssa CPU:lla tai CUDA:lla. Malli toimii erillisessä UtilityProcessissa;
+käyttöliittymä käyttää rajattua IPC:tä. Tähtikartta, laskenta ja sää ovat seuraavia vaiheita.
 
 ## Tavoitellut ominaisuudet
 
@@ -32,14 +32,14 @@ haetaan erikseen rajatun API-yhteyden kautta.
 | Työpöytäsovellus | Electron ja TypeScript |
 | Käyttöliittymä | React, Vite ja CSS Modules |
 | Paikallinen backend | Node.js / TypeScript ja rajattu IPC-viestintä |
-| Mallimoottori | llama.cpp; ensimmäiseen kokeeseen node-llama-cpp erillisessä UtilityProcessissa |
+| Mallimoottori | node-llama-cpp / llama.cpp erillisessä UtilityProcessissa |
 | Tähtikartta ja laskenta | D3-Celestial ja Astronomy Engine arvioitavina vaihtoehtoina |
 | Sää | Ilmatieteen laitoksen avoin data |
 
 Ensimmäiset mallikokeet tehdään 4B- ja 8B-kokoluokissa. GGUF-painot
 säilytetään sovelluksen ulkopuolisessa paikallisessa mallikansiossa,
-ja muistissa pidetään yhtä mallia kerrallaan. Tarkat versiot ja
-yhteensopivuus ratkaistaan kokeilla.
+ja muistissa pidetään yhtä mallia kerrallaan. 4B:n CPU-/CUDA-ajot on
+todennettu kehityskokeessa; 8B-vertailu ja asetusten mallinvaihto tulevat myöhemmin.
 
 ## Arkkitehtuuri
 
@@ -80,11 +80,13 @@ Windowsin PowerShellissä, projektijuuressa:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev.ps1 install
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev.ps1 models:prepare
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev.ps1 build
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev.ps1 start
 ```
 
-[Paikallinen kehitys ja testaus](docs/development/local-development.md) kuvaa
+[Paikallinen kehitys ja testaus](docs/development/local-development.md) sisältää
+myös 4B-mallin erillisen valmistelun ja valinnaiset CUDA-kirjastot. Se kuvaa
 työkaluketjun, polut ja tarkistuskomennot. [Riippuvuudet ja lisenssit](docs/legal/dependencies.md)
 täydennetään toimitettavan sisällön mukaan. Ensimmäinen mallikoe käyttää
 4B/8B-malleille yhteistä synteettistä aineistoa.

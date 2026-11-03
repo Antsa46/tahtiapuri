@@ -1,4 +1,4 @@
 import type { RuntimeStatus } from "@tahtiapuri/validation/public";
-export function getRuntimeStatus(): RuntimeStatus {
-  return { state: "ready", model: "not-loaded", protocolVersion: 1 };
+export function getRuntimeStatus(modelManaged = false): RuntimeStatus {
+  return { state: "ready", model: modelManaged ? "managed-separately" : "not-loaded", protocolVersion: 1 };
 }
