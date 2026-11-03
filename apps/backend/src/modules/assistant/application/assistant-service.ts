@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { ModelEngine } from "../ports/model-engine.js";
 import type { AssistantResult, JobView, ModelInput } from "@tahtiapuri/validation/assistant";
-type Job = { view: JobView; input: ModelInput };
+type Job = { view: JobView; input: ModelInput; owner: string };
 const terminal = (view: JobView) => ["completed", "cancelled", "error"].includes(view.state);
 export class AssistantService {
   private jobs = new Map<string, Job>();
@@ -9,7 +9,7 @@ export class AssistantService {
   private active: Job | undefined;
   private closed = false;
   constructor(private readonly engine: ModelEngine) {}
-  submit(input: ModelInput): AssistantResult {
+  submit(input: ModelInput, owner = "ui"): AssistantResult {
     if (this.closed) return { ok: false, code: "ENGINE_UNAVAILABLE" };
     if (this.queue.length + (this.active ? 1 : 0) >= 2) return { ok: false, code: "BUSY" };
     for (const [id, job] of this.jobs) {
@@ -17,27 +17,33 @@ export class AssistantService {
       if (terminal(job.view)) this.jobs.delete(id);
     }
     const view: JobView = { id: randomUUID(), state: "queued", text: "", error: null, info: null };
-    const job = { view, input };
+    const job = { view, input, owner };
     this.jobs.set(view.id, job); this.queue.push(job); this.pump();
     return { ok: true, job: { ...view } };
   }
-  get(id: string): AssistantResult {
+  get(id: string, owner = "ui"): AssistantResult {
     const job = this.jobs.get(id);
-    return job ? { ok: true, job: { ...job.view } } : { ok: false, code: "INVALID_INPUT" };
+    return job?.owner === owner ? { ok: true, job: { ...job.view } } : { ok: false, code: "INVALID_INPUT" };
   }
-  cancel(id: string): AssistantResult {
+  cancel(id: string, owner = "ui"): AssistantResult {
     const job = this.jobs.get(id);
-    if (!job) return { ok: false, code: "INVALID_INPUT" };
+    if (!job || job.owner !== owner) return { ok: false, code: "INVALID_INPUT" };
     if (!terminal(job.view)) {
       job.view = { ...job.view, state: "cancelled", text: "", error: "CANCELLED" };
       if (this.active === job) this.engine.cancel(id);
       else this.queue = this.queue.filter(item => item !== job);
     }
-    return this.get(id);
+    return this.get(id, owner);
+  }
+  releaseOwner(owner: string) {
+    for (const [id, job] of this.jobs) if (job.owner === owner) {
+      this.cancel(id, owner);
+      this.jobs.delete(id);
+    }
   }
   dispose() {
     this.closed = true;
-    for (const id of this.jobs.keys()) this.cancel(id);
+    for (const [id, job] of this.jobs) this.cancel(id, job.owner);
   }
   private pump() {
     if (this.active || this.closed) return;

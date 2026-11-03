@@ -15,6 +15,8 @@ asennuspaketin lisenssiliite. Se viimeistellään T17:ssä toimitetun sisällön
 | @playwright/test 1.64.1 | Oikean Electronin E2E-testit. | Apache-2.0 |
 | @types/node 24.10.0, @types/react ja @types/react-dom 19.3.0 | Käännösaikaiset tyypit. | MIT |
 | node-llama-cpp 3.22.2 ja sen Windows CPU-/CUDA-binäärit | Erillisen mallityöntekijän llama.cpp-sovitin. | MIT; binäärien mukana tulevat llama.cpp- ja muut ilmoitukset säilytetään. |
+| @modelcontextprotocol/server, client ja core 2.4.0 | Rajattu stdio-palvelin sekä oikean asiakkaan integraatiotestit. | Apache-2.0 |
+| Zod 4.6.7 | MCP-työkalujen syöteskeemat. | MIT |
 | simple-git 4.0.2 ja argv-parser 2.0.1 | SDK:n transitiivinen Git-kirjasto, rajattu turvallisuuspäivityksen override. Rakennuspolku ei käytössä malliajossa. | MIT |
 | Qwen3-4B ja Qwen3-8B Q4_K_M GGUF | Paikallinen keskustelumalli ja erillisen vertailun 8B-paino. | Apache-2.0; tarkka revisio ja LICENSE-tarkiste malliprofiilissa. |
 | NVIDIA cuBLAS 13.2.0.9 ja CUDA Runtime 13.1.80 | Valinnainen CUDA-tausta; projektikohtaiset DLL:t. | NVIDIA CUDA Toolkit -lisenssi ja komponenttien mukana toimitetut LICENSE-tiedostot. |

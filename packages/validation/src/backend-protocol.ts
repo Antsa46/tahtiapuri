@@ -1,8 +1,9 @@
+import { isCapability, isDevelopmentIdentity, isDevelopmentInvocation, isDevelopmentResult, type DevelopmentResult } from "./development.js";
 import { isModelInput, isJobId, isAssistantResult, type AssistantResult } from "./assistant.js";
 import { exactKeys, isRecord, isRuntimeStatus, type RuntimeStatus } from "./public-api.js";
 export const PROTOCOL_VERSION = 1;
 export const MAX_REQUEST_MS = 5000;
-export const OPERATIONS = ["runtime.status", "runtime.ping", "runtime.shutdown", "assistant.submit", "assistant.get", "assistant.cancel"] as const;
+export const OPERATIONS = ["runtime.status", "runtime.ping", "runtime.shutdown", "assistant.submit", "assistant.get", "assistant.cancel", "development.status", "development.configure", "development.attach", "development.detach", "development.invoke"] as const;
 export type Operation = typeof OPERATIONS[number];
 export type Initialize = { type: "initialize"; protocol: 1; session: string };
 export type Ready = { type: "ready"; protocol: 1; session: string };
@@ -12,7 +13,7 @@ export type Request = {
 };
 export type Response = {
   type: "response"; protocol: 1; session: string; id: string;
-  operation: Operation; result: RuntimeStatus | AssistantResult | null;
+  operation: Operation; result: RuntimeStatus | AssistantResult | DevelopmentResult | null;
 };
 export function isSession(value: unknown): value is string {
   return typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
@@ -32,11 +33,14 @@ function isEnvelope(value: unknown, session: string): value is Record<string, un
 }
 export function isRequest(value: unknown, session: string, now: number): value is Request {
   return isEnvelope(value, session)
-    && exactKeys(value, String(value.operation).startsWith("assistant.")
+    && exactKeys(value, (String(value.operation).startsWith("assistant.") || (String(value.operation).startsWith("development.") && value.operation !== "development.status"))
       ? ["type", "protocol", "session", "id", "operation", "expiresAtUnixMs", "input"]
       : ["type", "protocol", "session", "id", "operation", "expiresAtUnixMs"])
     && (value.operation === "assistant.submit" ? isModelInput(value.input)
-      : value.operation === "assistant.get" || value.operation === "assistant.cancel" ? isJobId(value.input) : true)
+      : value.operation === "assistant.get" || value.operation === "assistant.cancel" ? isJobId(value.input)
+      : value.operation === "development.configure" ? value.input === null || isCapability(value.input)
+      : value.operation === "development.attach" || value.operation === "development.detach" ? isDevelopmentIdentity(value.input)
+      : value.operation === "development.invoke" ? isDevelopmentInvocation(value.input) : true)
     && value.type === "request" && typeof value.expiresAtUnixMs === "number"
     && Number.isSafeInteger(value.expiresAtUnixMs)
     && value.expiresAtUnixMs > now && value.expiresAtUnixMs <= now + MAX_REQUEST_MS;
@@ -45,5 +49,5 @@ export function isResponse(value: unknown, session: string): value is Response {
   return isEnvelope(value, session)
     && exactKeys(value, ["type", "protocol", "session", "id", "operation", "result"])
     && value.type === "response"
-    && (value.operation === "runtime.status" ? isRuntimeStatus(value.result) : String(value.operation).startsWith("assistant.") ? isAssistantResult(value.result) : value.result === null);
+    && (value.operation === "runtime.status" ? isRuntimeStatus(value.result) : String(value.operation).startsWith("assistant.") ? isAssistantResult(value.result) : String(value.operation).startsWith("development.") ? isDevelopmentResult(value.result) : value.result === null);
 }

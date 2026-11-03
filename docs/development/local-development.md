@@ -37,6 +37,13 @@ vanhan mallityöntekijän ennen uuden käynnistystä. CUDA-virhe ei vaihda CPU:l
 Jokainen kysymys on vielä itsenäinen, ilman keskusteluhistoriaa.
 Malli ei vielä saa todellista säätä tai tähtilaskennan tietoja.
 
+## MCP-kehitysyhteys
+
+Asetusten Kehitystyökalut-osassa voi sallia rajatun kehitysyhteyden.
+Se on pois jokaisessa käynnistyksessä. Stdio-sovitin, kolme työkalua,
+asiakkaan erillinen määritys ja uudelleenkäynnistys on kuvattu
+[MCP-käyttöohjeessa](mcp.md). Sovellus ei muuta Codexin asetuksia.
+
 ## Valinnainen CUDA-valmistelu
 
 Tämän koneen CUDA-ajo tarvitsee NVIDIA-ajurin lisäksi paikalliset cuBLAS- ja

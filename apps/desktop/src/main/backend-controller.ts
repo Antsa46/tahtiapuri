@@ -1,3 +1,4 @@
+import { isDevelopmentResult, type DevelopmentResult } from "@tahtiapuri/validation/development";
 import { isModelRun, isModelCancel } from "@tahtiapuri/validation/model-wire";
 import { isEngineReply, isAssistantResult, type EngineReply, type ModelInput, type AssistantResult } from "@tahtiapuri/validation/assistant";
 import { EventEmitter } from "node:events";
@@ -102,7 +103,7 @@ export class BackendController {
     const child = this.child;
     if (!child || !this.ready || this.exited || (this.closing && operation !== "runtime.shutdown"))
       return Promise.reject(new Error("Backend unavailable."));
-    if ((operation === "runtime.status" || operation.startsWith("assistant.")) && this.pending.size >= 14)
+    if ((operation === "runtime.status" || operation.startsWith("assistant.") || operation === "development.invoke" || operation === "development.status") && this.pending.size >= 14)
       return Promise.reject(new Error("Backend request limit reached."));
     if (this.pending.size >= 16) return Promise.reject(new Error("Backend request limit reached."));
     const id = randomUUID();
@@ -116,7 +117,7 @@ export class BackendController {
         child.postMessage({
           type: "request", protocol: 1, session: this.session, id, operation,
           expiresAtUnixMs: Date.now() + 2500,
-          ...(operation.startsWith("assistant.") ? { input } : {}),
+          ...((operation.startsWith("assistant.") || (operation.startsWith("development.") && operation !== "development.status")) ? { input } : {}),
         });
       } catch {
         clearTimeout(timer);
@@ -135,6 +136,12 @@ export class BackendController {
   async assistant(operation: "assistant.submit" | "assistant.get" | "assistant.cancel", input: unknown): Promise<AssistantResult> {
     const response = await this.request(operation, input);
     return isAssistantResult(response.result) ? response.result : { ok: false, code: "ENGINE_UNAVAILABLE" };
+  }
+
+  async development(operation: "development.status" | "development.configure" | "development.attach" | "development.detach" | "development.invoke", input?: unknown): Promise<DevelopmentResult> {
+    const response = await this.request(operation, input);
+    if (!isDevelopmentResult(response.result)) throw new Error("Invalid development response.");
+    return response.result;
   }
 
   stop(): Promise<void> {

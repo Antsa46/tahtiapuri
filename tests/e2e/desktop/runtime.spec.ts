@@ -10,14 +10,14 @@ test("status crosses the real sandboxed renderer/main/backend path", async ({}, 
   try {
     const page = await app.firstWindow();
     expect(await app.evaluate(() => process.versions.electron)).toBe("45.2.1");
-    await expect(page.getByRole("status", { name: "Yhteyden tila" }).filter({ hasText: "Yhteys toimii" })).toHaveText("Yhteys toimii");
+    await expect(page.getByRole("status", { name: "Yhteyden tila", exact: true }).filter({ hasText: "Yhteys toimii" })).toHaveText("Yhteys toimii");
     await page.getByRole("button", { name: "Tarkista yhteys uudelleen" }).click();
-    await expect(page.getByRole("status", { name: "Yhteyden tila" }).filter({ hasText: "Yhteys toimii" })).toHaveText("Yhteys toimii");
+    await expect(page.getByRole("status", { name: "Yhteyden tila", exact: true }).filter({ hasText: "Yhteys toimii" })).toHaveText("Yhteys toimii");
     expect(await page.evaluate(() => ({
       require: typeof (window as unknown as Record<string, unknown>).require,
       process: typeof (window as unknown as Record<string, unknown>).process,
       bridge: Object.keys(window.tahtiapuri),
-    }))).toEqual({ require: "undefined", process: "undefined", bridge: ["assistant", "getStatus"] });
+    }))).toEqual({ require: "undefined", process: "undefined", bridge: ["assistant", "development", "getStatus"] });
     await page.screenshot({ path: info.outputPath("tahtiapuri.png") });
   } finally { await app.close(); }
   await expectGone(pid);
@@ -27,7 +27,7 @@ test("rejects malformed messages and a different window even at the same origin"
   const app = await launch(info.outputPath("data"), "probe");
   try {
     const page = await app.firstWindow();
-    await expect(page.getByRole("status", { name: "Yhteyden tila" }).filter({ hasText: "Yhteys toimii" })).toHaveText("Yhteys toimii");
+    await expect(page.getByRole("status", { name: "Yhteyden tila", exact: true }).filter({ hasText: "Yhteys toimii" })).toHaveText("Yhteys toimii");
     expect(await page.evaluate(() => (window as unknown as { probe: { flags: unknown } }).probe.flags))
       .toEqual({ sandbox: true, contextIsolation: true });
     const malformed = await page.evaluate(async () => {
@@ -45,7 +45,7 @@ test("rejects malformed messages and a different window even at the same origin"
       } finally { other.destroy(); }
     }, join(process.cwd(), ".artifacts/tests/e2e-build/probe-preload.cjs"));
     expect(foreign).toBe("denied");
-    await expect(page.getByRole("status", { name: "Yhteyden tila" }).filter({ hasText: "Yhteys toimii" })).toHaveText("Yhteys toimii");
+    await expect(page.getByRole("status", { name: "Yhteyden tila", exact: true }).filter({ hasText: "Yhteys toimii" })).toHaveText("Yhteys toimii");
   } finally { await app.close(); }
 });
 
@@ -58,7 +58,7 @@ test("blocks renderer network requests without contacting an external host", asy
   const app = await launch(info.outputPath("data"));
   try {
     const page = await app.firstWindow();
-    await expect(page.getByRole("status", { name: "Yhteyden tila" }).filter({ hasText: "Yhteys toimii" })).toHaveText("Yhteys toimii");
+    await expect(page.getByRole("status", { name: "Yhteyden tila", exact: true }).filter({ hasText: "Yhteys toimii" })).toHaveText("Yhteys toimii");
     const result = await page.evaluate(async url => {
       try { await fetch(url); return "allowed"; } catch { return "blocked"; }
     }, "http://127.0.0.1:" + address.port);
@@ -76,7 +76,7 @@ test("closing the window reaps its backend and a fresh start succeeds", async ({
   await expectGone(pid);
   const next = await launch(info.outputPath("first"));
   const nextPid = await backendPid(next);
-  await expect((await next.firstWindow()).getByRole("status", { name: "Yhteyden tila" })).toHaveText("Yhteys toimii");
+  await expect((await next.firstWindow()).getByRole("status", { name: "Yhteyden tila", exact: true })).toHaveText("Yhteys toimii");
   await next.close(); await expectGone(nextPid);
 });
 
@@ -85,7 +85,7 @@ for (const scenario of ["early-exit", "unresponsive", "unready-ui"] as const) {
     await failingStartup(info.outputPath("failure"), scenario);
     const next = await launch(info.outputPath("failure"));
     const pid = await backendPid(next);
-    await expect((await next.firstWindow()).getByRole("status", { name: "Yhteyden tila" })).toHaveText("Yhteys toimii");
+    await expect((await next.firstWindow()).getByRole("status", { name: "Yhteyden tila", exact: true })).toHaveText("Yhteys toimii");
     await next.close(); await expectGone(pid);
   });
 }
@@ -102,7 +102,7 @@ test("backend crash closes stale UI and permits a clean restart", async ({}, inf
   await closed; await expectGone(pid);
   const next = await launch(info.outputPath("first"));
   const nextPid = await backendPid(next);
-  await expect((await next.firstWindow()).getByRole("status", { name: "Yhteyden tila" })).toHaveText("Yhteys toimii");
+  await expect((await next.firstWindow()).getByRole("status", { name: "Yhteyden tila", exact: true })).toHaveText("Yhteys toimii");
   await next.close(); await expectGone(nextPid);
 });
 
@@ -132,6 +132,6 @@ test("renderer crash closes its backend and the same profile can reopen", async 
   await closed; await expectGone(pid);
   const next = await launch(data);
   const nextPid = await backendPid(next);
-  await expect((await next.firstWindow()).getByRole("status", { name: "Yhteyden tila" })).toHaveText("Yhteys toimii");
+  await expect((await next.firstWindow()).getByRole("status", { name: "Yhteyden tila", exact: true })).toHaveText("Yhteys toimii");
   await next.close(); await expectGone(nextPid);
 });

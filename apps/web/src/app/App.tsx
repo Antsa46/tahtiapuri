@@ -1,3 +1,4 @@
+import { DevelopmentSettings } from "../features/development/DevelopmentSettings.js";
 import { AssistantPanel } from "../features/assistant/AssistantPanel.js";
 import { useEffect, useState } from "react";
 import { createRuntimeClient } from "@tahtiapuri/api-client";
@@ -37,6 +38,7 @@ export function App() {
         </div>
       </section>
       <AssistantPanel />
+      <DevelopmentSettings />
       <footer className={styles.footer}>Malli toimii paikallisesti. Tuoreita taivas- tai säätietoja ei vielä haeta.</footer>
     </main>
   );

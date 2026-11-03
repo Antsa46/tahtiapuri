@@ -10,7 +10,7 @@ const backendEntry = scenario === "early-exit" ? join(root, ".artifacts/tests/e2
   : join(root, "apps/backend/dist/runtime/backend.js");
 const approved = JSON.parse(readFileSync(join(root, "resources/models/qwen3-4b.json"), "utf8"));
 const model = scenario?.startsWith("model") ? {
-  entry: scenario === "model-helper-hold" ? join(root, ".artifacts/tests/e2e-build/helper-hold-model.js") : scenario === "model-oom" ? join(root, ".artifacts/tests/e2e-build/model-fault.js") : join(root, "apps/backend/dist/runtime/model-worker.js"),
+  entry: scenario === "model-echo" ? join(root, ".artifacts/tests/e2e-build/model-echo.js") : scenario === "model-helper-hold" ? join(root, ".artifacts/tests/e2e-build/helper-hold-model.js") : scenario === "model-oom" ? join(root, ".artifacts/tests/e2e-build/model-fault.js") : join(root, "apps/backend/dist/runtime/model-worker.js"),
   profile: { file: join(root, ".local/models", approved.file), bytes: approved.bytes,
     sha256: scenario === "model-invalid" ? "0".repeat(64) : approved.sha256, templateSha256: approved.expectedChatTemplateSha256 },
   cudaPaths: [join(root, ".local/toolchain/cuda/libcublas-windows-x86_64-13.2.0.9-archive/bin/x64"), join(root, ".local/toolchain/cuda/cuda_cudart-windows-x86_64-13.1.80-archive/bin/x64")],

@@ -261,6 +261,17 @@ Testit käyttävät omia tilapäisiä datajuuria ja paikallisia portteja.
 Jokainen käynnistetty prosessi, palvelin ja ajastin suljetaan myös virheessä.
 Käyttäjän havaintopaikat ja havaintopäiväkirja eivät ole testiaineistoa.
 
+## T05:n kehitysyhteyden näyttö
+
+Rajattu MCP-koe käyttää SDK:n oikeaa stdio-asiakasta Electron-E2E:ssä.
+Omistajuuden, katkaisun ja autentikoinnin deterministiset kokeet käyttävät
+synteettistä mallityöntekijää. Oikean 4B-mallin UI/MCP-merkkikoe ja
+peruutuksen jälkeinen erottelu kuuluvat erikseen käynnistettävään test:model-ajoon.
+Windowsin DACL, kesken descriptor-kirjoituksen tuleva sulku, kontrollitulva,
+takavastepaine ja tavurajoiltaan sallitut yhdistetyt kehykset testataan erikseen.
+[Käyttöohje](../development/mcp.md) omistaa komennot ja paikalliset raporttipolut.
+Näyttö ei tarkoita tämän chatin Codex-liitäntää tai OS-verkkorajan hyväksyntää.
+
 ## Tarkistusten raportointi
 
 Muutos ajetaan ensin sen vastuuseen kohdistuvilla testeillä. E2E ja oikean
@@ -269,7 +280,7 @@ Laajaa matriisia ei ajeta pelkän dokumentaatiomuutoksen vuoksi.
 
 Kirjaa ajettu komento, tulos ja testaamatta jäänyt. Säilytä ensimmäisen
 virheen havainto; korjauksen jälkeinen vihreä ajo ei selitä alkuperäistä syytä
-automaattisesti. Tässä suunnitteluvaiheessa sovellustestejä ei ole.
+automaattisesti. Nykyiset testiperheet ja komennot kuvataan kehitysohjeessa.
 
 Testimäärä raportoidaan nimetystä ajosta ja sen kohdejoukosta.
 Testitiedostojen määrä ei ole testitapausten määrä. Parametrisoidut tapaukset,

@@ -18,7 +18,7 @@ valmistumisen näyttö GitHub-issueissa (repositoryn Issues).
 | Mallit ja painot | Qwen3-4B Q4_K_M on otettu käyttöön projektin paikallisesta kansiosta. T04:n 4B/8B-vertailu on tehty; tulos ei vielä hyväksy kumpaakaan havaintoavustajaksi. Mallinvaihto asetuksista on sovittu myöhemmäksi toteutukseksi. Poro–Ministral-verrokit ovat mukana suunnitelmassa; tarkat paketit ja oletusmalli ovat avoimia. | [Mallivalinta ja toimitus](../architecture/local-model-plan.md) |
 | Avustajan työnkulku | Sovittu: backend koordinoi, moduulit tarkistavat työkalut ja yksi opastajarooli toimii lähtötasona. Usean roolin hyöty mitataan erikseen. | [Orkestrointi](../architecture/assistant-orchestration-plan.md) |
 | Verkon ja tiedostojen oikeudet | Sovittu tavoite: vain säätyöntekijän rajattu ulkoinen yhteys. OS-mekanismi, GPU ja eristyksen näyttö ovat avoimia; AppContainer/LPAC on vaihtoehto. | [Turvallisuus ja oikeudet](../architecture/security-and-permissions-plan.md) |
-| Kehityksen MCP | Sovittu: rajattu stdio-yhteys ja asetusten kytkin, oletuksena pois joka käynnistyksessä. Todellinen yhteys ja oikeusrajat testataan. | [MCP-sopimus](../architecture/local-model-plan.md#kehitys--ja-diagnostiikkarajapinta-paikalliseen-malliin) |
+| Kehityksen MCP | Sovittu: rajattu stdio-yhteys ja asetusten kytkin, oletuksena pois joka käynnistyksessä. T05 toteuttaa Windowsin capability-kanavan ja omistajuuden tarkistukset. Codex-isännän erillinen käyttöönotto ja OS-eristys säilyvät erillisinä. | [MCP-sopimus](../architecture/local-model-plan.md#kehitys--ja-diagnostiikkarajapinta-paikalliseen-malliin) |
 | Sää | Ilmatieteen laitos on valittu tarjoajaksi. Tarkka kysely ja kentät ovat avoimia; Open-Meteota ei toteuteta rinnalle. | [Sääpalvelu](../architecture/technology-and-ui-plan.md), [sään elinkaari](../architecture/data-lifecycle-plan.md) |
 | Paikat, asetukset ja historia | Sovittu paikallinen säilytys: viimeisin paikka, säävalinta, käyttäjän poistoon asti säilyvät keskustelut ja viimeisin ennuste per paikka. Ensimmäinen säätila on manuaalinen. | [Tiedon elinkaari](../architecture/data-lifecycle-plan.md) |
 | Testaus | Sovittu: pienet testit lähteen vieressä, laajat testit ja yhteiset aineistot tests/-puussa; paikalliset ajot ilman etä-CI:tä. Ensimmäinen näyttö on rajattu mallikoe. | [Testausohje](../ai/testing-rules.md) |
@@ -33,7 +33,7 @@ valmistumisen näyttö GitHub-issueissa (repositoryn Issues).
 - Laajemmin tuettu Windows-/CPU/GPU-kokoonpano; T03:ssa CPU ja CUDA valitaan näkyvästi ilman hiljaista fallbackia.
 - Katalogin rajaus, laskentasovitin, FMI-kysely ja käynnistyskatsauksen aikarajat.
 - Mallivalinnan ja mallikansion muistaminen sekä puuttuvan mallin käsittely.
-- Tallennuksen tekninen toteutus, MCP:n todentaminen ja resurssirajat.
+- Tallennuksen tekninen toteutus; MCP:n OS-oikeusrajan ja paketoidun ajon näyttö.
 - Ensimmäinen synteettinen aineisto on [kokeen lähtötiedoissa](../experiments/model-pilot.md); T04:n tulokset ovat [vertailuraportissa](../experiments/model-comparison.md). Suorituskyvyn hyväksyttävät rajat ja luotettavan havaintoavustajan mallivalinta ovat avoimia.
 - Horisonttiesteiden ja havaintovälineiden tietojen tarkempi käyttötapa.
 

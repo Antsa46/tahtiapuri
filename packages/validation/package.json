@@ -7,7 +7,9 @@
     "./public": "./dist/public-api.js",
     "./backend": "./dist/backend-protocol.js",
     "./assistant": "./dist/assistant.js",
-    "./model-wire": "./dist/model-wire.js"
+    "./model-wire": "./dist/model-wire.js",
+    "./development": "./dist/development.js",
+    "./development-framing": "./dist/development-framing.js"
   },
   "dependencies": {}
 }

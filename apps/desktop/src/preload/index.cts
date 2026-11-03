@@ -6,6 +6,10 @@ const bridge: RuntimeBridge = Object.freeze({
     get: (id: string) => ipcRenderer.invoke("tahtiapuri:model-get", id),
     cancel: (id: string) => ipcRenderer.invoke("tahtiapuri:model-cancel", id),
   }),
+  development: Object.freeze({
+    getStatus: () => ipcRenderer.invoke("tahtiapuri:development-status"),
+    setEnabled: (enabled: boolean) => ipcRenderer.invoke("tahtiapuri:development-enable", enabled),
+  }),
   getStatus: () => ipcRenderer.invoke("tahtiapuri:runtime-status"),
 });
 contextBridge.exposeInMainWorld("tahtiapuri", bridge);

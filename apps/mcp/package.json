@@ -1,0 +1,14 @@
+{
+  "name": "@tahtiapuri/mcp",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./dist/server.js"
+  },
+  "dependencies": {
+    "@tahtiapuri/validation": "workspace:*",
+    "@modelcontextprotocol/server": "2.4.0",
+    "zod": "4.6.7"
+  }
+}

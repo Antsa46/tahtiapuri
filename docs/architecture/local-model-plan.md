@@ -157,7 +157,7 @@ Sen oikeudet, projektikohtaiset asennuspolut ja toistettavat syötteet
 omistaa [kokeen lähtötieto](../experiments/model-pilot.md).
 Sovellusrungon ja oikean 4B-mallin ajon näyttö on tehty T02/T03:ssa.
 T04:n [4B/8B-laatuvertailu](../experiments/model-comparison.md) on tehty
-erillisessä testiajurissa. Kehitys-MCP on seuraava työpaketti.
+erillisessä testiajurissa. T05:n kehitys-MCP käyttää samaa jonoa ja mallirajaa erillisen omistajuuden kautta.
 
 ## T03:n toteutettu malliraja
 
@@ -431,160 +431,110 @@ mallien latauspalvelua, eikä kaikkia Windows-asentimia koskevaa
 
 ## Kehitys- ja diagnostiikkarajapinta paikalliseen malliin
 
-Käyttäjän vahvistama vaatimus: Codex voi kehityksessä tai tarvittaessa
-lähettää paikalliselle mallille koepyyntöjä ja lukea vastaukset ohjelman
-sisäisen rajapinnan kautta. Kyse on kehitystyökalusta, ei tähtiharrastajan
-käyttötapauksesta. Rajapintaa tai Codexin yhteysasetuksia ei ole toteutettu.
+T05 toteuttaa rajatun stdio-MCP-sovittimen `apps/mcp/`-sovelluksessa.
+Tämä osuus omistaa kehitysyhteyden teknisen sopimuksen;
+[käyttöohje](../development/mcp.md) omistaa käynnistyksen ja Codex-isännän
+erillisen määrityksen. Yhteys ei ole edellytys Tähtiapurin tavalliselle käytölle.
 
 ### MCP:n käyttötarkoitus kehityksessä
 
-Codex toimii kehittäjänä ja arviointikokeiden käyttäjänä. Rajapinta auttaa
-lähettämään rajattuja koepyyntöjä saman mallisovittimen läpi, toistamaan
-tapaukset eri malleilla ja tarkistamaan tulosmuodon, virheet sekä peruutuksen.
-Koetapauksessa käytetään tunnettuja sää- ja tähtilaskentatietoja;
-Codexin oma arvio ei korvaa riippumatonta laskentavertailua tai testejä.
-
-Keskustelu tai MCP-kutsu ei itsessään kouluta mallin painoja. Kehityksessä
-voidaan parantaa rooliohjeita, annettua kontekstia, vastaussopimuksia ja
-sovelluksen tarkistuksia. Varsinainen painojen hienosäätö vaatisi erillisen
-koulutusaineiston, koulutusajon ja arvioinnin; sitä ei ole päätetty mukaan.
-
-Tähtiapuri toimii tavallisessa käytössä ilman Codexia. MCP ei ole ainoa
-mallikokeiden ajotapa: paikallinen testiajuri voi käyttää samaa sovitinta.
-MCP:n lisähyöty on kokeiden käyttö Codexin työkaluna ja integraation oppiminen.
-
-[OpenAI Docs: MCP](https://learn.chatgpt.com/docs/extend/mcp) dokumentoi
-Codexin paikallisen stdio-tuen (tarkistettu 3.11.2026). Se ei tarkoita,
-että Tähtiapurin palvelin olisi jo tehty tai yhteys käytettävissä.
-Käyttäjä pyysi perustelemaan yhteyden tarkoituksen ennen aineistorajan
-valintaa. Käyttäjätietojen hakua tai valittujen näytteiden välitystä ei
-tällä perusteella lisätä; [aineiston laajuus](#aineisto-ja-luottamusraja)
-on edelleen avoinna ja synteettinen koeaineisto säilyy lähtökohtana.
+Codex voi lähettää itsenäisiä mallikokeita saman jonon ja mallisovittimen läpi
+sekä tutkia tulosmuodon, virheet ja peruutuksen. Koetulos on epäluotettua
+aineistoa. Se ei anna lupaa tiedostojen tai asetusten muuttamiseen.
+Keskustelu tai koepyyntö ei kouluta mallin painoja; rooliohjeen ja syötteen
+kehittäminen erotetaan mahdollisesta myöhemmästä hienosäädöstä.
 
 ### Ehdotettu yhteystapa
 
-Käyttäjä valitsi kehitysyhteyden suunnaksi paikallisen stdio-MCP:n jo
-ensimmäiseen mallikokeeseen. Erillistä omaa komentoprotokollaa ei rakenneta
-ennen sitä. MCP-sovitin pysyy ohuena: se välittää nimetyt mallikokeet
-backendin kehitysporttiin, joka käyttää samaa mallijonoa ja sovitinta kuin UI.
+Valittu ja T05:ssa toteutettu polku on MCP-asiakas → stdio-sovitin →
+mainin erillinen Windows named pipe → backendin kehitysmoduuli →
+assistant-moduulin yhteinen jono → mainin ModelHost → natiivimoottori.
+MCP SDK:n palvelin ja asiakas ovat versiota 2.4.0; Zod 4.6.7 validoi
+työkalujen syötteet. Oma MCP-protokollatoteutus jätettiin vaihtoehdoksi.
 
-[OpenAI Docs: MCP](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)
-kuvaa paikallisen stdio-prosessin tuen sekä työkalujen sallittujen listan
-(tarkistettu 2.11.2026). Kehitysyhteys otetaan erikseen käyttöön
-kyseisellä Codex-isännällä. Tavallinen selainkeskustelu ei saa tämän
-suunnitelman perusteella pääsyä koneen malliin.
+Sovitin ei tarjoa HTTP-palvelinta, TCP-porttia tai tunnelia.
+Main–backend-session oikeutta ei jaeta rendererille tai MCP-sovittimelle.
+Kehitysistunto käyttää omaa 256-bittistä satunnaista capabilitya ja
+jokainen todennettu yhteys omaa mainin luomaa asiakastunnistetta.
+Roolia, oikeutta tai tiedostopolkua ei voi antaa MCP-työkalun argumenttina.
 
-Suunniteltu polku on Codex MCP-asiakkaana → paikallinen stdio-MCP-sovitin →
-backendin rajattu kehitysportti → yhteinen mallijono ja mallisovitin →
-paikallinen moottori. Sovitin erotetaan rendererin sovellusrajapinnasta.
-Stdio-yhteydelle ei avata HTTP-palvelinta, julkista porttia tai etätunnelia.
+Main julkaisee capabilityn vain oman datajuuren `mcp/connection.json`-tiedostoon.
+Windowsin kiinteä PowerShell/.NET-apuri luo erillisen hakemiston suojatulla
+DACL:llä vain nykyiselle käyttäjälle ja SYSTEMille. Omistaja, suojattu DACL,
+molemmat SID:t, FullControl- ja periytymisflagit sekä reparse-esto tarkistetaan
+ennen `wx`-kirjoitusta. Olemassa olevaa liian avointa hakemistoa ei hyväksytä.
+Pelkkää Windowsin `0600`-tiedostomoodia ei pidetä suojauksena.
 
-MCP-sovittimen ja käynnissä olevan backendin väliin arvioidaan
-käyttöoikeuksilla rajattua paikallista IPC-yhteyttä. Sen tarkka kuljetus,
-todentaminen ja Windows/WSL-yhteensopivuus selvitetään kokeella.
-MCP-suunnan valinta ei vielä hyväksy SDK:ta, sen versiota tai asennusta.
-
-MCP-protokolla ei ole käyttöjärjestelmän hiekkalaatikko.
-[MCP:n paikallisten palvelinten turvallisuusohje](https://modelcontextprotocol.io/docs/2025-11-25/tutorials/security/security_best_practices#local-mcp-server-compromise)
-suosittelee stdiota ja prosessin oikeuksien rajaamista.
-Sovitin käynnistetään tunnetusta paikallisesta versiosta ilman mielivaltaista
-komentojen välitystä. Sille välitetään vain tarpeelliset ympäristöarvot;
-GitHub-tunnuksia, Codexin muita yhteystietoja tai käyttäjän yleisiä
-hakemisto-oikeuksia ei tarvita. Käynnistettävä ohjelma, versio, argumentit,
-työhakemisto ja ympäristö sidotaan tunnettuun kokoonpanoon; pakettia ei
-haeta verkosta käynnistyksen sivuvaikutuksena. Sovittimen käyttöjärjestelmäraja
-valitaan ja todennetaan erikseen. Codexin komentojen hiekkalaatikko ei
-automaattisesti rajaa MCP-palvelimen prosessia
-([OpenAI Docs: oikeuksien soveltamisala](https://learn.chatgpt.com/docs/permissions#scope-and-enforcement)).
+Tämä ei eristä saman Windows-käyttäjän haitallista ohjelmaa. Node named pipen
+oletus-DACL:ää tai etäasiakkaiden OS-torjuntaa ei kuvata todennetuksi
+verkkorajaksi: sovellus tarkistaa capabilityn ennen mitään vastausaineistoa.
+Koko sovelluksen OS-eristyksen omistaa
+[turvallisuussuunnitelma](security-and-permissions-plan.md).
 
 ### Kehityksen GitHub-yhteys on eri vastuu
 
-Codexin GitHub-yhteys palvelee kehitystyön tehtäviä ja versionhallintaa.
-Se ei kuulu paikallisen mallin työkaluihin tai Tähtiapurin MCP-palvelimeen.
-Paikallinen malli ei saa GitHub-tunnuksia, repositoryoikeuksia tai reittiä
-Codexin muiden työkalujen kutsumiseen. MCP-vastaus ei valtuuta GitHub-muutosta.
-GitHubin käytön työnjaon omistaa
-[yhteisen kehitystavan suunnitelma](../ai/project-start-checklist.md#tehtävien-ohjeiden-ja-tarkistusten-työnjako).
+Codexin kehitystyön GitHub-yhteys ei kuulu paikallisen mallin työkaluihin.
+Sovitin ei välitä GitHub-tunnuksia tai reittiä Codexin muihin työkaluihin.
+Mallin vastaus ei valtuuta GitHub-muutosta.
 
 ### Rajattavat operaatiot ja oikeudet
 
-Ensimmäiseen sopimukseen ehdotetaan kolmea nimettyä operaatiota:
+- `model_status({ jobId? })`: kehitysyhteyden tila ja hyväksytyn profiilin
+  versiot; tunnisteella vain tämän yhteyden oman kokeen tila ja tulos.
+  Tämä ei väitä mallin olevan ladattuna tai ilmoita koneinventaariota.
+- `model_probe({ prompt, backend })`: itsenäinen, nimenomaisesti annettu
+  enintään 2000 merkin koe. Vastaa työn tunnisteella; käyttää samaa
+  yhden aktiivisen ja yhden odottavan työn jonoa kuin UI.
+- `cancel_probe({ jobId })`: vain saman kehitysyhteyden oma koe.
 
-- Mallin toimintatila ja version tunnisteet ilman käyttäjäaineistoa.
-- Rajattu koepyyntö, jonka aineisto annetaan nimenomaisesti kyseiseen kokeeseen.
-- Oman koepyynnön peruutus.
+Muita työkaluja, historia-, tiedosto-, sää-, shell- tai asetuskutsuja ei ole.
+Tuntemattomat ja ylimääräiset kentät torjutaan sekä MCP- että backend-rajalla.
+Backend sitoo työn omistajan varmennettuun yhteyteen. UI ei voi lukea tai
+perua MCP-työtä, eikä MCP toisen yhteyden tai UI:n työtä.
+
+Kuljetuksessa on enintään neljä avointa socketia, yksi todennettu asiakas
+ja neljä odottavaa komentoa. Tunnistautuminen päättyy kolmessa sekunnissa;
+kutsuja sallitaan enintään 60 sekunnissa. Pyyntökehyksen raja on 16 KiB,
+vastauskehyksen 64 KiB ja erillisiä kehityskutsuja odotetaan enintään 5 s.
+Takaisinpaineella odotetaan enintään 2 s eikä mainin ulostulopuskuri kasva
+yli kahden vastauskehyksen. Aktiivisen kytkinsiirtymän lisäksi sallitaan
+vain yksi yhdistetty sulkupyyntö. Mallin omat aikarajat säilyvät yllä
+[T03:n mallirajassa](#t03n-toteutettu-malliraja).
 
 ### Kehitysyhteyden kytkin
 
-Sovittu suunnitteluun 3.11.2026: asetusten Kehitystyökalut-osassa on
-Salli Codex/MCP-kehitysyhteys -kytkin ja näkyvä yhteyden tila.
-Yhteys on pois joka sovelluskäynnistyksessä. Päälle kytkeminen sallii vain
-käynnissä olevan sovelluksen rajatun kehitysistunnon; Codexin ensimmäinen
-MCP-liitäntä tehdään erikseen kehityskäyttöönotossa.
+Asetusten Kehitystyökalut-osan **Salli Codex/MCP-kehitysyhteys** on pois
+jokaisella sovelluskäynnistyksellä. Kytkintä käyttää vain luotettu UI-kanava;
+MCP tai paikallinen malli ei saa sitä muuttaa.
 
-Stdio-MCP välittää viestit prosessin stdin/stdout-kanavissa eikä itsessään
-avaa TCP-verkkopalvelinta
-([MCP:n kuljetuskuvaus](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#stdio)).
-Suljettava kehitysportti tarkoittaa tässä backendin rajattua paikallista
-IPC-yhteyttä, ei uutta verkkopalvelimen porttia. Tarkka IPC-väline on avoinna.
+Pois kytkeminen estää mainissa uudet kutsut heti. Backend mitätöi
+kehitysistunnon ja peruu sekä unohtaa sen työt ennen kanavan sulkemista.
+Main sulkee socketit, kuuntelun ja oman yhteystiedoston. Kesken kirjoituksen
+tullut sulku ei voi avata vanhaa istuntoa uudelleen. UI:n työt säilyvät.
+Uusi avaus luo uuden capabilityn; vanha oikeus ei kelpaa.
 
-Pois kytkeminen toimii backendin valvomana katkaisuna:
-
-1. Uudet kehityskutsut estetään ja nykyiset oikeustodisteet mitätöidään.
-2. Jonossa ja ajossa olevat MCP-työt perutaan; sulkemisen jälkeen niiden
-   myöhäisiä tuloksia ei enää välitetä. Käyttöliittymän mallityöt jatkavat.
-3. Kehitys-IPC:n kuuntelu ja avoimet kehitysyhteydet suljetaan.
-   Uusi avaus tarvitsee uuden oikeuden; vanha yhteys ei palaudu itsestään.
-
-Codex omistaa stdio-sovittimen prosessin. Sovittimen jääminen käyntiin ei
-säilytä käyttöoikeutta: sovelluksen ollessa pois tai kehitysyhteyden suljettuna
-se palauttaa saatavuusvirheen eikä käynnistä sovellusta. Sovelluksen sulkeminen
-ja uudelleenkäynnistys mitätöivät kehitysistunnon
-[prosessien sopimuksen](base-architecture.md#prosessit-ja-kulkureitti) mukaisesti.
-
-Myös Codexissa palvelimen voi poistaa käytöstä enabled-asetuksella
-([OpenAI Docs: MCP](https://learn.chatgpt.com/docs/extend/mcp)).
-Asiakkaan pois-asetus ei korvaa Tähtiapurin backendin katkaisua eikä
-Tähtiapuri muuta Codexin yhteysasetuksia. Asiakasasetuksen voimaantulo
-varmennetaan käytetyssä Codex-versiossa. Molempien puolten on sallittava
-yhteys, jotta mallikoe onnistuu. Avustaja ja MCP eivät saa muuttaa kytkintä.
-
-Yhteys tarkistaa sallitun asiakkaan, operaation, aineiston koon ja
-istunnon käyttöoikeuden. Pyyntöjen määrä, konteksti, tulostus ja kokonaisaika
-rajataan samassa resurssijonossa kuin sovelluksen mallitehtävät.
-Paikallinen IPC tai loopback ei yksin todista kutsujan oikeutta.
-Codexin työkalujen sallittujen lista täydentää palvelimen omaa validointia;
-MCP:n työkalukuvaukset tai annotaatiot eivät korvaa oikeustarkistusta.
-MCP:n kuljetussuunta on stdio ja aktivointi tapahtuu asetuskytkimestä.
-Backendin IPC-kuljetus, todentaminen ja käyttöjärjestelmän rajat ovat avoinna.
-
-Suora mallikoe ei suorita mallin ehdottamia työkaluja, sääpäivityksiä tai
-käyttöliittymämuutoksia. Mahdollinen myöhempi käyttötapauskoe kulkee
-[avustajan koordinaattorin ja samojen tarkistusten](assistant-orchestration-plan.md)
-kautta kuin sovellus. Kehitysrajapinta ei tarjoa vapaata URL-hakua, tiedostopolkua,
-shell-komentoa, moottoriasetusten muuttamista tai yleistä sovelluksen hallintaa.
+Stdio-asiakkaan irtoaminen peruu ja unohtaa vain sen yhteyden omat työt.
+Sovelluksen sulku katkaisee kehitysyhteyden ennen backendin ja mallin sulkua.
+Codexin omistama stdio-prosessi voi jäädä odottamaan uusia protokollapyyntöjä,
+mutta se palauttaa saatavuusvirheen eikä käynnistä sovellusta uudelleen.
+Vanha sovitin ei liity automaattisesti uuteen istuntoon.
 
 ### Aineisto ja luottamusraja
 
-UI ja MCP jakavat moottorin sekä resurssijonon, eivät keskustelukontekstia.
-Backend sitoo jokaisen työn varmennettuun kutsujaryhmään ja pyyntöön.
-MCP-kokeelle rakennetaan oma konteksti; käyttöliittymän historiaa,
-keskeneräistä vastausta tai aiemman ajon KV-välimuistia ei siirretä siihen
-vahingossa. Istuntojen erottelu ja moottorin välimuistin käsittely
-todennetaan valitulla sovittimella. Peruutus koskee vain kutsujan omaa työtä.
+UI ja MCP jakavat moottorin ja resurssijonon, eivät kontekstia.
+Natiivisovitin luo ja hävittää kontekstin sekä chat-session jokaiselle työlle.
+Historiaa, havaintopaikkoja, aiempia vastauksia tai KV-välimuistia ei lueta
+MCP-kokeeseen. Kokeissa käytetään lähtökohtaisesti synteettistä aineistoa.
+Tulosteita ei tulkita sovelluksen tai Codexin toimintakäskyiksi.
 
-Kokeissa käytetään oletuksena synteettistä aineistoa. Käyttäjän sijainteja,
-keskusteluhistoriaa tai muuta yksityistä aineistoa ei liitetä pyyntöön
-automaattisesti. Salaisuuksia ei palauteta tuloksissa tai tallenneta
-koepyyntöjen lokeihin. Paikalliselle mallille ei anneta repositoryn
-muokkaus- tai shell-oikeutta.
+Codexille palautettu sisältö tulee myös Codexin käsiteltäväksi.
+Todellinen stdio-asiakas ja natiivimoottorin kontekstierottelu testataan
+[testausohjeen](../ai/testing-rules.md) mukaan. Tämä ei ole Codex-isännän
+käyttöönoton, WSL-yhteensopivuuden tai OS-eristyksen todiste.
 
-Codexille palautettu sisältö tulee myös Codexin käsiteltäväksi. Koko
-vaihtoa ei kuvata täysin paikalliseksi, vaikka malli itsessään pysyy
-ilman verkkoyhteyttä. Mallin vastaus on epäluotettua koetulosta;
-siinä olevat toimintaohjeet eivät oikeuta Codexia muuttamaan tiedostoja
-tai suorittamaan komentoja. Kanava lisää hyökkäyspintaa, joten sen rajaus
-todennetaan erikseen [testausohjeen](../ai/testing-rules.md) mukaisesti.
+Lähteet: [MCP SDK:n stdio](https://github.com/modelcontextprotocol/typescript-sdk/blob/main/docs/serving/stdio.md),
+[OpenAI Docs: MCP](https://learn.chatgpt.com/docs/extend/mcp),
+[Windowsin suojatun hakemiston luonti](https://learn.microsoft.com/en-us/dotnet/api/system.io.directory.createdirectory?view=netframework-4.8.1#system-io-directory-createdirectory(system-string-system-security-accesscontrol-directorysecurity)).
 
 ## Tarkistetut taustalähteet
 

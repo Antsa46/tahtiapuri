@@ -9,7 +9,8 @@ rajattujen agenttiroolien ja AI-avusteisen ohjelmistokehityksen tutkimiseen.
 
 **Nykytila:** Electron-sovelluksessa voi keskustella paikallisen Qwen3-4B-mallin
 kanssa CPU:lla tai CUDA:lla. Malli toimii erillisessä UtilityProcessissa;
-käyttöliittymä käyttää rajattua IPC:tä. Tähtikartta, laskenta ja sää ovat seuraavia vaiheita.
+käyttöliittymä käyttää rajattua IPC:tä. Asetuksista avattava stdio-MCP-kehitysyhteys
+mahdollistaa erilliset mallikokeet. Tähtikartta, laskenta ja sää ovat seuraavia vaiheita.
 
 ## Tavoitellut ominaisuudet
 

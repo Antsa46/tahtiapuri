@@ -36,6 +36,8 @@ Lue tehtävän mukaan:
   [runkosuunnitelma](docs/architecture/initial-skeleton-plan.md)
 - mallikoe, asetusten mallivalinta tai paikallinen mallikansio, Codexin stdio-MCP-kehitysyhteys, moottorin turvatiedot, lisenssi tai mallien toimittaminen:
   [paikallisen mallin suunnitelma](docs/architecture/local-model-plan.md)
+- stdio-MCP:n käynnistys tai Codex-isännän erillinen käyttöönotto:
+  [MCP-kehitysyhteyden käyttö](docs/development/mcp.md)
 - toiminnallinen muutos, testit, testien sijainti tai paketointi:
   [testausohje](docs/ai/testing-rules.md)
 

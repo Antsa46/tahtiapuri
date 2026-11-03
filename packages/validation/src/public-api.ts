@@ -1,7 +1,7 @@
 export const STATUS_CHANNEL = "tahtiapuri:runtime-status";
 export type RuntimeStatus = { state: "ready"; model: "not-loaded" | "managed-separately"; protocolVersion: 1 };
 export type StatusResult = { ok: true; status: RuntimeStatus } | { ok: false; code: "UNAVAILABLE" };
-export interface RuntimeBridge { getStatus(): Promise<StatusResult>; assistant?: import("./assistant.js").AssistantBridge }
+export interface RuntimeBridge { getStatus(): Promise<StatusResult>; assistant?: import("./assistant.js").AssistantBridge; development?: import("./development.js").DevelopmentBridge }
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);

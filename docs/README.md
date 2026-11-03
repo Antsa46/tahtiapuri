@@ -25,6 +25,7 @@ vastuurajan, lue myös toisen osapuolen sopimus.
 | Kevyt backend, ensimmäisen rungon vaiheistus ja rakennuksen tarkistukset | [architecture/initial-skeleton-plan.md](architecture/initial-skeleton-plan.md) |
 | Mallirajapinta, asetusten mallinvaihto ja mallikansio, vertailukokoelma, moottorin turvatiedot, lisenssit ja Codexin stdio-MCP-yhteys | [architecture/local-model-plan.md](architecture/local-model-plan.md) |
 | Asennus, rakentaminen ja paikalliset testikomennot Windowsissa | [development/local-development.md](development/local-development.md) |
+| Rajatun stdio-MCP-kehitysyhteyden käyttö ja Codex-isännän erillinen käyttöönotto | [development/mcp.md](development/mcp.md) |
 | Käyttöön otetut riippuvuudet ja lisenssikoonti | [legal/dependencies.md](legal/dependencies.md) |
 | Kehitystyön pääkehittäjä ja kriittisten muutosten tarkastaja | [AGENTS.md](../AGENTS.md#kehitystyön-roolit-ja-katselmus) |
 | Ensimmäisen oman työskentelyskillin luonnos: tehtävän aloitus ja valmistuminen | [ai/skills/task-start-finish/SKILL.md](ai/skills/task-start-finish/SKILL.md) |

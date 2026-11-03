@@ -1,3 +1,5 @@
+import { DevelopmentHost } from "./development-host.js";
+import { DEVELOPMENT_CHANNELS } from "@tahtiapuri/validation/development";
 import { ModelHost } from "./model-host.js";
 import { ASSISTANT_CHANNELS, isModelInput, isJobId } from "@tahtiapuri/validation/assistant";
 import type { ApprovedModel } from "@tahtiapuri/validation/model-wire";
@@ -19,6 +21,7 @@ export function startDesktop(paths: DesktopPaths) {
   app.setPath("userData", paths.data);
   app.setPath("sessionData", paths.data);
   app.setPath("crashDumps", join(paths.data, "crash-dumps"));
+  if (!app.requestSingleInstanceLock()) { app.exit(1); return; }
   let window: BrowserWindow | undefined;
   let rendererTimer: NodeJS.Timeout | undefined;
   let shutdownPromise: Promise<void> | undefined;
@@ -34,11 +37,14 @@ export function startDesktop(paths: DesktopPaths) {
     () => { void shutdown(1); },
     model,
   );
+  const development = new DevelopmentHost(backend, join(paths.data, "mcp"));
   function shutdown(code: number): Promise<void> {
     shutdownPromise ??= (async () => {
       clearTimeout(rendererTimer);
       ipcMain.removeHandler(STATUS_CHANNEL);
       for (const channel of Object.values(ASSISTANT_CHANNELS)) ipcMain.removeHandler(channel);
+      for (const channel of Object.values(DEVELOPMENT_CHANNELS)) ipcMain.removeHandler(channel);
+      try { await development.stop(); } catch { code = 1; }
       try { await backend.stop(); } catch { code = 1; }
       try { await model?.stop(); } catch { code = 1; }
       if (window && !window.isDestroyed()) window.destroy();
@@ -98,6 +104,16 @@ export function startDesktop(paths: DesktopPaths) {
           const result = await backend.assistant(operation, args[0]);
           return isTrustedSender(event, owner, PAGE_URL) && !shutdownPromise ? result : { ok: false, code: "ENGINE_UNAVAILABLE" };
         } catch { return { ok: false, code: "ENGINE_UNAVAILABLE" }; }
+      });
+    }
+    for (const [name, channel] of Object.entries(DEVELOPMENT_CHANNELS)) {
+      ipcMain.handle(channel, async (event, ...args) => {
+        if (!isTrustedSender(event, owner, PAGE_URL) || shutdownPromise
+          || (name === "status" ? args.length !== 0 : args.length !== 1 || typeof args[0] !== "boolean")) throw new Error("Request denied.");
+        try {
+          const result = name === "status" ? await development.getStatus() : await development.setEnabled(args[0] as boolean);
+          return isTrustedSender(event, owner, PAGE_URL) && !shutdownPromise ? result : { ok: false, code: "ENGINE_UNAVAILABLE" };
+        } catch { if (name === "setEnabled") void shutdown(1); return { ok: false, code: "ENGINE_UNAVAILABLE" }; }
       });
     }
     window.on("close", event => { event.preventDefault(); void shutdown(0); });

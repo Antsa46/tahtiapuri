@@ -1,3 +1,4 @@
+import { connectMcp } from "../support/mcp.js";
 import { expect, test } from "@playwright/test";
 import { writeFile, readFile } from "node:fs/promises";
 import { backendPid, expectGone, launch } from "../support/electron.js";
@@ -50,7 +51,7 @@ for (const scenario of ["model-oom", "model-invalid"] as const) {
       const page = await app.firstWindow();
       await page.getByRole("button", { name: "Kysy mallilta", exact: true }).click();
       await expect(page.getByRole("alert")).toHaveText(scenario === "model-oom" ? "Muisti ei riittänyt mallin ajamiseen." : "Mallitiedosto puuttuu tai sen tarkiste ei täsmää.", { timeout: 150_000 });
-      await expect(page.getByRole("status", { name: "Yhteyden tila" })).toHaveText("Yhteys toimii");
+      await expect(page.getByRole("status", { name: "Yhteyden tila", exact: true })).toHaveText("Yhteys toimii");
     } finally { await app.close(); }
   });
 }
@@ -71,7 +72,7 @@ test("model-process crash and closing during loading reap owned workers", async 
     process.kill(pid);
   }, modelPid);
   await expect(page.getByRole("alert")).toHaveText(/Malliprosessi pysähtyi/, { timeout: 10_000 });
-  await expect(page.getByRole("status", { name: "Yhteyden tila" })).toHaveText("Yhteys toimii");
+  await expect(page.getByRole("status", { name: "Yhteyden tila", exact: true })).toHaveText("Yhteys toimii");
   await page.getByRole("button", { name: "Kysy mallilta", exact: true }).click();
   const nextPid = await app.evaluate(async ({ app }) => {
     for (let n = 0; n < 50; n++) {
@@ -98,4 +99,49 @@ test("actual SDK binary-test child exits after abrupt owner loss", async ({}, in
   await app.evaluate(() => process.crash()).catch(() => {}); await closed;
   await expectGone(helper.pid); await expectGone(helper.parent); await expectGone(backend);
   await writeFile(info.outputPath("sdk-child-cleanup.json"), JSON.stringify({ ...helper, exited: true }));
+});
+
+test("real 4B contexts stay separate across UI, stdio MCP and cancellation", async ({}, info) => {
+  const data = info.outputPath("data"), app = await launch(data, "model");
+  const pid = await backendPid(app), page = await app.firstWindow();
+  await page.getByLabel("Salli Codex/MCP-kehitysyhteys").check();
+  await expect(page.getByRole("status", { name: "Kehitysyhteyden tila" })).toHaveText("Kehitysyhteys sallittu, ei asiakasta");
+  const mcp = await connectMcp(data);
+  const uiTag = "SYNTEETTINEN_UI_9D4E7A2C", mcpTag = "SYNTEETTINEN_MCP_6C1F8B3D";
+  const evidence: unknown[] = [];
+  let modelPid: number | undefined;
+  const question = "Mikä koetunniste on annettu tässä keskustelussa? Jos sitä ei ole annettu, vastaa EI_TUNNISTETTA. Älä keksi tunnistetta.";
+  async function ui(prompt: string) {
+    const submitted = await page.evaluate(prompt => window.tahtiapuri.assistant!.submit({ prompt, backend: "cuda" }), prompt);
+    if (!submitted.ok) throw new Error("UI submission failed.");
+    await expect.poll(() => page.evaluate(id => window.tahtiapuri.assistant!.get(id), submitted.job.id),
+      { timeout: 150_000, intervals: [100] }).toMatchObject({ job: { state: "completed" } });
+    const result = await page.evaluate(id => window.tahtiapuri.assistant!.get(id), submitted.job.id);
+    if (!result.ok) throw new Error(); evidence.push(result);
+    return result.job.text;
+  }
+  async function probe(prompt: string) {
+    const submitted = await mcp.call("model_probe", { prompt, backend: "cuda" });
+    if (!submitted.ok || !("job" in submitted)) throw new Error("MCP submission failed.");
+    await expect.poll(() => mcp.call("model_status", { jobId: submitted.job.id }),
+      { timeout: 150_000, intervals: [100] }).toMatchObject({ job: { state: "completed" } });
+    const result = await mcp.call("model_status", { jobId: submitted.job.id });
+    if (!result.ok || !("job" in result)) throw new Error(); evidence.push(result);
+    return result.job.text;
+  }
+  try {
+    expect(await ui("Toista täsmälleen tämä koetunniste, älä lisää muuta: " + uiTag)).toContain(uiTag);
+    const mcpUnknown = await probe(question); expect(mcpUnknown.trim().length).toBeGreaterThan(0); expect(mcpUnknown).not.toContain(uiTag);
+    expect(await probe("Toista täsmälleen tämä koetunniste, älä lisää muuta: " + mcpTag)).toContain(mcpTag);
+    const uiUnknown = await ui(question); expect(uiUnknown.trim().length).toBeGreaterThan(0); expect(uiUnknown).not.toContain(mcpTag);
+    const long = await mcp.call("model_probe", { prompt: "Koetunniste on " + mcpTag + ". Luettele luvut yhdestä viiteensataan ja selitä jokainen pitkällä virkkeellä.", backend: "cuda" });
+    if (!long.ok || !("job" in long)) throw new Error();
+    await expect.poll(() => mcp.call("model_status", { jobId: long.job.id }),
+      { timeout: 150_000, intervals: [100] }).toMatchObject({ job: { state: "running" } });
+    expect(await mcp.call("cancel_probe", { jobId: long.job.id })).toMatchObject({ job: { state: "cancelled", text: "" } });
+    const afterCancel = await ui(question); expect(afterCancel.trim().length).toBeGreaterThan(0); expect(afterCancel).not.toContain(mcpTag);
+    modelPid = await app.evaluate(({ app }) => app.getAppMetrics().find(m => m.name === "Tahtiapuri Model")?.pid);
+    await writeFile(info.outputPath("mcp-context-evidence.json"), JSON.stringify(evidence, null, 2));
+  } finally { await mcp.client.close(); await app.close(); }
+  await expectGone(pid); if (modelPid) await expectGone(modelPid);
 });

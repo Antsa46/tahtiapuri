@@ -41,6 +41,7 @@ Tähtiapuri/
     desktop/src/
       main/                   # Ikkunat, välitys ja prosessien elinkaari
       preload/                # Nimetyt ja rajatut UI-komennot
+    mcp/src/                  # Rajattu stdio-kehityssovitin
     backend/src/
       ipc/                    # Ohut sisääntuleva prosessiviestiadapteri
       modules/
@@ -48,6 +49,7 @@ Tähtiapuri/
         sky/                  # Kohdeaineisto ja laskentasovitin
         planning/             # Havaintoehdotusten käyttötapaukset
         assistant/            # Mallitehtävät, roolit ja työkalupolitiikka
+        development/          # Kehitysistunto ja omiin kokeisiin rajatut oikeudet
         weather/              # Ennusteen sopimus ja tarjoajasovitin
       runtime/                # Backendin ja säätyöntekijän aloituspisteet
       composition/            # Porttien ja sovittimien kytkentä
@@ -191,7 +193,7 @@ flowchart LR
   UI["Käyttöliittymä"] -->|"Rajattu preload ja IPC"| MAIN["Electron main"]
   MAIN -->|"Suora IPC"| B["Backendin käyttötapaukset"]
   C["Codex"] -->|"stdio"| MCP["Kehityksen MCP-sovitin"]
-  MCP -->|"Rajattu kehitysportti"| B
+  MCP -->|"Capability / named pipe"| MAIN
   B -->|"Mallisovitin"| M["Paikallinen mallimoottori"]
   B -->|"Sääportti"| W["Eristetty säätyöntekijä"]
   W -->|"Rajattu HTTPS"| F["Ilmatieteen laitos"]
@@ -211,7 +213,7 @@ ei kuulu Electronin suljettaviin lapsiprosesseihin.
 | Backend → mallimoottori | Mallisovittimen takana oleva rajattu paikallinen yhteys. Tarkka kuljetus valitaan moottorikokeessa; renderer ja MCP eivät käytä moottorin raakaa APIa. |
 | Backend → säätyöntekijä | Yksityinen, nimettyyn ennustepyyntöön rajattu prosessiyhteys. Työntekijä saa vain ennusteen tarvitsemat tiedot. |
 | Codex → MCP-sovitin | Sovittu stdio-MCP. Kehitysyhteyden sopimuksen ja oikeudet omistaa [mallisuunnitelma](local-model-plan.md#kehitys--ja-diagnostiikkarajapinta-paikalliseen-malliin). |
-| MCP-sovitin → backend | Erillinen kehitysportti ja rajattu käyttöoikeus. Ehdotus on paikallinen IPC; rendererin tai mainin laajaa käyttöoikeutta ei anneta MCP-sovittimelle. |
+| MCP-sovitin → backend | T05: mainin erillinen Windows named pipe ja capability → backendin rajattu kehitysmoduuli. Kutsujan omistajuus ja sulku tarkistetaan backendissä; main–backend-session oikeutta ei jaeta. |
 
 Backend toteutetaan Node/TypeScript-prosessina. Electronin utilityProcess
 on arvioitava ajotapa backendille; natiivi mallimoottori on oma apuprosessinsa.
