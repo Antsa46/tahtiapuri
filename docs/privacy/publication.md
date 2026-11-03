@@ -51,9 +51,15 @@ polkuja ja yleisiä roolikuvauksia. Mallien koot, julkaisurevisiot,
 riippuvuuksien täsmäversiot, geneerinen kohdealusta, koemenetelmä ja
 laadulliset löydökset saa dokumentoida. Ne eivät ole koneinventaario.
 
-Tokeniseuranta säilyy tehtäväkohtaisina koontilukuina ilman yksityisiä
-istunto- tai tilitietoja. Numeerinen testimäärä ei ole sama asia kuin
-konekohtainen suorituskykymittaus.
+Tokeniseuranta säilyy julkisissa GitHub-issueissa tehtäväkohtaisina
+koontilukuina myös työn valmistuttua. Tokenimäärät eivät ole yksilöiviä
+konetietoja, eikä niitä poisteta yksityisyyssiivouksessa. Säilytä käytetty
+GPT-malli, mitatut input-, cached input-, output- ja kokonaismäärät sekä
+lähteen, rajauksen ja puuttuvien tietojen kuvaus
+[kehitysmalliohjeen](../ai/development-models.md#mallin-ilmoittaminen-ja-issuekohtainen-tokeniseuranta)
+mukaan. Tarkat istuntoaikaleimat, tunnisteet ja tilitiedot pysyvät paikallisina.
+
+Numeerinen testimäärä ei ole sama asia kuin konekohtainen suorituskykymittaus.
 
 Säilytä tarpeelliset ulkopuoliset lähteet sekä lisenssi- ja tekijätiedot.
 Käytä oman repositoryn tehtävistä numeroviitteitä ja tiedostoista suhteellisia
