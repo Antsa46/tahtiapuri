@@ -145,3 +145,32 @@ test("real 4B contexts stay separate across UI, stdio MCP and cancellation", asy
   } finally { await mcp.client.close(); await app.close(); }
   await expectGone(pid); if (modelPid) await expectGone(modelPid);
 });
+
+test("real CPU worker brief reply and bounded phase evidence", async ({}, info) => {
+  const app = await launch(info.outputPath("data"), "model");
+  let backend: number | undefined;
+  const states: { elapsedMs: number; state: string }[] = [];
+  let modelPid: number | undefined;
+  try {
+    backend = await backendPid(app);
+    const page = await app.firstWindow();
+    const submitted = await page.evaluate(() => window.tahtiapuri.assistant!.submit({ prompt: "Vastaa vain yhdellä sanalla: Jupiter", backend: "cpu" }));
+    if (!submitted.ok) throw new Error("Synthetic CPU submission failed");
+    const started = Date.now();
+    await expect.poll(async () => {
+      const result = await page.evaluate(id => window.tahtiapuri.assistant!.get(id), submitted.job.id);
+      const state = result.ok ? result.job.state : result.code;
+      if (states.at(-1)?.state !== state) states.push({ elapsedMs: Date.now() - started, state });
+      return result.ok && ["completed", "error", "cancelled"].includes(state);
+    }, { timeout: 160_000, intervals: [500] }).toBe(true);
+    const result = await page.evaluate(id => window.tahtiapuri.assistant!.get(id), submitted.job.id);
+    await writeFile(info.outputPath("brief-cpu-result.json"), JSON.stringify({ states, result }, null, 2));
+    expect(result).toMatchObject({ ok: true, job: { state: "completed", info: { backend: "cpu", gpuLayers: 0 } } });
+    if (!result.ok) throw new Error("CPU result unavailable");
+    expect(result.job.text.trim().length).toBeGreaterThan(0);
+  } finally {
+    modelPid = await app.evaluate(({ app }) => app.getAppMetrics().find(m => m.name === "Tahtiapuri Model")?.pid).catch(() => undefined);
+    try { await writeFile(info.outputPath("brief-cpu-phases.json"), JSON.stringify(states)); }
+    finally { await app.close(); if (backend) await expectGone(backend); if (modelPid) await expectGone(modelPid); }
+  }
+});

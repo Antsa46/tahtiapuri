@@ -15,8 +15,14 @@ SDK:n sisäisestä lapsikokeesta; kumpikaan ei yksin hyväksy sovelluksen OS-raj
 [GUI-eristyskoe](../experiments/desktop-isolation-probe.md) erottaa toimivan
 tavallisen BrowserWindow-kontrollin AC-pääprosessin varhaisesta virheestä.
 Mallin aiemmat LPAC-kokeet eivät osoita Electronin pääprosessin
-GUI-yhteensopivuutta. Pääprosessin jatkorajaus on avoin; nykyinen
-oikeusmatriisi ei muutu tämän osatuloksen perusteella.
+GUI-yhteensopivuutta. Hyväksytty jatkorajaus 4.11.2026 on pieni luotettu
+Electron-pääprosessi sekä erikseen rajattavat backend, mallimoottori ja MCP.
+Pääprosessille jäävät tavallisen käyttäjän tiedostooikeudet.
+Ohjelmakohtainen verkkokielto ei yksin estä kaapatun pääprosessin
+muiden ohjelmien kautta tekemää liikennettä. Tätä poikkeusta ei kuvata
+koko sovelluksen täydellisenä käyttöjärjestelmäeristyksenä.
+[Mallien ajotavat](model-execution-profiles.md) erottelee eristetyn CPU-perustan,
+eristetyn CUDA-tavoitteen ja erikseen hyväksytyt tavalliset ajotavat.
 T05:n rajattu stdio-MCP-yhteys
 käyttää Windowsin capability-todennettua named pipe -sovitinta;
 [mallisuunnitelma](local-model-plan.md#kehitys--ja-diagnostiikkarajapinta-paikalliseen-malliin)
@@ -46,18 +52,19 @@ Node.js kuvaa omaa Permission Modeliaan luotetun koodin virheitä rajaavaksi
 mekanismiksi, ei haitallista koodia kestäväksi hiekkalaatikoksi
 ([Node.js:n ohje](https://nodejs.org/api/permissions.html)).
 
-Ilmaisu vain säätyöntekijä nettiin koskee Tähtiapurin havaintokäyttöä.
+Ilmaisu vain säätyöntekijä nettiin on eristetyn ajotavan tavoite.
+Erikseen valittu tavallinen malliprosessi ei toteuta tätä OS-takuuta.
 Ohjelmien ja mallien hankinta sekä Codexin palvelu- ja GitHub-yhteydet ovat
 erillisiä kehitys- ja ylläpitokanavia. Ne eivät kuulu ajonaikaiselle mallille.
 MCP-koetuloksen palauttaminen Codexille on erikseen avattava tiedon kulkureitti;
 koko kehitysistuntoa ei väitetä täysin paikalliseksi.
 
-## Ehdotettu oikeusmatriisi
+## Eristetyn ajotavan oikeusmatriisin tavoite
 
 | Osa | Sallittu vastuu ja aineisto | Ulkoinen verkko |
 | --- | --- | --- |
 | Renderer ja preload | Näyttödata sekä nimetyt sovelluspyynnöt. Ei raakaa IPC-, Node-, levy-, prosessi- tai mallimoottori-APIa rendererille. | Ei. Myös ulkoiset kuvat, fontit, navigointi ja sivun käynnistämät yhteydet estetään. |
-| Electron main | Ikkunat, lähettäjän tarkistus, kanavat ja omien prosessien elinkaari. Vain nimetyt käynnistykset ja paketin resurssit; ei liiketoimintaa tai vapaata komentovälitystä. | Ei. |
+| Electron main | Luotettu käynnistäjä: ikkunat, lähettäjän tarkistus, nimetyt kanavat ja omien prosessien elinkaari. Ei liiketoimintaa tai vapaata komentovälitystä. Tavallisen käyttäjän tiedostooikeudet jäävät luottamusrajan sisään. | Sovelluksen oma verkkokäyttö kielletään; mainin kaappausta ja delegoitua liikennettä ei väitetä tämän avulla eristetyksi. |
 | Backend | Validoidut käyttötapaukset, laskenta, mallijono ja sovelluksen oma datajuuri. Antaa mallille rajatun kontekstin ja säätyöntekijälle vain kyselytiedot. | Ei. Pyytää ennusteen sääportin kautta. |
 | Mallimoottori ja malliroolit | Hyväksytyt mallipainot luettavina, rajattu työtila sekä kyseiseen pyyntöön annettu konteksti. Ei suoraa käyttäjätietokantaa, kotihakemistoa, shelliä tai työkaluvaltuuksia. | Ei. Vain välttämätön, rajattu paikallinen mallikanava. |
 | Säätyöntekijä | Yksi rajattu FMI-ennustekysely ja pieni tilapäinen työtila. Ei keskusteluja, tietokantaa, yleistä käyttäjäprofiilia tai kehitystunnuksia. | Kyllä, vain sovittu sääyhteys ja sen välttämätön nimenselvitys. Ei yleistä URL-välitystä. |
@@ -82,6 +89,10 @@ käyttötapauskontekstista; mallin lähettämä lähdekenttä ei kelpaa todistee
 Omistavat moduulit validoivat muutoksen. Malli ei saa suoraa tiedosto- tai
 tietokantakirjoitusta. Tämä ei muuta sovittua keskustelujen tallennusta,
 kartan ohjausta tai sääpäivityksen käynnistystapoja.
+
+Tavallisen CPU/CUDA-malliajon erikseen hyväksytyn poikkeuksen omistaa
+[ajotapasopimus](model-execution-profiles.md). Se ei kevennä muiden
+työntekijöiden tavoiteoikeuksia eikä anna MCP:lle asetusten muutosoikeutta.
 
 ## Verkon ja tiedostojen todellinen eristys
 
@@ -134,6 +145,10 @@ aktivointi tai sen näyttö puuttuu, sääverkkokoe ei käynnisty ja jatketaan
 offline-aineistolla. Käyttöjärjestelmäasetuksia ei muuteta suunnittelun aikana.
 
 ### Malliprosessin ajotapa ja eristyksen vaiheistus
+
+Nykyinen toteutussuunta ja hyväksytty aineistorajaus ovat
+[ajotapasopimuksessa](model-execution-profiles.md). Alla säilytetään
+aiempien synteettisten kokeiden rajaukset; niitä ei laajenneta takautuvasti.
 
 T03:ssa 3.11.2026 on testattu Qwen3-4B:n CPU-/CUDA-ajo erillisessä
 UtilityProcessissa. [Moottorikokeen raportti](../experiments/model-runtime-probe.md)

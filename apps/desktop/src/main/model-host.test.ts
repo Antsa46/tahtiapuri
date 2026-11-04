@@ -56,3 +56,52 @@ for (const phase of ["initialize", "cancel"] as const) {
     await host.stop();
   });
 }
+
+it("ignores old-child ready, load-error and result while a replacement is loading", async () => {
+  vi.useFakeTimers(); const children: Child[] = [];
+  const host = new ModelHost(() => {
+    const child = new Child(children.length > 0);
+    if (children.length > 0) {
+      const send = child.postMessage.bind(child);
+      child.postMessage = value => {
+        const m = value as Record<string, unknown>;
+        if (m.type === "initialize") { child.session = m.session as string; return; }
+        send(value);
+      };
+    }
+    children.push(child); queueMicrotask(() => child.emit("spawn")); return child;
+  }, profile);
+  const first = host.run("00000000-0000-4000-8000-000000000001", input, () => {});
+  const nextId = "00000000-0000-4000-8000-000000000002";
+  const next = first.then(() => host.run(nextId, input, () => {}));
+  await vi.advanceTimersByTimeAsync(61_000);
+  expect((await first).error).toBe("TIMEOUT"); expect(children).toHaveLength(2);
+  const old = children[0]!, current = children[1]!;
+  old.emit("message", { type: "ready", session: old.session, info });
+  old.emit("message", { type: "load-error", session: old.session, code: "MODEL_INVALID" });
+  old.emit("message", { type: "result", session: old.session, id: nextId, reply: { text: "old", error: null, info } });
+  await vi.advanceTimersByTimeAsync(0); expect(current.request).toBeUndefined();
+  current.emit("message", { type: "ready", session: current.session, info });
+  await vi.advanceTimersByTimeAsync(0); expect((await next).text).toBe("ok");
+  const stop = host.stop(); await vi.advanceTimersByTimeAsync(3000); await stop;
+});
+it("retires a failed run-send and removes the old deadline before the next job", async () => {
+  vi.useFakeTimers(); const children: Child[] = [];
+  const host = new ModelHost(() => {
+    const child = new Child(children.length > 0);
+    if (children.length === 0) {
+      const send = child.postMessage.bind(child);
+      child.postMessage = value => { if ((value as { type: string }).type === "run") throw new Error("closed"); send(value); };
+    }
+    children.push(child); queueMicrotask(() => child.emit("spawn")); return child;
+  }, profile);
+  const first = host.run("00000000-0000-4000-8000-000000000001", input, () => {});
+  await vi.advanceTimersByTimeAsync(3000); expect((await first).error).toBe("ENGINE_UNAVAILABLE");
+  const second = host.run("00000000-0000-4000-8000-000000000002", input, () => {});
+  await vi.advanceTimersByTimeAsync(0); expect((await second).text).toBe("ok");
+  await vi.advanceTimersByTimeAsync(61_000);
+  expect(children[1]!.killed).toBe(false);
+  const third = host.run("00000000-0000-4000-8000-000000000003", input, () => {});
+  await vi.advanceTimersByTimeAsync(0); expect((await third).text).toBe("ok"); expect(children).toHaveLength(2);
+  const stop = host.stop(); await vi.advanceTimersByTimeAsync(3000); await stop;
+});

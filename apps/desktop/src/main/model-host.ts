@@ -32,20 +32,23 @@ export class ModelHost {
     await new Promise<void>((resolve, reject) => {
       this.boot = { resolve, reject, timer: setTimeout(() => reject("TIMEOUT"), 120_000) };
       child.on("spawn", () => {
+        if (this.child !== child || this.closed || this.exited || this.stopping) return;
         try { child.postMessage({ type: "initialize", session, profile: this.profile, backend: mode }); }
         catch { this.boot?.reject("ENGINE_UNAVAILABLE"); }
       });
       child.on("message", (message: unknown) => {
-        if (!isRecord(message) || message.session !== session) return;
+        if (this.child !== child || this.exited || this.closed || !isRecord(message) || message.session !== session) return;
         if (message.type === "ready" && exactKeys(message, ["type", "session", "info"]) && isEngineInfo(message.info)
           && message.info.backend === mode) {
+          if (!this.boot || this.ready) return;
           this.ready = true; clearTimeout(this.boot?.timer); this.boot?.resolve(); this.boot = undefined;
         } else if (message.type === "generating" && exactKeys(message, ["type", "session", "id"]) && this.active?.id === message.id) {
           this.active?.progress();
         } else if (message.type === "load-error" && exactKeys(message, ["type", "session", "code"]) && isErrorCode(message.code)) {
           this.boot?.reject(message.code);
         } else if (message.type === "result" && exactKeys(message, ["type", "session", "id", "reply"])
-          && this.active?.id === message.id && isEngineReply(message.reply)) {
+          && this.active?.id === message.id && isEngineReply(message.reply)
+          && (message.reply.info === null || message.reply.info.backend === mode)) {
           const active = this.active; if (!active) return; clearTimeout(active.timer); clearTimeout(active.cancelTimer);
           this.active = undefined; active.resolve(this.cancelled ? errorReply("CANCELLED") : message.reply);
         }
@@ -73,6 +76,7 @@ export class ModelHost {
         this.child!.postMessage({ type: "run", session: this.session, id, input });
       });
     } catch (code) {
+      this.fail(isErrorCode(code) ? code : "ENGINE_UNAVAILABLE");
       await this.stopChild(); return errorReply(isErrorCode(code) ? code : "ENGINE_UNAVAILABLE");
     } finally { if (this.busyId === id) this.busyId = undefined; }
   }

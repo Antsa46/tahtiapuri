@@ -18,13 +18,16 @@ valmistumisen näyttö GitHub-issueissa (repositoryn Issues).
 | Tähtilaskenta | T06: Astronomy Engine 2.1.19 ja HYG 4.1:n 5 070 tähden paikallinen aineisto; snapshot. T07 kytkee paikallisen Canvas-kartan ja kohdevalinnan nimettyyn IPC:hen. | [Laskentasopimus](../architecture/sky-calculation.md), [tähtikartta](../architecture/sky-map.md) |
 | Mallit ja painot | Qwen3-4B Q4_K_M on otettu käyttöön projektin paikallisesta kansiosta. T04:n 4B/8B-vertailu on tehty; tulos ei vielä hyväksy kumpaakaan havaintoavustajaksi. Mallinvaihto asetuksista on sovittu myöhemmäksi toteutukseksi. Poro–Ministral-verrokit ovat mukana suunnitelmassa; tarkat paketit ja oletusmalli ovat avoimia. | [Mallivalinta ja toimitus](../architecture/local-model-plan.md) |
 | Avustajan työnkulku | Sovittu: backend koordinoi, moduulit tarkistavat työkalut ja yksi opastajarooli toimii lähtötasona. Usean roolin hyöty mitataan erikseen. | [Orkestrointi](../architecture/assistant-orchestration-plan.md) |
-| Verkon ja tiedostojen oikeudet | Sovittu tavoite: vain säätyöntekijän rajattu ulkoinen yhteys. OS-mekanismi, GPU ja eristyksen näyttö ovat avoimia; AppContainer/LPAC on vaihtoehto. | [Turvallisuus ja oikeudet](../architecture/security-and-permissions-plan.md) |
+| Verkon ja tiedostojen oikeudet | Sovittu: luotettu main, erikseen rajatut työntekijät ja eristetty CPU-perusta. Eristetty CUDA todennetaan erikseen. Käyttäjän valitsema tavallinen CPU/CUDA sallitaan myös sovelluksen omalle aineistolle; ei automaattista varapolkua. Toteutus ja OS-näyttö ovat avoimia. | [Turvallisuus ja oikeudet](../architecture/security-and-permissions-plan.md) |
 | Kehityksen MCP | Sovittu: rajattu stdio-yhteys ja asetusten kytkin, oletuksena pois joka käynnistyksessä. T05 toteuttaa Windowsin capability-kanavan ja omistajuuden tarkistukset. Codex-isännän erillinen käyttöönotto ja OS-eristys säilyvät erillisinä. | [MCP-sopimus](../architecture/local-model-plan.md#kehitys--ja-diagnostiikkarajapinta-paikalliseen-malliin) |
 | Sää | Ilmatieteen laitos on valittu tarjoajaksi. Tarkka kysely ja kentät ovat avoimia; Open-Meteota ei toteuteta rinnalle. | [Sääpalvelu](../architecture/technology-and-ui-plan.md), [sään elinkaari](../architecture/data-lifecycle-plan.md) |
 | Paikat, asetukset ja historia | T08 toteuttaa paikkojen JSON-tallennuksen ja aktiivisen paikan muistamisen; muu tallennus myöhemmin. Sovittu paikallinen säilytys: viimeisin paikka, säävalinta, käyttäjän poistoon asti säilyvät keskustelut ja viimeisin ennuste per paikka. Ensimmäinen säätila on manuaalinen. | [Tiedon elinkaari](../architecture/data-lifecycle-plan.md), [havaintopaikat](../architecture/observing-places.md) |
 | Testaus | Sovittu: pienet testit lähteen vieressä, laajat testit ja yhteiset aineistot tests/-puussa; paikalliset ajot ilman etä-CI:tä. Ensimmäinen näyttö on rajattu mallikoe. | [Testausohje](../ai/testing-rules.md) |
 | Kehitystyö | Pääkehittäjä ja kriittisten muutosten tarkastaja on sovittu. GPT-mallien tehtäväkohtainen työnjako on suositus. | [Työohje](../../AGENTS.md#kehitystyön-roolit-ja-katselmus), [kehitysmallit](../ai/development-models.md) |
 | Työskentelyskill | Luonnosta on kokeiltu T01:n rajauksessa; laajempi toimivuus ja asennus ovat todentamatta. | [task-start-finish](../ai/skills/task-start-finish/SKILL.md) |
+
+[Ajotapojen sopimus ja toteutusjärjestys](../architecture/model-execution-profiles.md)
+erottelee hyväksytyt valinnat ajonaikaisesta näytöstä.
 
 ## Ennen riippuvaa toteutusta ratkaistavat asiat
 

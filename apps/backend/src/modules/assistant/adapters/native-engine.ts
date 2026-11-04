@@ -1,4 +1,5 @@
 import { createReadStream } from "node:fs";
+import { availableParallelism } from "node:os";
 import { lstat } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { getLlama, LlamaChatSession, JinjaTemplateChatWrapper, InsufficientMemoryError, getModuleVersion, type Llama, type LlamaModel } from "node-llama-cpp";
@@ -30,7 +31,7 @@ export class NativeEngine {
       // The SDK's binary-test fork runs in Node mode; it never receives renderer input.
       process.env.ELECTRON_RUN_AS_NODE = "1";
       this.llama = await getLlama({ gpu: backend === "cuda" ? "cuda" : false,
-        build: "never", skipDownload: true, usePrebuiltBinaries: true, progressLogs: false, maxThreads: 6 });
+        build: "never", skipDownload: true, usePrebuiltBinaries: true, progressLogs: false, maxThreads: Math.min(6, availableParallelism()) });
     } finally {
       if (previous === undefined) delete process.env.ELECTRON_RUN_AS_NODE;
       else process.env.ELECTRON_RUN_AS_NODE = previous;

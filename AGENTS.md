@@ -26,6 +26,8 @@ Lue tehtävän mukaan:
   [perusarkkitehtuuri](docs/architecture/base-architecture.md)
 - oikeudet, ulkoinen syöte, IPC/MCP, verkkokäyttö, tiedostorajat tai tietoturvaan vaikuttava muutos:
   [turvallisuus ja oikeudet](docs/architecture/security-and-permissions-plan.md)
+- mallin ajotavan valinta, CPU-perusta, CUDA tai toimitettava mallityöntekijä:
+  [mallien ajotavat](docs/architecture/model-execution-profiles.md)
 - Windowsin eristyskokeen natiivi käynnistin, koeoikeudet tai koesiivous:
   [rajattu Windows-koe](docs/experiments/windows-isolation-probe.md),
   [LPAC:n käynnistysdiagnoosi](docs/experiments/lpac-startup-probe.md),

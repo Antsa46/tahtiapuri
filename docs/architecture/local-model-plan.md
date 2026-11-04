@@ -172,6 +172,13 @@ Sovellusrungon ja oikean 4B-mallin ajon näyttö on tehty T02/T03:ssa.
 T04:n [4B/8B-laatuvertailu](../experiments/model-comparison.md) on tehty
 erillisessä testiajurissa. T05:n kehitys-MCP käyttää samaa jonoa ja mallirajaa erillisen omistajuuden kautta.
 
+## Malli ja ajotapa ovat eri valintoja
+
+Hyväksytty jatkosopimus on [mallien ajotavat](model-execution-profiles.md).
+Se omistaa CPU-perustan, CUDA-kokeen, erikseen valittavan tavallisen ajon
+ja asetusten vaihtumisen. Alla oleva T03 kuvaa nykyistä toteutusta;
+se ei vielä toteuta mainin omistamaa pysyvää ajotapavalintaa.
+
 ## T03:n toteutettu malliraja
 
 Kulkureitti on UI → rajattu preload → main → backendin assistant-jono →
