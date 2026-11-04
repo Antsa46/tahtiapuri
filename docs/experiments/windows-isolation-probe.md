@@ -309,3 +309,6 @@ API-perusta: [Subscribe1](https://learn.microsoft.com/en-us/windows/win32/api/fw
 [HEADER2](https://learn.microsoft.com/en-us/windows/win32/api/fwpmtypes/ns-fwpmtypes-fwpm_net_event_header2),
 [tilauksen peruminen](https://learn.microsoft.com/en-us/windows/win32/api/fwpmu/nf-fwpmu-fwpmneteventunsubscribe0)
 ja [engine-asetusten pysyvyys](https://learn.microsoft.com/en-us/windows/win32/api/fwpmu/nf-fwpmu-fwpmenginesetoption0).
+
+Oman ETW-istunnon seuraava rajattu koe ja sen siivousvahti kuvataan
+[ETW-verkkokokeessa](etw-network-probe.md). Se ei muuta tämän kokeen tulosta.

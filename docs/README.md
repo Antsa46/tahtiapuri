@@ -20,6 +20,7 @@ vastuurajan, lue myös toisen osapuolen sopimus.
 | Valittu kansiorakenne A, moduulit, kerrokset ja prosessien kulkureitit | [architecture/base-architecture.md](architecture/base-architecture.md) |
 | Osien oikeudet, malliprosessin ajotapa ja eristyksen vaiheistus sekä Windows-/kontti-/VM-vertailu | [architecture/security-and-permissions-plan.md](architecture/security-and-permissions-plan.md) |
 | Natiivin AppContainer/LPAC-kokeen rajaus, toistaminen, verkkodiagnostiikka ja vain lukeva WFP-tilaus | [experiments/windows-isolation-probe.md](experiments/windows-isolation-probe.md) |
+| Oma ETW-tapahtumaistunto, siivousvahti ja pudotustapahtumien näyttöraja ilman pysyviä asetusmuutoksia | [experiments/etw-network-probe.md](experiments/etw-network-probe.md) |
 | Electronin Node-tilan eristyskäynnistyksen synteettinen yhteensopivuuskoe | [experiments/electron-isolation-probe.md](experiments/electron-isolation-probe.md) |
 | SDK:n CPU-alustus, riippuvuuksien kopiointi ja instrumentoidun binäärilapsen eristyskoe | [experiments/sdk-isolation-probe.md](experiments/sdk-isolation-probe.md) |
 | Putkidiagnoosi, mitattu korjattu Node-/SDK-vertailu ja näyttörajat | [experiments/runtime-comparison.md](experiments/runtime-comparison.md) |

@@ -7,9 +7,13 @@ import { promises as fs } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readObservationReceipt } from './wfp-observation.mjs';
+import { readEtwReceipt } from './etw-observation.mjs';
 import { collect, bounded, until, alive, cleanupOwnedRun } from './process-harness.mjs';
 
-const observeNetwork = process.argv[2] === 'observe-network';
+const observeEtw = process.argv[2] === 'observe-etw';
+const observeNetwork = observeEtw || process.argv[2] === 'observe-network';
+const observationDirectory = observeEtw ? 'etw' : 'wfp';
+const stopRequest = observeEtw ? 'stop-etw.request' : 'stop-wfp.request';
 if (process.argv.length > (observeNetwork ? 3 : 2)) throw new Error('Unsupported probe arguments.');
 if (process.platform !== 'win32') throw new Error('This probe must run with native Windows Node.');
 const directory = dirname(fileURLToPath(import.meta.url));
@@ -19,7 +23,7 @@ const host = join(output, 'native/bin/host.exe');
 const probe = join(output, 'native/bin/probe.exe');
 const runRoot = join(output, 'runs', randomUUID());
 await fs.mkdir(runRoot, { recursive: true });
-const summary = { schema: 2, scope: observeNetwork ? 'synthetic-native-bound-loopback-observation' : 'synthetic-native-loopback-only', cases: [], passed: false, corePassed: false, originalMatrixRun: !observeNetwork, unrunOriginalCases: observeNetwork ? ['original-matrix-not-run'] : ['lpac/error', 'lpac/launcher-kill', 'lpac/owner-kill'] };
+const summary = { schema: 2, scope: observeNetwork ? (observeEtw ? 'synthetic-native-bound-loopback-etw' : 'synthetic-native-bound-loopback-observation') : 'synthetic-native-loopback-only', cases: [], passed: false, corePassed: false, originalMatrixRun: !observeNetwork, unrunOriginalCases: observeNetwork ? ['original-matrix-not-run'] : ['lpac/error', 'lpac/launcher-kill', 'lpac/owner-kill'] };
 
 let sharedServers;
 
@@ -115,18 +119,18 @@ async function runCase(mode, kind, primaryOnly = false) {
   let observer;
   if (observeNetwork && mode === 'ac') {
     const powershell = join(process.env.SystemRoot, 'System32/WindowsPowerShell/v1.0/powershell.exe');
-    observer = spawn(powershell, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', join(directory, 'start-wfp-observer.ps1'), '-RunId', runRoot.split(/[\\/]/).at(-1), '-OwnerPid', String(process.pid)], { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+    observer = spawn(powershell, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', join(directory, observeEtw ? 'start-etw-observer.ps1' : 'start-wfp-observer.ps1'), '-RunId', runRoot.split(/[\\/]/).at(-1), '-OwnerPid', String(process.pid), ...(observeEtw ? ['-Ports', servers.ports.slice(0, 4).join(','), '-OwnerImage', process.execPath] : [])], { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
     const observation = collect(observer); observer.observation = observation;
     observation.exited.then(value => { observer.exitResult = value; });
     try {
       await waitForObserver(async () => {
         observation.check();
         if (observer.exitResult) throw new Error('Observer process exited before readiness.');
-        if (await fs.stat(join(runRoot, 'wfp/done.json')).then(() => true, () => false)) throw new Error('Observer stopped before readiness; inspect its local evidence.');
-        return fs.stat(join(runRoot, 'wfp/ready.json')).then(() => true, () => false);
+        if (await fs.stat(join(runRoot, observationDirectory, 'done.json')).then(() => true, () => false)) throw new Error('Observer stopped before readiness; inspect its local evidence.');
+        return fs.stat(join(runRoot, observationDirectory, 'ready.json')).then(() => true, () => false);
       }, 60000);
     } catch (error) {
-      await fs.writeFile(join(runRoot, 'stop-wfp.request'), 'STOP\n', { flag: 'wx' }).catch(() => {});
+      await fs.writeFile(join(runRoot, stopRequest), 'STOP\n', { flag: 'wx' }).catch(() => {});
       let observerExit;
       try { observerExit = await bounded(observation.exited, 65000, 'Observer wrapper did not finish.'); }
       catch { observer.kill(); observerExit = { incomplete: true }; }
@@ -175,13 +179,13 @@ async function runCase(mode, kind, primaryOnly = false) {
     result.cleanupPassed = result.cleanup.passed;
     if (!result.cleanupPassed) { result.corePassed = false; result.passed = false; result.primaryDiagnosticPassed = false; result.cleanupError = result.cleanup.errors.join('; '); }
     if (observer) {
-      await fs.writeFile(join(runRoot, 'stop-wfp.request'), 'STOP\n', { flag: 'wx' }).catch(() => {});
+      await fs.writeFile(join(runRoot, stopRequest), 'STOP\n', { flag: 'wx' }).catch(() => {});
       try { result.observerExit = await bounded(observer.observation.exited, 65000, 'Read-only observer did not finish.'); }
       catch (error) { observer.kill(); result.observerExit = { incomplete: true, error: error.message }; }
       try {
         const identity = report.records.find(row => row.type === 'network-identity');
         assert.equal(identity?.code, 0);
-        result.observation = await readObservationReceipt(runRoot, result.observerExit, identity.appIdHex);
+        result.observation = await (observeEtw ? readEtwReceipt : readObservationReceipt)(runRoot, result.observerExit, identity.appIdHex);
         result.observerCleanupPassed = true;
       } catch (error) { result.observerCleanupPassed = false; result.observerError = error.message; }
       if (!result.observerCleanupPassed) { result.corePassed = false; result.passed = false; result.error = 'Read-only observer did not finish successfully.'; }
