@@ -123,6 +123,9 @@ erottaa sen verkon, GGUF:n ja koko sovelluksen näytöstä.
 T09e (#28) todensi [oikean 4B-painon rajatun CPU-latauksen](../experiments/model-isolation-probe.md)
 kuudessa kontrolli-/LPAC-tapauksessa. Konteksti, generointi, GPU ja
 sovelluspaketin oikeusrajat säilyvät erillisinä jatkoportteina.
+T09f (#29) todensi [pienen CPU-keskustelukontekstin ja tekstintuoton](../experiments/inference-isolation-probe.md)
+kuudessa kontrolli-/LPAC-tapauksessa. GPU ja koko sovelluksen hyväksyntä
+säilyvät erillisinä jatkoportteina.
 
 T15 rakentaa lopullisen asentimen, ja T16 toistaa oikeusrajojen
 hyväksymisnäytön lopullisella toimitettavalla kokoonpanolla.

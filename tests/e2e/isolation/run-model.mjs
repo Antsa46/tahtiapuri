@@ -11,15 +11,18 @@ import {modelProfile} from './model-contract.mjs';
 import {validateModelProgress,modelProcessIds,validateModelLifecycle} from './model-results.mjs';
 import {collect,bounded,until,alive,cleanupOwnedRun} from './process-harness.mjs';
 import {verifyPreparationLimits} from './model-load-limits.mjs';
-assert(process.platform==='win32'&&(process.argv.length===2||(process.argv.length===3&&process.argv[2]==='--check-limits')));
+import {validateInferenceProgress,validateInferenceLifecycle,inferenceProcessIds} from './inference-results.mjs';
+const flags=process.argv.slice(2);assert(process.platform==='win32'&&new Set(flags).size===flags.length&&flags.every(x=>['--check-limits','--inference'].includes(x)));
+const inference=flags.includes('--inference');
+const checkProgress=inference?validateInferenceProgress:validateModelProgress,checkLifecycle=inference?validateInferenceLifecycle:validateModelLifecycle,processIds=inference?inferenceProcessIds:modelProcessIds;
 const preparationLimits=verifyPreparationLimits();
-if(process.argv[2]==='--check-limits'){console.log(JSON.stringify({passed:true,preparationLimits}));process.exit(0);}
+if(flags.includes('--check-limits')){console.log(JSON.stringify({passed:true,preparationLimits}));process.exit(0);}
 const directory=dirname(fileURLToPath(import.meta.url)),root=resolve(directory,'../../..');
 const output=join(root,'.artifacts/tests/isolation'),host=join(output,'native/bin/host.exe');
-const runRoot=join(output,'model-runs',randomUUID()),template=join(runRoot,'template');
+const runRoot=join(output,inference?'inference-runs':'model-runs',randomUUID()),template=join(runRoot,'template');
 const source=join(root,'.local/models/Qwen3-4B-Q4_K_M.gguf');
-const summary={schema:1,scope:'4b-cpu-load-only',preparationLimits,cases:[],passed:false,unrunCases:[],generation:false,gpu:false};
-const matrix=['control','lpac'].flatMap(mode=>['normal','missing-model','owner-loaded'].map(kind=>({mode,kind})));
+const summary={schema:1,scope:inference?'4b-cpu-inference':'4b-cpu-load-only',preparationLimits,cases:[],passed:false,unrunCases:[],generation:inference,gpu:false};
+const matrix=['control','lpac'].flatMap(mode=>(inference?['normal','cancel','owner-context']:['normal','missing-model','owner-loaded']).map(kind=>({mode,kind})));
 let runtime,bindingSha256,original;
 async function prepare(){
  assert(freemem()>=6*1024**3,'Insufficient available memory for this bounded experiment.');
@@ -39,12 +42,12 @@ async function prepare(){
  const packages=await materializePackages({sourceRoot,destination:join(template,'node_modules'),roots:[{name:'node-llama-cpp',source:sdk},{name:'@node-llama-cpp/win-x64',source:cpu}]});
  await fs.writeFile(join(runRoot,'packages.json'),JSON.stringify(packages,null,2)+'\n');summary.packagesSha256=await sha256(join(runRoot,'packages.json'));
  bindingSha256=await sha256(join(template,'node_modules/@node-llama-cpp/win-x64/bins/win-x64/llama-addon.node'));
- summary.scriptHashes={};for(const name of ['model-probe.mjs','model-contract.mjs','sdk-runtime.mjs']){await fs.copyFile(join(directory,name),join(template,name),constants.COPYFILE_EXCL);summary.scriptHashes[name]=await sha256(join(template,name));}
+ summary.scriptHashes={};for(const name of ['model-probe.mjs','model-contract.mjs','sdk-runtime.mjs',...(inference?['inference-probe.mjs','inference-contract.mjs']:[])]){await fs.copyFile(join(directory,name),join(template,name),constants.COPYFILE_EXCL);summary.scriptHashes[name]=await sha256(join(template,name));}
 }
 async function runCase(mode,kind){
  const caseLimits=verifyPreparationLimits();
  assert(freemem()>=6*1024**3,'Insufficient available memory; no further model launched.');
- const profile=`tahtiapuri.t09e.${randomUUID().replaceAll('-','')}`,caseRoot=join(runRoot,`${mode}-${kind}`),staged=join(caseRoot,'staged');
+ const profile=`tahtiapuri.${inference?'t09f':'t09e'}.${randomUUID().replaceAll('-','')}`,caseRoot=join(runRoot,`${mode}-${kind}`),staged=join(caseRoot,'staged');
  await fs.mkdir(caseRoot);await fs.mkdir(staged);
  await fs.writeFile(join(staged,'owner.marker'),'TAHTIAPURI_T09A_SYNTHETIC_ONLY',{flag:'wx'});
  try {
@@ -63,17 +66,18 @@ async function runCase(mode,kind){
   await fs.rm(staged,{recursive:true,force:true});throw error;
  }
  const caseHost=join(staged,'launcher/host.exe');
- const args=['run-model-candidate',mode,profile,staged,'1','1','1','1','1',kind==='normal'?'once':kind==='owner-loaded'?'hold':'missing-model'];
- const owner=kind==='owner-loaded',child=spawn(owner?process.execPath:caseHost,owner?[join(directory,'owner.mjs'),caseHost,...args]:args,{stdio:['pipe','pipe','pipe'],windowsHide:true});
+ const life=inference?(kind==='normal'?'generate':kind==='cancel'?'cancel':'context-hold'):(kind==='normal'?'once':kind==='owner-loaded'?'hold':'missing-model');
+ const args=[inference?'run-inference-candidate':'run-model-candidate',mode,profile,staged,'1','1','1','1','1',life];
+ const owner=kind===(inference?'owner-context':'owner-loaded'),child=spawn(owner?process.execPath:caseHost,owner?[join(directory,'owner.mjs'),caseHost,...args]:args,{stdio:['pipe','pipe','pipe'],windowsHide:true});
  const report=collect(child,{workerEnvelope:true});const result={mode,kind,preparationLimits:caseLimits,profileIntent:profile,driverPid:process.pid,launchedChildPid:child.pid,startedAtMs:Date.now(),records:report.records,passed:false};
  try{
   if(owner){
-   await until(()=>{report.check();return report.records.some(x=>['model-held','model-error','error','finished'].includes(x.type));},115000);
-   validateModelProgress(report.records,mode,kind,runtime,{held:true});
+   await until(()=>{report.check();return report.records.some(x=>['model-held','model-error','error','finished'].includes(x.type));},inference?175000:115000);
+   checkProgress(report.records,mode,kind,runtime,{held:true});
    result.termination={targetPid:child.pid,targetRole:'owner',signal:'SIGTERM',targetAliveBeforeRequest:alive(child.pid),requestedAtMs:Date.now()};result.termination.succeeded=child.kill();assert.equal(result.termination.succeeded,true);
   }
-  result.exit=await bounded(report.exited,130000,'Model host deadline.');report.checkComplete();validateModelProgress(report.records,mode,kind,runtime);
-  const pids=modelProcessIds(result);await until(()=>pids.every(pid=>!alive(pid)),7000);result.processExitObservation={pids,allAbsent:true,beforeCleanup:true,checkedAtMs:Date.now()};validateModelLifecycle(result);result.observationsVerified=true;
+  result.exit=await bounded(report.exited,inference?190000:130000,'Model host deadline.');report.checkComplete();checkProgress(report.records,mode,kind,runtime);
+  const pids=processIds(result);await until(()=>pids.every(pid=>!alive(pid)),7000);result.processExitObservation={pids,allAbsent:true,beforeCleanup:true,checkedAtMs:Date.now()};checkLifecycle(result);result.observationsVerified=true;
  }catch(error){result.error=error.stack;}
  finally{
   result.cleanup=await cleanupOwnedRun({child,report,host,staged,profile,restricted:mode==='lpac'});result.stderr=report.stderr;

@@ -5,7 +5,8 @@ import {join} from 'node:path';
 import {verifyRuntimeIdentity} from './sdk-runtime.mjs';
 import {modelProfile,modelOptions,validateModelProfile} from './model-contract.mjs';
 const root=process.argv[2],life=process.argv[8];
-assert(root&&['once','hold','missing-model'].includes(life));assert.equal(process.argv[10],'primary-model-candidate');
+const inference=process.argv[10]==='primary-inference-candidate';
+assert(root&&(inference?['generate','cancel','context-hold']:['once','hold','missing-model']).includes(life));assert.equal(process.argv[10],inference?'primary-inference-candidate':'primary-model-candidate');
 const profile=JSON.parse(await fs.readFile(join(root,'package/model-profile.json'),'utf8'));
 assert.deepEqual(Object.keys(profile).sort(),['bindingSha256','model','runtime','version']);
 validateModelProfile(profile.model);assert.equal(profile.version,'3.22.2');
@@ -52,6 +53,7 @@ try {
   const templateSha256=createHash('sha256').update(template).digest('hex');assert.equal(templateSha256,modelProfile.templateSha256);
   assert(Number.isFinite(model.size)&&model.size>0);
   emit({type:'model-phase',phase:'loaded',passed:true,id:modelProfile.id,gpuLayers:model.gpuLayers,useMmap:model.useMmap,size:model.size,templateSha256,options:modelOptions,contextCreated:false,generation:false,rssBytes:process.memoryUsage().rss});
+  if(inference){phase='inference';const {runInference}=await import('./inference-probe.mjs');await runInference({model,life,emit});}
   if(life==='hold'){emit({type:'model-held',pid:process.pid});process.stdin.resume();await new Promise(()=>{});}
  }
  phase='dispose';

@@ -1,4 +1,4 @@
-param([switch]$CheckOnly)
+param([switch]$CheckOnly, [switch]$Inference)
 $ErrorActionPreference = 'Stop'
 # This is a short-lived development launcher, never the interactive shell.
 $self = [Diagnostics.Process]::GetCurrentProcess()
@@ -14,6 +14,7 @@ $node = Join-Path $projectRoot ('.local/toolchain/node-v' + $tools.node.version 
 if (!(Test-Path -LiteralPath $node)) { throw 'The existing pinned Node runtime is required.' }
 $arguments = '"' + (Join-Path $PSScriptRoot 'run-model.mjs') + '"'
 if ($CheckOnly) { $arguments += ' --check-limits' }
+if ($Inference) { $arguments += ' --inference' }
 $child = $null
 try {
   $child = Start-Process -FilePath $node -ArgumentList $arguments -WorkingDirectory $projectRoot -NoNewWindow -PassThru

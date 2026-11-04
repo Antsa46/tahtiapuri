@@ -6,7 +6,7 @@
 #pragma comment(lib, "Fwpuclnt.lib")
 
 static bool ownedProfile(const std::wstring& name) {
-    for (const std::wstring prefix : { L"tahtiapuri.t09a.", L"tahtiapuri.t09b.", L"tahtiapuri.t09c.", L"tahtiapuri.t09d.", L"tahtiapuri.t09e." }) {
+    for (const std::wstring prefix : { L"tahtiapuri.t09a.", L"tahtiapuri.t09b.", L"tahtiapuri.t09c.", L"tahtiapuri.t09d.", L"tahtiapuri.t09e.", L"tahtiapuri.t09f." }) {
         if (name.size() == prefix.size() + 32 && name.compare(0, prefix.size(), prefix) == 0)
             return std::all_of(name.begin() + prefix.size(), name.end(), [](wchar_t c) { return (c >= L'0' && c <= L'9') || (c >= L'a' && c <= L'f'); });
     }
@@ -329,8 +329,10 @@ int wmain(int argc, wchar_t** argv) {
             if (!TerminateProcess(process.value, 44) || WaitForSingleObject(process.value, 5000) != WAIT_OBJECT_0) throw WinError("emergency-stop");
             emit("{\"type\":\"emergency-stopped\"}"); return 0;
         }
-        if (argc != 11 || (std::wstring(argv[1]) != L"run" && std::wstring(argv[1]) != L"run-registry-read" && std::wstring(argv[1]) != L"run-lpac-candidate" && std::wstring(argv[1]) != L"run-electron" && std::wstring(argv[1]) != L"run-sdk" && std::wstring(argv[1]) != L"run-sdk-node" && std::wstring(argv[1]) != L"run-sdk-node-candidate" && std::wstring(argv[1]) != L"run-model-candidate")) throw WinError("arguments", ERROR_INVALID_PARAMETER);
-        const bool modelCandidate = std::wstring(argv[1]) == L"run-model-candidate";
+        if (argc != 11 || (std::wstring(argv[1]) != L"run" && std::wstring(argv[1]) != L"run-registry-read" && std::wstring(argv[1]) != L"run-lpac-candidate" && std::wstring(argv[1]) != L"run-electron" && std::wstring(argv[1]) != L"run-sdk" && std::wstring(argv[1]) != L"run-sdk-node" && std::wstring(argv[1]) != L"run-sdk-node-candidate" && std::wstring(argv[1]) != L"run-model-candidate" && std::wstring(argv[1]) != L"run-inference-candidate")) throw WinError("arguments", ERROR_INVALID_PARAMETER);
+        const bool inferenceCandidate = std::wstring(argv[1]) == L"run-inference-candidate";
+        const bool loadCandidate = std::wstring(argv[1]) == L"run-model-candidate";
+        const bool modelCandidate = loadCandidate || inferenceCandidate;
         const bool sdkCandidate = std::wstring(argv[1]) == L"run-sdk-node-candidate";
         const bool candidate = std::wstring(argv[1]) == L"run-lpac-candidate";
         const bool registryRead = ((sdkCandidate || modelCandidate) && std::wstring(argv[2]) == L"lpac") || candidate || std::wstring(argv[1]) == L"run-registry-read";
@@ -339,18 +341,19 @@ int wmain(int argc, wchar_t** argv) {
         const bool electron = !node && (sdk || std::wstring(argv[1]) == L"run-electron");
         std::wstring mode(argv[2]); profile = argv[3]; const std::wstring root = ownedRoot(argv[4]);
         if ((mode != L"control" && mode != L"control-inherit" && mode != L"ac" && mode != L"lpac") || !ownedProfile(profile)) throw WinError("profile-arguments", ERROR_INVALID_PARAMETER);
-        const std::wstring purpose = modelCandidate ? L"tahtiapuri.t09e." : sdkCandidate ? L"tahtiapuri.t09d." : sdk ? L"tahtiapuri.t09c." : electron ? L"tahtiapuri.t09b." : L"tahtiapuri.t09a.";
+        const std::wstring purpose = inferenceCandidate ? L"tahtiapuri.t09f." : modelCandidate ? L"tahtiapuri.t09e." : sdkCandidate ? L"tahtiapuri.t09d." : sdk ? L"tahtiapuri.t09c." : electron ? L"tahtiapuri.t09b." : L"tahtiapuri.t09a.";
         if (sdk && mode != L"control" && mode != L"ac" && !((sdkCandidate || modelCandidate) && mode == L"lpac")) throw WinError("sdk-policy", ERROR_INVALID_PARAMETER);
         if (profile.compare(0, purpose.size(), purpose) != 0) throw WinError("profile-purpose", ERROR_INVALID_PARAMETER);
         for (int n = 5; n <= 9; ++n) if (boundedNumber(argv[n], 65535) == 0) throw WinError("port", ERROR_INVALID_PARAMETER);
         const std::wstring life(argv[10]);
-        if (modelCandidate && ((mode != L"control" && mode != L"lpac") || (life != L"once" && life != L"hold" && life != L"missing-model"))) throw WinError("model-candidate-scope", ERROR_INVALID_PARAMETER);
+        if (loadCandidate && ((mode != L"control" && mode != L"lpac") || (life != L"once" && life != L"hold" && life != L"missing-model"))) throw WinError("model-candidate-scope", ERROR_INVALID_PARAMETER);
+        if (inferenceCandidate && ((mode != L"control" && mode != L"lpac") || (life != L"generate" && life != L"cancel" && life != L"context-hold"))) throw WinError("inference-candidate-scope", ERROR_INVALID_PARAMETER);
         if (sdkCandidate && (life != L"once" && life != L"hold" && life != L"missing-binary")) throw WinError("sdk-candidate-scope", ERROR_INVALID_PARAMETER);
         if (registryRead && !candidate && !sdkCandidate && !modelCandidate && (mode != L"lpac" || (life != L"registry-once" && life != L"startup-child" && life != L"startup-no-inherit" && life != L"startup-winsock"))) throw WinError("registry-comparison-scope", ERROR_INVALID_PARAMETER);
         if (candidate && (mode != L"lpac" || (life != L"network-once" && life != L"network-fail" && life != L"network-hold"))) throw WinError("candidate-comparison-scope", ERROR_INVALID_PARAMETER);
         const bool primaryOnly = life == L"primary-once" || life == L"primary-hold" || life == L"primary-fail";
         const bool startupDiagnostic = !electron && !node && (life == L"startup-child" || life == L"startup-no-inherit" || life == L"startup-winsock" || life == L"resource-once" || life == L"registry-once");
-        if (!startupDiagnostic && life != L"once" && life != L"hold" && life != L"fail" && !(sdk && life == L"missing-binary") && !(modelCandidate && life == L"missing-model") && !(!electron && !node && (mode != L"lpac" || candidate) && (life == L"network-once" || life == L"network-fail" || life == L"network-hold")) && !(primaryOnly && mode == L"lpac")) throw WinError("lifetime", ERROR_INVALID_PARAMETER);
+        if (!startupDiagnostic && life != L"once" && life != L"hold" && life != L"fail" && !(sdk && life == L"missing-binary") && !(loadCandidate && life == L"missing-model") && !(inferenceCandidate && (life == L"generate" || life == L"cancel" || life == L"context-hold")) && !(!electron && !node && (mode != L"lpac" || candidate) && (life == L"network-once" || life == L"network-fail" || life == L"network-hold")) && !(primaryOnly && mode == L"lpac")) throw WinError("lifetime", ERROR_INVALID_PARAMETER);
         const std::wstring childLife = primaryOnly ? life.substr(8) : life;
         if (mode == L"ac" || mode == L"lpac") {
             const HRESULT hr = CreateAppContainerProfile(profile.c_str(), L"Tahtiapuri synthetic isolation probe", L"Temporary owned test profile", nullptr, 0, &sid);
@@ -417,7 +420,7 @@ int wmain(int argc, wchar_t** argv) {
         if (electron || node) command += L" --preserve-symlinks --preserve-symlinks-main " + quote(root + (modelCandidate ? L"\\package\\model-probe.mjs" : sdk ? L"\\package\\sdk-probe.mjs" : L"\\package\\runtime-probe.mjs"));
         command += L" " + quote(root);
         for (int n = 5; n <= 9; ++n) command += L" " + quote(argv[n]);
-        command += L" " + quote(childLife) + L" " + std::to_wstring(reinterpret_cast<ULONG_PTR>(sentinel.value)) + (modelCandidate ? L" primary-model-candidate" : sdkCandidate ? L" primary-sdk-candidate" : primaryOnly ? L" primary-only" : L" primary");
+        command += L" " + quote(childLife) + L" " + std::to_wstring(reinterpret_cast<ULONG_PTR>(sentinel.value)) + (inferenceCandidate ? L" primary-inference-candidate" : modelCandidate ? L" primary-model-candidate" : sdkCandidate ? L" primary-sdk-candidate" : primaryOnly ? L" primary-only" : L" primary");
         std::wstring env = environment(root, electron, sdk); PROCESS_INFORMATION process = {};
         // Node and its unchanged SDK fork share the host's hidden console. Creating
         // a second console would add conhost.exe to the strictly two-process Job.
@@ -440,7 +443,7 @@ int wmain(int argc, wchar_t** argv) {
         if (sid) { LPWSTR expected = nullptr; if (!ConvertSidToStringSidW(sid, &expected)) throw WinError("expected-sid"); bool same = view.sid == expected; LocalFree(expected); if (!same) throw WinError("child-identity", ERROR_ACCESS_DENIED); }
         emit("{\"type\":\"launched\",\"requestedPolicy\":\"" + ascii(mode) + "\",\"aclsVerified\":true,\"sentinelInherited\":" + std::string(inheritedSentinel ? "true" : "false") + ",\"pid\":" + std::to_string(process.dwProcessId) + ",\"job\":true,\"appContainer\":" + (view.app ? "true" : "false") + ",\"lpac\":" + jsonFlag(view.lpac) + ",\"lpacQueryError\":" + std::to_string(view.lpacQueryError) + ",\"lpacQueryBytes\":" + std::to_string(view.lpacQueryBytes) + ",\"capabilitySids\":" + capabilityJson(exactCapabilities) + ",\"capabilityPolicy\":\"" + (registryRead ? "registryRead" : "none") + "\",\"capabilities\":" + std::to_string(view.capabilities) + ",\"sid\":\"" + ascii(view.sid) + "\",\"integrity\":" + std::to_string(view.integrity) + "}");
         if (ResumeThread(thread.value) == static_cast<DWORD>(-1)) throw WinError("resume");
-        const ULONGLONG deadline = GetTickCount64() + (modelCandidate ? 120000 : sdk ? 60000 : 30000); bool ownerGone = false; DWORD inspected = 0; std::string pendingOutput; size_t outputBytes = 0;
+        const ULONGLONG deadline = GetTickCount64() + (inferenceCandidate ? 180000 : modelCandidate ? 120000 : sdk ? 60000 : 30000); bool ownerGone = false; DWORD inspected = 0; std::string pendingOutput; size_t outputBytes = 0;
         for (;;) {
             if (WaitForSingleObject(child.value, 20) == WAIT_OBJECT_0) break;
             if (sdk) relayWorker(workerRead.value, pendingOutput, outputBytes, false);

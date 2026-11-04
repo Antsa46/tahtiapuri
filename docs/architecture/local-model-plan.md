@@ -135,6 +135,9 @@ T09e:n [rajattu 4B-latauskoe](../experiments/model-isolation-probe.md) todensi
 todellisen painon muuttumattoman koepolun, CPU-latauksen ja sulun kuudessa
 kontrolli-/LPAC-tapauksessa. Generointi ja GPU eivät kuulu tähän näyttöön.
 Se ei vaihda sovelluksen runtimea eikä hyväksy koko sovelluksen eristystä.
+T09f:n [pieni keskustelukonteksti ja tekstintuotto](../experiments/inference-isolation-probe.md)
+todensi rajatun vastauksen, peruutuksen ja kontekstin sulun kuudessa
+kontrolli-/LPAC-tapauksessa. Näyttö koskee yhtä pientä CPU-kontekstia.
 T09c:n erillinen [SDK-eristyskoe](../experiments/sdk-isolation-probe.md)
 käyttää CPU-binääriä ilman mallipainoja. Julkinen CPU-alustus, SDK:n sisäinen
 binäärikoelapsi ja mallin lataus/generointi ovat erillisiä hyväksymisnäyttöjä.
