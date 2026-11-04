@@ -134,6 +134,9 @@ on tehty; paketoitu ajo on vielä kokeilematta.
 T09c:n erillinen [SDK-eristyskoe](../experiments/sdk-isolation-probe.md)
 käyttää CPU-binääriä ilman mallipainoja. Julkinen CPU-alustus, SDK:n sisäinen
 binäärikoelapsi ja mallin lataus/generointi ovat erillisiä hyväksymisnäyttöjä.
+Korjatun erillisen Noden [CPU-/helper-vertailu](../experiments/runtime-comparison.md#mitattu-node-sdk-vertailu)
+on läpäissyt. Tämä ei vaihda sovelluksen nykyistä UtilityProcess-toteutusta
+eikä hyväksy sen OS-eristystä tai paketointia.
 Electronin kokeellinen electron/llm näyttää vastaavan prosessijaon.
 Sitä käytetään vertailuna, ei automaattisesti sovelluksen riippuvuutena.
 Tarkat binäärit, CUDA-runtimet, ajurit ja paketoitu offline-käyttö

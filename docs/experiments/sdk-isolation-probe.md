@@ -6,6 +6,11 @@ instrumentoitu binäärilapsikoe ovat eri näyttöjä. GGUF-painoja, generointia
 CUDAa, käyttäjäaineistoa tai sääverkkoa ei käytetä. #24:n verkkonäyttö ja
 LPAC:n nykyiset esteet pysyvät avoimina.
 
+Korjattu erillinen Node 24.22.2 läpäisi myöhemmässä
+[runtimevertailussa](runtime-comparison.md#mitattu-node-sdk-vertailu) kaikki
+kuusi SDK-tapausta. Alla oleva alkuperäinen Electron-tulos säilyy kielteisenä;
+sovelluksen runtime-valintaa ei muutettu.
+
 ## Paketti ja toistaminen
 
 Projektijuuresta Windows PowerShellissä:
@@ -104,7 +109,7 @@ hyväksymisportit säilyvät erillisinä.
 - [SDK:n binääritestin lähde](https://github.com/withcatai/node-llama-cpp/blob/master/src/bindings/utils/testBindingBinary.ts)
 - Tarkka käytös tarkistetaan nykyisestä lukitusta 3.22.2-asennuksesta; master-haaraa ei pidetä lukittuna versiona.
 
-## Mitattu osatulos
+## Alkuperäinen Electron-osatulos
 
 Koe tehtiin lukitulla Electron 45.2.1:llä (Node 24.22.1, libuv 1.52.1)
 ja SDK:n CPU-paketilla 3.22.2. Riippuvuuskooste sisälsi 122 pakettia,
@@ -147,22 +152,21 @@ siivousta onnistuivat. Electronin regressiossa kontrolli ja AC läpäisivät
 onnistuivat. Näiden kahden regression kokonaispoistuminen on edelleen exit 1,
 ei täysi eristyksen hyväksyntä.
 
-## Avoin fork-este ja seuraava portti
+## Fork-esteen jatkoselvitys ja seuraava portti
 
-Havaittu fork-pysähtyminen sekä käytetty libuv 1.52.1 sopivat upstreamin
+Alkuperäinen fork-pysähtyminen sekä libuv 1.52.1 sopivat upstreamin
 raportoimaan AppContainerin nimettyjen putkien uusintasilmukkaan.
-[Node #66374](https://github.com/nodejs/node/issues/66374) kuvaa spawn/IPC-
-pysähtymisen, ja [libuv #5181](https://github.com/libuv/libuv/pull/5181)
-muuttaa AppContainer-putket LOCAL-nimiavaruuteen. Tämä on lähteiden tukema
-syyhypoteesi; oman prosessin natiivipinoa tai korjatun runtime-version
-vertailuajoa ei ole tehty. Pelkkä versionumeron nosto ei ole hyväksymisnäyttö.
+[Node #66374](https://github.com/nodejs/node/issues/66374) ja
+[libuv #5181](https://github.com/libuv/libuv/pull/5181) ohjasivat
+[rajattuun runtimevertailuun](runtime-comparison.md#mitattu-node-sdk-vertailu).
 
-#26 pysyy avoinna: SDK-lapsen oikeudet ja elinkaari AC:ssa on vielä
-osoitettava. Seuraava rajattu työ on valita ja testata korjatun libuv-polun
-sisältävä yhteensopiva runtime tai arvioida lapsen käynnistys erikseen.
-Samat kontrolleihin verrattavat token-/Job-/IPC-/tiedosto- ja elinkaariportit
-säilyvät. Verkko-, LPAC-, GGUF-/CUDA- ja koko sovelluksen portteja ei ohiteta.
+Saman lähteen muuttamaton Node toisti aikarajan. Vain upstreamin pipe.c-
+korjauksen sisältävä paikallinen Node läpäisi SDK-matriisin 6/6 tapausta:
+todellinen AC-lapsi, hostin oikeustarkistus, viisi tiedostokoetta, alkuperäinen
+helper-protokolla sekä normaali-, virhe- ja owner-loss-siivous. Menetelmän,
+lähdevertailun nimipoikkeaman ja tulosten omistaja on runtimevertailu.
 
-Korjatun runtimen valintaa, työkaluketjua ja sitä edeltävää Win32-putkikoetta
-kuvaa [vertailun valmistelu](runtime-comparison.md). Putkidiagnoosin läpäisy
-ei muuta yllä olevan SDK-matriisin hylättyä tulosta.
+Tämä täyttää #26:n rajatun Node-/CPU-helper-polun näyttötarpeen. Electronin
+sisäinen runtime säilyy alkuperäisessä tilassaan. Tuotannon runtime-valinta,
+verkko, LPAC, GGUF/CUDA ja koko sovelluksen eristys ovat seuraavia erillisiä
+portteja; SDK-osakoe ei hyväksy niitä.

@@ -114,6 +114,8 @@ yhteensopivuuden ennen SDK-/malliporttia; natiivikokeen avoimet
 verkkohavainnot säilyvät erillisinä. T09c (#26) selvittää
 [SDK:n CPU-alustuksen ja binäärikoelapsen](../experiments/sdk-isolation-probe.md)
 ilman GGUF-painoja ennen mallin lataus-/generointikoetta.
+Korjatun erillisen Noden [rajattu CPU-/helper-koe](../experiments/runtime-comparison.md#mitattu-node-sdk-vertailu)
+on läpäissyt; sovelluksen runtime-valinta ja T09:n muut portit säilyvät avoimina.
 
 T15 rakentaa lopullisen asentimen, ja T16 toistaa oikeusrajojen
 hyväksymisnäytön lopullisella toimitettavalla kokoonpanolla.

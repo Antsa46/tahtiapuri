@@ -1,8 +1,10 @@
 # Korjatun Node-/SDK-polun vertailu
 
 Tämä jatkaa [SDK-koetta](sdk-isolation-probe.md) ja issuea #26.
-Tila: **kokeella selvitettävä**. Node-/Electron-runtimen vaihtoa sovellukseen
-tai oman runtime-haaran ylläpitoa ei ole päätetty.
+Tila: **korjatun erillisen Noden rajattu CPU-/SDK-lapsikoe läpäisi**.
+Node-/Electron-runtimen vaihtoa sovellukseen tai oman runtime-haaran
+ylläpitoa ei ole päätetty. [Mitattu vertailu](#mitattu-node-sdk-vertailu)
+erottaa tämän tuloksen alkuperäisten runtimejen epäonnistumisesta.
 
 ## Erota kolme näyttöä
 
@@ -13,7 +15,7 @@ tai oman runtime-haaran ylläpitoa ei ole päätetty.
    hostin Job-/token-/SID-/capability-/IL-tarkistus, viisi tiedostokoetta,
    ready/loaded/done sekä normaali, virhe ja owner-loss.
 
-Vain kohta 3 voi täyttää #26:n puuttuvan SDK-lapsinäytön. Node-apuprosessin
+Vain kohta 3 osoittaa #26:n vaatiman SDK-lapsinäytön. Node-apuprosessin
 onnistuminen ei osoita Electronin oman Node-runtimen korjaantuneen.
 #24:n verkko- ja LPAC-esteet sekä #10:n sovelluseristys säilyvät erillisinä.
 
@@ -54,9 +56,10 @@ Kokeen ja ajurin poistumiskoodi oli 0. Omia prosesseja ei jäänyt, AC-profiili
 poistui ja kumpikin staged-puu poistui ensimmäisellä yrityksellä.
 AC:n LPAC-lisäkysely säilyi tuntemattomana (87); sitä ei tulkittu LPAC-näytöksi.
 
-Tulos tukee upstreamin nimiavaruusselitystä. Se ei vahvista oman Node-forkin
-natiivipinoa, korjattua libuv-käännöstä eikä alkuperäisen SDK-lapsen toimintaa.
-#26:n hyväksymisehdot 2–3 pysyvät avoimina. Erillinen tarkastaja tarkisti
+Tämä putkidiagnoosi tuki upstreamin nimiavaruusselitystä, mutta ei vielä
+vahvistanut korjattua runtimea tai SDK-lasta. #26:n ehdot 2–3 jäivät
+tästä osakokeesta avoimiksi; jäljempänä oleva runtimevertailu on erillinen
+näyttö. Erillinen tarkastaja tarkisti
 natiivikoettimen ja ajurin; löydetty watchdogin virhepolku korjattiin ennen ajoa.
 
 ## Runtime-ehdokkaan valinta
@@ -176,6 +179,93 @@ Vaihtoehto on odottaa korjauksen sisältävää virallista yhteensopivaa
 runtimea. Bunin tai vanhan Node-version käyttö muuttaisi useampaa muuttujaa;
 niitä ei oteta tämän vertailun korvikkeeksi. Tuotannon runtime-valinta
 arvioidaan kokeen jälkeen erikseen.
+
+## Mitattu Node-SDK-vertailu
+
+Vertailu tehtiin samalla natiivihostilla, SDK 3.22.2:lla, CPU-binäärillä ja
+koeaineistolla. Hostin, koepaketin manifestin, kaikkien riippuvuuksien ja
+koeskriptien tarkisteet täsmäsivät virallisen Noden ja molempien paikallisten
+varianttien välillä. SDK:n alkuperäistä helperiä ei muutettu.
+
+| Runtime | SDK:n kolme suojaamatonta kontrollia | SDK AppContainerissa |
+| --- | --- | --- |
+| Electron 45.2.1 / Node 24.22.1 | 3/3 läpäisi | Normaali ajo: fork jäi hostin aikarajaan 258; virhe- ja owner-loss-tapaukset ajamatta |
+| Virallinen Node 24.22.2 | 3/3 läpäisi | Sama aikaraja 258; kaksi jatkotapausta ajamatta |
+| Samasta lähteestä rakennettu muuttamaton Node 24.22.2 | 3/3 läpäisi | Sama aikaraja 258; kaksi jatkotapausta ajamatta |
+| Sama paikallinen Node ja upstreamin pipe.c-korjaus | 3/3 läpäisi | 3/3 läpäisi: normaali, puuttuva binääri ja owner-loss |
+
+Pienessä SDK:sta erillisessä fork-kokeessa muuttamaton paikallinen Node
+läpäisi kontrollin mutta päätyi AC:ssa samaan aikarajaan. Korjattu versio
+läpäisi molemmat PING/PONG-tapaukset. Kaikki näiden ajojen omat prosessit,
+profiilit, konsolit ja staged-puut siivoutuivat.
+
+Molemmat paikalliset binäärit valmistuivat samalla rakennusreseptillä.
+Versio, arkkitehtuuri ja SHA-256 tarkistettiin säilytetystä binääristä ennen
+ajamista. Konfiguraation sekä Node-/libnode-/libuv-projektien tarkisteet
+olivat samat; korjattu pipe.c käännettiin uudelleen ja ohjelma linkitettiin.
+Molemmat ilmoittavat yhä libuv 1.52.1:n, koska yhden upstream-korjauksen
+soveltaminen ei muuta versionumeroa. Korjauksen tunniste tulee lähde- ja
+binääritarkisteista, ei pelkästä versionumerosta.
+
+Lähdearkiston vertailussa löytyneiden tiedostojen ainoa sisältöero oli
+sovittu pipe.c-muutos. Kahden Noden oman testifixturen hakemistonimi oli
+purkautunut väärässä merkistössä. Myös niiden sisällöt tarkistettiin
+arkistoon samoiksi. Täsmällisiin tiedostopolkuihin perustuva koko puun
+vertailu säilyy hylättynä; nimipoikkeama ei kuulu rakennettuun Node-kohteeseen.
+Fixtureitä ei nimetty uudelleen eikä poikkeamaa piilotettu läpäisyksi.
+Tarkat valmistelu-, binääri- ja koetarkisteet sekä alkuperäiset tulokset
+säilyvät paikallisissa koeartefakteissa.
+
+### SDK-lapsen ja elinkaaren näyttö
+
+Korjattu versio läpäisi **6/6 SDK-tapausta**, kokonaistulos `passed=true`,
+exit 0. AC:ssa syntyi todellinen eri prosessi, joka käytti alkuperäistä
+SDK-helperiä. Host varmisti ennen latauksen jatkamista lapsen täsmällisen
+Job-jäsenyyden, prosessikuvan, profiilin SID:n, capabilityt 0 ja integrityn
+4096. Normaalin apurikokeen protokolla oli `ready → loaded → done`, exit 0.
+
+Lapsen viisi tiedostokoetta säilyivät kaikissa tapauksissa: AC:ssa paketin
+luku ja scratch-kirjoitus onnistuivat; private-aineiston luku ja kirjoitus
+sekä kooditiedoston muuttaminen estyivät. Puuttuvan binäärin koe tuotti
+odotetun lapsen exit 1:n ja pääprosessin hallitun exit 17:n. Owner-loss
+tehtiin oikean, tarkistetun lapsen odottaessa ready-vaiheessa.
+
+Kaikkien kuuden tapauksen omat prosessit, profiilit, konsolit ja staged-puut
+poistuivat ilman emergency-terminointia. Kontrollin owner-loss-tapauksen
+hakemistopoisto onnistui kolmannella rajatulla yrityksellä; muut heti.
+Riippumaton tarkastaja vertasi raakaa prosessi-, oikeus-, protokolla- ja
+siivousnäyttöä testirungon ehtoihin sekä tarkisti buildien provenienssin.
+
+### Toistaminen ja tuloksen rajat
+
+Säilytä kumpikin onnistunut käännös erikseen polussa
+`.local/toolchain/node-comparison/<variant>/node.exe` ja rekisteröi sen
+varmistettu Node-versio ja SHA-256 edellä kuvattuun runtime-manifestiin.
+Aja kumpikin variantti samalla valmiiksi rakennetulla natiivihostilla:
+
+```powershell
+# Projektin lukittu Windows-Node toimii ajurina; korvattava variantti annetaan argumenttina.
+& .\.local\toolchain\node-v24.22.2-win-x64\node.exe tests/e2e/isolation/run-node-fork.mjs local-unpatched
+& .\.local\toolchain\node-v24.22.2-win-x64\node.exe tests/e2e/isolation/run-node-fork.mjs local-patched
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\e2e\isolation\run.ps1 -Probe sdk -SdkRuntime local-unpatched -SkipBuild
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\e2e\isolation\run.ps1 -Probe sdk -SdkRuntime local-patched -SkipBuild
+```
+
+Muuttamattoman variantin exit 1 kuuluu säilytettävään kielteiseen tulokseen;
+sitä ei hyväksytä yhteensopivuusläpäisyksi. Vertaile myös fixture- ja
+skriptitarkisteet, koko protokolla ja siivous, älä vain prosessin exit-koodia.
+
+Saman lähteen kontrolli ja rajattu patch antavat mitatun näytön siitä,
+että putkikorjaus poistaa tässä kokoonpanossa havaitun fork-esteen.
+Tuloksena on erillisen Node-runtimen CPU-/instrumentoidun helper-polun
+paikallinen yhteensopivuusnäyttö. Se ei korjaa Electronin sisäistä Nodea,
+vaihda sovelluksen nykyistä UtilityProcess-toteutusta eikä ratkaise
+oman runtime-haaran toimitusta ja päivityksiä.
+
+Julkinen CPU-alustus ja erikseen instrumentoitu helper-koe pysyvät eri
+näyttöinä. Jaettu koekonsoli ei ole tuotannon konsolieristystodistus.
+#24:n verkko- ja LPAC-kysymykset sekä #10:n oikean GGUF-mallin, GPU:n,
+sovelluksen ja paketoinnin hyväksymisportit jäävät erillisiksi.
 
 ## Lähteet
 
