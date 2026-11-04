@@ -105,6 +105,78 @@ stdio-asetusten poistaminen ei riittänyt poistamaan virhettä. Winsockin
 virhe toistui erillisessä prosessissa ilman lapsenluontia. Nämä havainnot
 eivät yksilöi kummankaan virheen estävää resurssia tai tarkkaa syytä.
 
+## Oman ohjelmatiedoston ja prosessin resurssidiagnoosi
+
+Seuraava erillinen, vain pääprosessissa ajettava `resource-once`-tila
+vertaa kontrollia, AC:ia, LPAC:ia ja jälkikontrollia muuttamatta
+nollacapability-profiilia tai omien tiedostojen oikeuksia. Se käyttää
+samaa hostia ja siivousta, mutta omaa `resource-probe.exe`-koebinääriä.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\e2e\isolation\run.ps1 -Probe resources
+```
+
+Jokainen koepääte avaa vain oman staged-`probe.exe`:n erikseen
+`FILE_READ_DATA`- ja `FILE_EXECUTE`-pyynnöillä, `OPEN_EXISTING`-tilassa.
+Tarkka maski ja välitön virhe tallennetaan; tiedostoa ei suoriteta tämän
+avauksen perusteella. Sallitun, AAP-only- ja ulkopuolisen synteettisen
+fixturen avaukset varmentavat vertailun nykyisillä oikeuksilla.
+
+Omalta tokenilta luetaan `TokenDefaultDacl` vain `TOKEN_QUERY`-oikeudella.
+Kaksi kyselyvaihetta, 64 KiB puskuriraja, ACL:n rajat ja validius tarkistetaan.
+Null-DACL, tyhjä ACL, muu onnistunut sisältö ja kyselyvirhe säilyvät eri tuloksina.
+Paikallinen SDDL-kuitti on enintään 16 KiB; oikeita käyttäjätunnisteita ei
+julkaista tai kopioida fixtureihin. Serialisointia varten rakennettua
+muistissa olevaa suojauskuvaajaa ei aseteta mihinkään käyttöjärjestelmäobjektiin.
+
+Oman prosessin lapsenluontikäytäntö luetaan
+`GetProcessMitigationPolicy(ProcessChildProcessPolicy)`-kutsulla.
+Puskurikoko, raakaflagit, `NoChildProcessCreation` ja välitön virhe kirjataan.
+Epäonnistunut kysely jää tuntemattomaksi, ei nollalipuksi.
+
+Täydellinen diagnoosi edellyttää kaikkia seitsemää havaintoa, oikeaa
+identiteettiä, Jobia, prosessien poistumista ennen siivousta ja omien
+profiilien/tiedostojen onnistunutta siivousta. Se ei vaadi LPAC:n kaikkien
+resurssipyyntöjen onnistumista. Kontrollin oman tiedoston avaukset ja
+metatietokyselyt vaaditaan toimiviksi. Tässä kokeessa ei luoda lasta,
+kutsuta Winsockia tai avata verkkoa. `startupAttempted`, `startupVerified`
+ja `isolationVerified` pysyvät epätosina, vaikka diagnoosi valmistuu.
+
+Resurssien avaus ei todista koko CreateProcess-polun toimivuutta.
+Tokenin oletus-DACL koskee uusien objektien oletussuojausta; se ei ole
+suoritettavan tiedoston DACL. Nollassa oleva lapsenluontimitigaatio ei
+sulje pois muita käynnistystä estäviä ehtoja.
+
+### Resurssikokeen mitattu tulos
+
+Kaikki neljä tapausta valmistuivat ja päättyivät koodiin 0. Tämä on
+resurssidiagnoosin valmistuminen, ei käynnistysyhteensopivuuden hyväksyntä.
+
+- Oman koebinäärin erilliset read(1)- ja execute(32)-avaukset onnistuivat
+  myös LPAC:ssa. Sallitun, AAP-only- ja ulkopuolisen fixturen avaukset
+  vastasivat odotettuja AC-/LPAC-rajoja.
+- Tokenin oletus-DACL:n kysely onnistui kaikilla; ACL ei ollut null tai tyhjä.
+  Kontrollissa oli kolme ACE:tä, AC:ssa ja LPAC:ssa neljä. Normalisoitu
+  rakenne oli sama: käyttäjä ja SYSTEM täydellä pääsyllä, kirjautumisistunto
+  luku-/suoritusoikeudella sekä AC/LPAC:ssa lisäksi oma paketti täydellä
+  pääsyllä. Oikeat tunnisteet säilyvät vain paikallisissa kuiteissa.
+- Lapsenluontikäytännön kysely onnistui kaikilla; raakaflagit olivat 0 ja
+  `NoChildProcessCreation=false`.
+- Kaikki neljä prosessijoukkoa poistuivat ennen korjaavaa siivousta.
+  Profiilit ja staged-aineistot siivoutuivat ilman hätätoimia.
+- 120 kohdistettua testiä läpäisi: 41 resurssidiagnoosin, 58 aiemman
+  käynnistysdiagnoosin ja 21 yhteisen prosessiapurin testiä. Natiivikäännös
+  `/W4 /WX /MT` sekä JavaScript- ja PowerShell-syntaksitarkistukset läpäisivät.
+  Erillinen tarkastaja varmisti lähteen, binäärit ja raakakuitit.
+
+Tulos ei tue näiden oman tiedoston avausoikeuksien puutetta tai
+NoChildProcessCreation-lippua aiemman virheen selityksenä. Samankaltainen
+oletus-DACL ei todista käynnistyksessä tarvittavien muiden objektien pääsyä.
+Alkuperäiset CreateProcess- ja Winsock-virheet säilyvät avoimina.
+Seuraava selvitys kohdistuu käynnistyksen muuhun resurssipääsyyn. Tarkka
+jäljitysmenetelmä ja sen tarjoama status-/nimikenttä varmistetaan ennen
+uutta keruuta; resurssikokeen valmistuminen ei itsessään käynnistä keruuta.
+
 ## Jatko ja hyväksymisraja
 
 Seuraava rajattu selvityskohde on käynnistyksen tarvitsemien resurssien
@@ -121,6 +193,9 @@ ei muuta aiempia verkkotuloksia tai niiden hyväksymisehtoja.
 
 ## Lähteet
 
+- [Microsoft: tiedostojen tarkat pääsyoikeudet](https://learn.microsoft.com/en-us/windows/win32/fileio/file-access-rights-constants)
+- [Microsoft: TokenDefaultDacl](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-token_default_dacl)
+- [Microsoft: prosessin suojauskäytäntöjen lukeminen](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getprocessmitigationpolicy)
 - [Microsoft: standardikahvojen käsittely](https://learn.microsoft.com/en-us/windows/console/getstdhandle)
 - [Microsoft: CreateProcessW ja kahvaperintä](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessw)
 - [Microsoft: WSAStartupin suora paluukoodi ja alustuksen elinkaari](https://learn.microsoft.com/en-us/windows/win32/api/winsock/nf-winsock-wsastartup)

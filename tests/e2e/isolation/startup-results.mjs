@@ -19,7 +19,7 @@ export function decodeStartupChild(text) {
   assert.equal(rows[0].type, 'token'); assert.equal(rows.at(-1).type, 'startup-complete', 'Missing terminal child receipt.');
   return rows;
 }
-function identity(row, mode) {
+export function validateStartupIdentity(row, mode) {
   const restricted = ['ac','lpac'].includes(mode);
   assert.equal(row.job, true); assert.equal(row.appContainer, restricted); assert.equal(row.capabilities, 0);
   assert.equal(row.integrity, restricted ? 4096 : 8192);
@@ -35,7 +35,7 @@ export function validateStartupCase(result) {
   assert(rows.filter(r => r.source === 'child-file').every(r => childTypes.includes(r.type) && r.phase === 'descendant'), 'Invalid file provenance.');
   assert.equal(result.exit?.code, 0); assert.equal(result.exit.signal, null);
   const launched = one(rows, 'launched'), finished = one(rows, 'finished');
-  identity(launched, mode); assert.equal(launched.requestedPolicy, mode); assert.equal(launched.aclsVerified, true);
+  validateStartupIdentity(launched, mode); assert.equal(launched.requestedPolicy, mode); assert.equal(launched.aclsVerified, true);
   assert.equal(launched.sentinelInherited, mode === 'control-inherit');
   assert.equal(finished.exitCode, 0); assert.equal(finished.activeProcesses, 0); assert.equal(finished.ownerGone, false);
   const restricted = ['ac','lpac'].includes(mode), profile = restricted ? one(rows, 'profile') : null;
@@ -58,7 +58,7 @@ export function validateStartupCase(result) {
   const expectedPids = [result.launchedChildPid, launched.pid, ...(child ? [descendants[0].pid] : [])];
   assert([...expectedPids,result.driverPid].every(pid) && new Set([...expectedPids,result.driverPid]).size === expectedPids.length+1, 'Process identities overlap or are missing.');
   for (const phase of phases) {
-    const token = one(rows,'token',phase); identity(token,mode);
+    const token = one(rows,'token',phase); validateStartupIdentity(token,mode);
     assert.equal(token.pid, phase === 'primary' ? launched.pid : descendants[0].pid);
     if (restricted) assert.equal(token.sid, profile.sid);
     assert.equal(token.lpacQueryAttempted,restricted); assert.equal(token.lpacQueryApi,'GetTokenInformation'); assert.equal(token.lpacBufferBytes,4);
