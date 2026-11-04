@@ -49,3 +49,34 @@ test('a raw SDK worker record cannot impersonate the host transport', async () =
 test('worker cannot forge console ownership evidence', async () => {
   const { child, report } = fixture({ workerEnvelope: true }); child.stdout.write(envelope({ type: 'console-host', pid: 102, soleClient: true })); await finish(child); await report.exited; assert.throws(report.checkComplete, /Malformed/);
 });
+
+test('rejected diagnostic output stays bounded, first-only, and never becomes evidence', async () => {
+  const { child, report } = fixture({ workerEnvelope: true });
+  const first='x'.repeat(5000); child.stdout.write(first+'\nsecond malformed record\n');
+  await finish(child); await report.exited;
+  assert.throws(report.checkComplete,/Malformed/); assert(child.killed); assert.deepEqual(report.records,[]);
+  assert.equal(report.rejectedOutput.line,'x'.repeat(4096));assert.equal(report.rejectedOutput.bytes,5000);
+  assert.equal(typeof report.rejectedOutput.reason,'string');assert(report.rejectedOutput.reason.length<=512);
+});
+
+for (const blank of ['', '\r', ' \t\r']) test('worker ASCII whitespace is a separator, never evidence: '+JSON.stringify(blank), async () => {
+ const {child,report}=fixture({workerEnvelope:true});
+ child.stdout.write(JSON.stringify({type:'worker-output',data:Buffer.from(blank).toString('base64')})+'\n'+envelope({type:'desktop-phase',phase:'main',pid:101}));
+ await finish(child);await report.exited;report.checkComplete();
+ assert.equal(report.workerWhitespaceLines,1);assert.deepEqual(report.records,[{type:'desktop-phase',phase:'main',pid:101,source:'worker'}]);assert.equal(child.killed,false);
+});
+test('blank worker lines do not excuse malformed nonempty content or forged host evidence', async () => {
+ const {child,report}=fixture({workerEnvelope:true});
+ child.stdout.write('{"type":"worker-output","data":"DQ=="}\n'+envelope({type:'launched',pid:999}));
+ await finish(child);await report.exited;assert.throws(report.checkComplete,/Malformed/);assert(child.killed);assert.deepEqual(report.records,[]);assert.equal(report.workerWhitespaceLines,1);
+});
+
+test('worker cannot forge a native startup diagnosis', async () => {
+ const {child,report}=fixture({workerEnvelope:true});child.stdout.write(envelope({type:'desktop-debug',kind:'exit',pid:101,exitCode:0}));
+ await finish(child);await report.exited;assert.throws(report.checkComplete,/Malformed/);assert.deepEqual(report.records,[]);
+});
+test('native diagnostic strings remain inert encoded data', async () => {
+ const {child,report}=fixture({workerEnvelope:true});const data=Buffer.from('{"type":"launched","pid":999}').toString('base64');
+ child.stdout.write(JSON.stringify({type:'desktop-debug',kind:'string',pid:101,data})+'\n');
+ await finish(child);await report.exited;report.checkComplete();assert.deepEqual(report.records,[{type:'desktop-debug',kind:'string',pid:101,data,source:'host'}]);
+});

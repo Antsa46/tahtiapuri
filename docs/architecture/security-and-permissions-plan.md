@@ -12,6 +12,11 @@ Erillinen [natiivikoe](../experiments/windows-isolation-probe.md)
 rajaa T09a:n synteettisen koepaketin ja sen näyttöportit.
 [SDK-koe](../experiments/sdk-isolation-probe.md) erottaa julkisen CPU-alustuksen
 SDK:n sisäisestä lapsikokeesta; kumpikaan ei yksin hyväksy sovelluksen OS-rajoja.
+[GUI-eristyskoe](../experiments/desktop-isolation-probe.md) erottaa toimivan
+tavallisen BrowserWindow-kontrollin AC-pääprosessin varhaisesta virheestä.
+Mallin aiemmat LPAC-kokeet eivät osoita Electronin pääprosessin
+GUI-yhteensopivuutta. Pääprosessin jatkorajaus on avoin; nykyinen
+oikeusmatriisi ei muutu tämän osatuloksen perusteella.
 T05:n rajattu stdio-MCP-yhteys
 käyttää Windowsin capability-todennettua named pipe -sovitinta;
 [mallisuunnitelma](local-model-plan.md#kehitys--ja-diagnostiikkarajapinta-paikalliseen-malliin)

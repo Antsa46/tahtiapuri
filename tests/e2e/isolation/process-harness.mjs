@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 
 export function collect(child, { workerEnvelope = false } = {}) {
-  const records = []; let buffered = ''; let outputBytes = 0; let stderrBytes = 0; let stderr = ''; let failure; let ended = false; let closed = false;
+  const records = []; let buffered = ''; let outputBytes = 0; let stderrBytes = 0; let stderr = ''; let failure; let ended = false; let closed = false; let rejectedOutput; let workerWhitespaceLines = 0;
   const fail = message => { failure ??= new Error(message); child.kill(); };
   const pidTypes = new Set(['launched', 'token', 'descendant', 'owner-host', 'escaped', 'runtime', 'sdk-child', 'inspected-child', 'console-host']);
   child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8');
@@ -21,11 +21,13 @@ export function collect(child, { workerEnvelope = false } = {}) {
         if (workerEnvelope) {
           if (row?.type === 'worker-output') {
             if (typeof row.data !== 'string' || Buffer.from(row.data, 'base64').toString('base64') !== row.data) throw new Error('Invalid worker envelope.');
-            row = JSON.parse(Buffer.from(row.data, 'base64').toString('utf8'));
-            if (!['sdk-phase','sdk-child','sdk-child-message','sdk-policy','sdk-parent-policy','sdk-held','sdk-child-exit','sdk-ready','sdk-error','sdk-expected-failure','sdk-instrumentation-error','model-phase','model-policy','model-error','model-held','model-expected-failure','inference-phase'].includes(row?.type)) throw new Error('Worker cannot emit host records.');
+            const decoded = Buffer.from(row.data, 'base64').toString('utf8');
+            if (/^[ \t\r]*$/.test(decoded)) { workerWhitespaceLines++; continue; }
+            row = JSON.parse(decoded);
+            if (!['sdk-phase','sdk-child','sdk-child-message','sdk-policy','sdk-parent-policy','sdk-held','sdk-child-exit','sdk-ready','sdk-error','sdk-expected-failure','sdk-instrumentation-error','model-phase','model-policy','model-error','model-held','model-expected-failure','inference-phase','desktop-phase','desktop-policy'].includes(row?.type)) throw new Error('Worker cannot emit host records.');
             row = { ...row, source: 'worker' };
           } else {
-            if (!['profile','launched','inspected-child','finished','error','cleanup','owner-host','console-host','console-finished','model-pin','model-pin-released','model-limits'].includes(row?.type)) throw new Error('Invalid host record.');
+            if (!['profile','launched','inspected-child','finished','error','cleanup','owner-host','console-host','console-finished','model-pin','model-pin-released','model-limits','desktop-limits','desktop-debug'].includes(row?.type)) throw new Error('Invalid host record.');
             row = { ...row, source: 'host' };
           }
         }
@@ -35,7 +37,7 @@ export function collect(child, { workerEnvelope = false } = {}) {
         }
         if (records.length >= 500) throw new Error('Too many native records.');
         records.push(row);
-      } catch { fail('Malformed native report.'); }
+      } catch (error) { rejectedOutput ??= { line: line.slice(0, 4096), bytes: Buffer.byteLength(line), reason: String(error.message).slice(0, 512) }; fail('Malformed native report.'); }
     }
   });
   child.stdout.once('end', () => { ended = true; if (buffered.trim()) fail('Unterminated native record.'); });
@@ -48,7 +50,7 @@ export function collect(child, { workerEnvelope = false } = {}) {
     child.once('close', (code, signal) => { closed = true; done({ code, signal }); });
   });
   const check = () => { if (failure) throw failure; };
-  return { records, exited, get stderr() { return stderr; }, check, checkComplete: () => { check(); if (!ended || !closed) throw new Error('Incomplete native report.'); } };
+  return { records, exited, get stderr() { return stderr; }, get rejectedOutput() { return rejectedOutput; }, get workerWhitespaceLines() { return workerWhitespaceLines; }, check, checkComplete: () => { check(); if (!ended || !closed) throw new Error('Incomplete native report.'); } };
 }
 export async function bounded(promise, milliseconds, label) {
   let timer;

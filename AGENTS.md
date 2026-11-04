@@ -34,7 +34,8 @@ Lue tehtävän mukaan:
   [SDK:n ja binäärilapsen AC-/LPAC-kokeet](docs/experiments/sdk-isolation-probe.md) sekä
   [Node-/SDK-runtimevertailu](docs/experiments/runtime-comparison.md) sekä
   [rajattu 4B-latauskoe](docs/experiments/model-isolation-probe.md) sekä
-  [rajattu keskustelukonteksti ja tekstintuotto](docs/experiments/inference-isolation-probe.md)
+  [rajattu keskustelukonteksti ja tekstintuotto](docs/experiments/inference-isolation-probe.md) sekä
+  [Electronin GUI-eristyskoe](docs/experiments/desktop-isolation-probe.md)
 - havaintopaikkojen asetukset, tallennus tai observing-IPC:
   [nimetyt havaintopaikat](docs/architecture/observing-places.md)
 - käyttäjätieto, historian säilytys ja poisto, välimuistit tai vienti/palautus:
