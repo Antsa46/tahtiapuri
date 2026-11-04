@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {etwProfile} from './etw-profiles.mjs';
 import { validateEtwReceipt } from './etw-observation.mjs';
 import { validateNativeCase } from './native-case-validation.mjs';
 import { validateEtwLifecycle } from './etw-lifecycle.mjs';
@@ -48,8 +49,13 @@ function socket(hex) {
   assert.equal(bytes.readUInt32LE(24), 0, 'Unexpected IPv6 scope.');
   return { family: 6, address: '::1', port };
 }
-function caseAttempts(result, mode, endpoints) {
-  assert(result && result.mode === mode && (mode === 'ac' || result.kind === 'normal') && result.primaryOnly === false, 'Wrong case.');
+function caseAttempts(result, mode, endpoints, selected) {
+  assert(result && result.mode === mode && (['ac','lpac'].includes(mode) || result.kind === 'normal') && result.primaryOnly === false, 'Wrong case.');
+  const isolated=['ac','lpac'].includes(mode), capabilityPolicy=isolated?selected.capabilityPolicy:'none';
+  if(selected.candidate){
+    assert.equal(result.experimentProfile,selected.id);assert.equal(result.capabilityPolicy,capabilityPolicy);
+    assert.equal(result.caseLabel,isolated?selected.caseLabel:`${mode}-normal`);
+  }
   for (const flag of ['corePassed', 'cleanupPassed']) assert.equal(result[flag], true, flag);
   assert(!result.error && !result.cleanupError && !result.expectedCompatibilityFailure, 'Failed case.');
   for (const flag of ['passed', 'stopped', 'profileClean']) assert.equal(result.cleanup?.[flag], true, `Cleanup ${flag}.`);
@@ -63,13 +69,14 @@ function caseAttempts(result, mode, endpoints) {
   assert(integer(start) && integer(end) && start <= end, 'Invalid case window.');
   const rows = result.records;
   assert(Array.isArray(rows) && rows.length <= 500, 'Unbounded case records.');
-  validateNativeCase(rows, mode, result.counts, result.accepted, false, true);
+  validateNativeCase(rows, mode, result.counts, result.accepted, false, true,{capabilityPolicy,exactCapabilities:selected.candidate});
   const launched = record(rows, 'launched');
-  validateEtwLifecycle(result);
+  validateEtwLifecycle(result,{strictNormal:selected.candidate});
   const identity = record(rows, 'network-identity'); assert.equal(identity.code, 0); pathText(identity.appIdHex);
+  if(selected.candidate)assert(pathText(identity.appIdHex).endsWith(`\\${result.caseLabel}\\staged\\package\\probe.exe`),'AppId does not name the selected staged case.');
   const descendant = record(rows, 'descendant');
   assert(integer(launched.pid, 0xffffffff) && integer(descendant.pid, 0xffffffff) && launched.pid !== descendant.pid, 'Invalid process identities.');
-  const restricted = mode === 'ac';
+  const restricted = ['ac','lpac'].includes(mode);
   const profile = restricted ? record(rows, 'profile') : null;
   if (restricted) {
     assert(typeof profile.sid === 'string' && /^S-1-15-2-(?:\d+-)*\d+$/.test(profile.sid), 'Missing package identity.');
@@ -81,7 +88,7 @@ function caseAttempts(result, mode, endpoints) {
     const token = one(rows, row => row.type === 'token' && row.phase === phase, `${phase} token`);
     assert.equal(token.pid, phase === 'primary' ? launched.pid : descendant.pid, 'Token/process mismatch.');
     assert.equal(token.integrity, restricted ? 4096 : 8192);
-    assert(token.lpac === false || (token.lpac === null && token.lpacQueryError === 87), 'Unknown AC/LPAC result.');
+    assert(token.lpac === (mode==='lpac') || (token.lpac === null && restricted && token.lpacQueryError === 87), 'Unknown AC/LPAC result.');
     for (const name of names) {
       const detail = one(rows, row => row.type === 'network-detail' && row.phase === phase && row.name === name, `${phase}/${name} attempt`);
       const operation = one(rows, row => row.type === 'operation' && row.phase === phase && row.name === name, `${phase}/${name} operation`);
@@ -123,15 +130,20 @@ function validatePolicy(event, family) {
 }
 
 /** Trusted local probe artifacts only. No network, processes, filesystem writes or policy changes. */
-export function correlateEtwNetwork(cases, evidence) {
-  assert(Array.isArray(cases) && cases.length === 3, 'Both controls and one AC case are required.');
+export function correlateEtwNetwork(cases, evidence,{profile='ac'}={}) {
+  assert(Array.isArray(cases) && cases.length === 3, 'Both controls and one isolated case are required.');
+  const selected=etwProfile(profile,cases[1]?.kind);
   const endpoints = cases[0]?.endpoints;
   assert(endpoints && Object.keys(endpoints).length === 4 && names.every(name => integer(endpoints[name], 65535)), 'Invalid endpoint set.');
   assert.equal(new Set(Object.values(endpoints)).size, 4, 'Protocol-less events need distinct endpoint ports.');
   assert(typeof cases[0].probeSha256 === 'string' && /^[0-9a-f]{64}$/.test(cases[0].probeSha256), 'Missing probe digest.');
   assert(cases.every(c => c.probeSha256 === cases[0].probeSha256), 'Controls use different probe binaries.');
-  const [before, isolated, after] = cases.map((c, i) => caseAttempts(c, ['control', 'ac', 'control-inherit'][i], endpoints));
-  assert(before.end <= isolated.start && isolated.end <= after.start, 'Controls do not surround AC case.');
+  if(selected.candidate){
+    assert(/^[0-9a-f]{64}$/.test(cases[0].hostSha256??''));
+    assert(cases.every(c=>c.hostSha256===cases[0].hostSha256),'Host changed between cases.');
+  }
+  const [before, isolated, after] = cases.map((c, i) => caseAttempts(c, ['control', selected.mode, 'control-inherit'][i], endpoints,selected));
+  assert(before.end <= isolated.start && isolated.end <= after.start, 'Controls do not surround the isolated case.');
   assert.equal(cases[1].observerCleanupPassed, true, 'Observer cleanup unverified.');
   assert.deepEqual(evidence.exit, cases[1].observerExit, 'Collector exit mismatch.');
   validateEtwReceipt(evidence.exit, evidence.done, evidence.guard, evidence.records, isolated.appIdHex);
@@ -160,7 +172,7 @@ export function correlateEtwNetwork(cases, evidence) {
   }
   assert(hits.every(eventsForAttempt => eventsForAttempt.length > 0), 'Missing drop for an attempt.');
   return {
-    scope: cases[1].kind === 'normal' ? 'native-ac-bound-loopback-receive-v2' : 'native-ac-bound-loopback-lifecycle-receive-v2',
+    scope:selected.scope, ...(selected.candidate?{experimentProfile:selected.id,capabilityPolicy:selected.capabilityPolicy,networkCapabilityCount:0}:{}),
     lifecycleKind: cases[1].kind, lifecycleVerified: true, networkVerified: true, fullIsolationVerified: false,
     attemptCount: isolated.attempts.length, eventCount: events.length,
     attempts: isolated.attempts.map((attempt, i) => ({

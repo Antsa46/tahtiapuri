@@ -1,15 +1,18 @@
 import assert from 'node:assert/strict';
+import {validateStartupIdentity} from './startup-results.mjs';
 
 // Shared by the live driver and offline ETW correlation; no process or filesystem access.
-export function validateNativeCase(report, mode, counts, accepted, primaryOnly = false, observeNetwork = false) {
+export function validateNativeCase(report, mode, counts, accepted, primaryOnly = false, observeNetwork = false, {capabilityPolicy='none',exactCapabilities=false}={}) {
   const network = [];
   assert(!report.some(row => row.type === 'error' || row.type === 'probe-error'), 'Native error record.');
   const launched = report.find(row => row.type === 'launched'); assert(launched?.job); assert.equal(launched.requestedPolicy, mode); assert.equal(launched.aclsVerified, true); assert.equal(launched.sentinelInherited, mode === 'control-inherit');
   const profile = report.find(row => row.type === 'profile');
+  if(exactCapabilities){assert(Array.isArray(launched.capabilitySids));assert.equal(launched.capabilityPolicy,capabilityPolicy);validateStartupIdentity(launched,mode,capabilityPolicy);}
+  else assert.equal(capabilityPolicy,'none','A capability comparison requires exact token evidence.');
   for (const phase of primaryOnly ? ['primary'] : ['primary', 'descendant']) {
     const token = report.find(row => row.type === 'token' && row.phase === phase); assert(token?.job, `${phase} Job membership`);
     assert.equal(token.appContainer, ['ac', 'lpac'].includes(mode)); if (token.lpac === null) assert.equal(token.lpacQueryError, 87, 'Unknown LPAC query must retain observed error.');
-    else { assert.equal(token.lpac, mode === 'lpac'); if (token.appContainer) assert.equal(token.lpacQueryBytes, 4); } assert.equal(token.capabilities, 0);
+    else { assert.equal(token.lpac, mode === 'lpac'); if (token.appContainer) assert.equal(token.lpacQueryBytes, 4); } if(exactCapabilities){assert(Array.isArray(token.capabilitySids));validateStartupIdentity(token,mode,capabilityPolicy);}else assert.equal(token.capabilities,0);
     if (observeNetwork && mode.startsWith('control')) assert.equal(token.integrity, 8192, 'Observation controls must run at ordinary medium integrity.');
     if (['ac', 'lpac'].includes(mode)) { assert.equal(token.integrity, 4096); assert.equal(token.sid, profile.sid); }
     const operation = name => { const row = report.find(row => row.type === 'operation' && row.phase === phase && row.name === name); assert(row, `${phase}/${name}`); return row; };

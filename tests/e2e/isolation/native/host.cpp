@@ -298,8 +298,9 @@ int wmain(int argc, wchar_t** argv) {
             if (!TerminateProcess(process.value, 44) || WaitForSingleObject(process.value, 5000) != WAIT_OBJECT_0) throw WinError("emergency-stop");
             emit("{\"type\":\"emergency-stopped\"}"); return 0;
         }
-        if (argc != 11 || (std::wstring(argv[1]) != L"run" && std::wstring(argv[1]) != L"run-registry-read" && std::wstring(argv[1]) != L"run-electron" && std::wstring(argv[1]) != L"run-sdk" && std::wstring(argv[1]) != L"run-sdk-node")) throw WinError("arguments", ERROR_INVALID_PARAMETER);
-        const bool registryRead = std::wstring(argv[1]) == L"run-registry-read";
+        if (argc != 11 || (std::wstring(argv[1]) != L"run" && std::wstring(argv[1]) != L"run-registry-read" && std::wstring(argv[1]) != L"run-lpac-candidate" && std::wstring(argv[1]) != L"run-electron" && std::wstring(argv[1]) != L"run-sdk" && std::wstring(argv[1]) != L"run-sdk-node")) throw WinError("arguments", ERROR_INVALID_PARAMETER);
+        const bool candidate = std::wstring(argv[1]) == L"run-lpac-candidate";
+        const bool registryRead = candidate || std::wstring(argv[1]) == L"run-registry-read";
         const bool node = std::wstring(argv[1]) == L"run-sdk-node";
         const bool sdk = node || std::wstring(argv[1]) == L"run-sdk";
         const bool electron = !node && (sdk || std::wstring(argv[1]) == L"run-electron");
@@ -310,10 +311,11 @@ int wmain(int argc, wchar_t** argv) {
         if (profile.compare(0, purpose.size(), purpose) != 0) throw WinError("profile-purpose", ERROR_INVALID_PARAMETER);
         for (int n = 5; n <= 9; ++n) if (boundedNumber(argv[n], 65535) == 0) throw WinError("port", ERROR_INVALID_PARAMETER);
         const std::wstring life(argv[10]);
-        if (registryRead && (mode != L"lpac" || (life != L"registry-once" && life != L"startup-child" && life != L"startup-no-inherit" && life != L"startup-winsock"))) throw WinError("registry-comparison-scope", ERROR_INVALID_PARAMETER);
+        if (registryRead && !candidate && (mode != L"lpac" || (life != L"registry-once" && life != L"startup-child" && life != L"startup-no-inherit" && life != L"startup-winsock"))) throw WinError("registry-comparison-scope", ERROR_INVALID_PARAMETER);
+        if (candidate && (mode != L"lpac" || (life != L"network-once" && life != L"network-fail" && life != L"network-hold"))) throw WinError("candidate-comparison-scope", ERROR_INVALID_PARAMETER);
         const bool primaryOnly = life == L"primary-once" || life == L"primary-hold" || life == L"primary-fail";
         const bool startupDiagnostic = !electron && !node && (life == L"startup-child" || life == L"startup-no-inherit" || life == L"startup-winsock" || life == L"resource-once" || life == L"registry-once");
-        if (!startupDiagnostic && life != L"once" && life != L"hold" && life != L"fail" && !(sdk && life == L"missing-binary") && !(!electron && !node && mode != L"lpac" && (life == L"network-once" || life == L"network-fail" || life == L"network-hold")) && !(primaryOnly && mode == L"lpac")) throw WinError("lifetime", ERROR_INVALID_PARAMETER);
+        if (!startupDiagnostic && life != L"once" && life != L"hold" && life != L"fail" && !(sdk && life == L"missing-binary") && !(!electron && !node && (mode != L"lpac" || candidate) && (life == L"network-once" || life == L"network-fail" || life == L"network-hold")) && !(primaryOnly && mode == L"lpac")) throw WinError("lifetime", ERROR_INVALID_PARAMETER);
         const std::wstring childLife = primaryOnly ? life.substr(8) : life;
         if (mode == L"ac" || mode == L"lpac") {
             const HRESULT hr = CreateAppContainerProfile(profile.c_str(), L"Tahtiapuri synthetic isolation probe", L"Temporary owned test profile", nullptr, 0, &sid);

@@ -167,6 +167,7 @@ static void createOutput(const Run& run) {
 }
 static std::wstring observedCase(const std::wstring& scenario) {
     if (scenario == L"observe") return L"ac-normal";
+    if (scenario == L"observe-lpac-registry-read") return L"lpac-registry-read-normal";
     if (scenario == L"observe-error") return L"ac-error";
     if (scenario == L"observe-launcher-kill") return L"ac-launcher-kill";
     if (scenario == L"observe-owner-kill") return L"ac-owner-kill";

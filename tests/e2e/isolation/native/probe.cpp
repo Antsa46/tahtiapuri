@@ -1,4 +1,4 @@
-#include "common.h"
+#include "capability-diagnostic.h"
 #include <cstdint>
 
 struct Socket {
@@ -102,7 +102,7 @@ int wmain(int argc, wchar_t** argv) {
         if (phase != "primary" && phase != "descendant") throw WinError("probe-phase", ERROR_INVALID_PARAMETER);
         const auto view = inspectToken(GetCurrentProcess()); BOOL inJob = FALSE;
         if (!IsProcessInJob(GetCurrentProcess(), nullptr, &inJob)) throw WinError("self-job");
-        emit("{\"type\":\"token\",\"phase\":\"" + phase + "\",\"pid\":" + std::to_string(GetCurrentProcessId()) + ",\"job\":" + (inJob ? "true" : "false") + ",\"appContainer\":" + (view.app ? "true" : "false") + ",\"lpac\":" + jsonFlag(view.lpac) + ",\"lpacQueryError\":" + std::to_string(view.lpacQueryError) + ",\"lpacQueryBytes\":" + std::to_string(view.lpacQueryBytes) + ",\"capabilities\":" + std::to_string(view.capabilities) + ",\"integrity\":" + std::to_string(view.integrity) + ",\"sid\":\"" + ascii(view.sid) + "\"}");
+        emit("{\"type\":\"token\",\"phase\":\"" + phase + "\",\"pid\":" + std::to_string(GetCurrentProcessId()) + ",\"job\":" + (inJob ? "true" : "false") + ",\"appContainer\":" + (view.app ? "true" : "false") + ",\"lpac\":" + jsonFlag(view.lpac) + ",\"lpacQueryError\":" + std::to_string(view.lpacQueryError) + ",\"lpacQueryBytes\":" + std::to_string(view.lpacQueryBytes) + ",\"capabilitySids\":" + capabilityJson(inspectCapabilities(GetCurrentProcess())) + ",\"capabilities\":" + std::to_string(view.capabilities) + ",\"integrity\":" + std::to_string(view.integrity) + ",\"sid\":\"" + ascii(view.sid) + "\"}");
         boundedNumber(argv[8], MAXDWORD); // Host verifies inheritance before ResumeThread.
         readFile(root + L"\\package\\allowed.txt", "package-read");
         readFile(root + L"\\package\\weights.fixture", "weights-read");

@@ -345,3 +345,75 @@ verkon ja CPU/GPU-paketin näyttö pysyy avoinna; #24 ja parent #10 eivät sulke
 Providerin ja tapahtumaversioiden kuvaus tarkistetaan paikallisen Windowsin
 julkaisemasta manifestista. Tämän dokumentin kenttäkuvaus ei oleta jokaisen
 Windows-version tuottavan täsmälleen samaa tapahtumaa tai kaikkia estotapauksia.
+
+## Nimetty LPAC + registryRead -normaalikoe
+
+[Käynnistysvertailu](lpac-startup-probe.md#erillinen-registryread-vertailuprofiili)
+osoitti erillisen registryRead-LPAC:n toimivan kolmessa startup-operaatiossa.
+Tämä seuraava koe mittaa ehdokkaan omat tiedosto- ja loopback-verkkorajat;
+AC:n aiempi tulos ei kelpaa sen näytöksi. Nollacapability-LPAC:n vanhoja
+kuittauksia tai johtopäätöksiä ei muuteta.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\e2e\isolation\run.ps1 -Probe etw-lpac -EtwCase normal
+```
+
+Ensimmäinen sallittu ajurikoe on normaalikolmikko: kontrolli,
+`lpac-registry-read-normal` ja jälkikontrolli samoilla päätepisteillä.
+Muut candidate-elinkaaret hylätään ajurissa ja korrelaattorissa, kunnes
+normaalin näytön perusteella avataan seuraava rajattu vaihe.
+`etw-profiles.mjs` omistaa suljetun profiilivalinnan, case-nimen,
+kerääjän skenaarion ja tuloksen scopen. Raportti ei valitse omaa profiiliaan.
+
+Natiivin hostin uusi `run-lpac-candidate` sallii vain LPAC:n ja kolme
+nimettyä network-elinkaarta; nykyinen startup-verbi säilyy erikseen
+neljään diagnoosiin rajattuna. Host varmistaa ennen prosessin jatkamista
+saman yhden registryRead-SID:n ja attribuutin kuin startup-vertailussa.
+Hostin, primaryn ja descendantin täydet capability-joukot vaaditaan
+raportissa; kontrollien joukot ovat tyhjät. Verkkocapabilityjä ei lisätä.
+Koe käyttää samoja host- ja probe-binäärejä kaikissa kolmessa tapauksessa.
+
+Kerääjä hyväksyy uuden kiinteän skenaarion vain täsmälliseen
+`lpac-registry-read-normal/staged/package/probe.exe`-polkuun. Tapahtumalaji,
+AppId-/owner-kuittaus, portti- ja osoiterajaus, aikarajat sekä siivousvahti
+säilyvät edellä kuvattuina. Vain kerääjä ja vahti korotetaan; tämä voi
+vaatia Windowsin vahvistusikkunan. Koepäätteitä ei koroteta.
+
+Uudessa kolmiossa kaikilta kolmelta tapaukselta vaaditaan tarkka hostin,
+primaryn ja descendantin PID-joukko poissa olevaksi ennen korjaavaa
+siivousta sekä ajallisesti kelvollinen tarkistuskuitti. Vanhojen AC-normal-
+tallenteiden yhteensopivuuspoikkeus ei koske ehdokasta. Hätäsiivous,
+puuttuva lapsi tai epäonnistunut profiilin/staged-aineiston poisto hylkää kokeen.
+
+Kahdeksan verkkoyrityksen korrelaatio vaatii samat tarkistetut receiver-v2-,
+AppIsolation- ja BLOCK-ehdot kuin AC-kokeessa. Jokaisella yrityksellä pitää
+olla vähintään yksi pudotus ja jokaisella kerätyllä pudotuksella täsmälleen
+yksi osoite–portti–aika-osuma. Protokolla ja paketti-identiteetti tulevat
+koepäätteestä, eivät ETW-tapahtumasta. Uutta tapahtuma- tai suodatinmuotoa
+ei hyväksytä automaattisesti. Tulos tallennetaan vain nimetyn ehdokkaan
+case-polkuun; onnistunut yhteenveto palautetaan vasta tallennuksen jälkeen.
+
+Tämä normaaliajo ei vielä hyväksy ehdokkaan virhe- tai pakkosulkutilanteita,
+ulkoverkkoa, DNS:ää tai koko sovelluksen eristystä. `fullIsolationVerified`
+pysyy epätotena, ja alkuperäinen koko matriisi jää edelleen erilliseksi.
+
+### Tallenteen uusintatarkistus ja ensimmäinen yritys
+
+Tallenteen voi tarkistaa uudelleen vain lukevalla `replay-etw.mjs`-ajurilla.
+Anna paikallisen ajon UUID, `normal` ja nimenomainen
+`lpac-registry-read`-profiili. Oletus säilyy AC:ssa; profiilia ei päätellä
+luettavasta tuloksesta. Puuttuva jälkikontrolli tai ehdokkaan oma tulos
+hylkää tarkistuksen. Alkuperäisiä tiedostoja ei kirjoiteta uudelleen.
+
+Ensimmäinen liveyritys pysähtyi kerääjän valmiuden aikarajaan.
+Kontrolli läpäisi, mutta LPAC-koepäätettä ei käynnistetty eikä
+jälkikontrollia tai verkkokorrelaatiota suoritettu. Kerääjän wrapperista
+ei saatu täydellistä loppukuittia; tästä ei päätellä käyttäjän
+peruuttaneen vahvistusta. ETW-tuloshakemistoa ei syntynyt.
+Jälkitarkistus ei löytänyt tähän ajoon kuuluvaa kerääjää, tunnistamatta
+jääneitä kerääjäprosesseja tai elossa olevia kontrollin prosesseja.
+Molempien valmisteltujen tapausten staged-aineisto poistui.
+Pysäytyspyyntö säilyy ajon omassa hakemistossa mahdollista viivästynyttä
+käynnistymistä varten. Tämä yritys säilyy epäonnistuneena; se ei anna
+LPAC:n verkkorajasta näyttöä. Seuraava koe tarvitsee uuden ajotunnisteen
+ja tapahtumalukijan Windows-vahvistuksen valmistumisen aikarajassa.

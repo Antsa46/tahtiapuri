@@ -9,14 +9,15 @@ const one = (rows, type) => {
 
 // Trusted development evidence: prove the selected termination and process exit
 // before recovery. This never treats emergency cleanup as lifecycle success.
-export function validateEtwLifecycle(result) {
+export function validateEtwLifecycle(result,{strictNormal=false}={}) {
   const { kind, records: rows } = result;
+  const restricted=['ac','lpac'].includes(result.mode);
   assert(['normal', 'error', 'launcher-kill', 'owner-kill'].includes(kind), 'Unknown lifecycle.');
-  assert(result.mode === 'ac' || kind === 'normal', 'Controls must complete normally.');
+  assert(restricted || kind === 'normal', 'Controls must complete normally.');
   const finished = rows.filter(row => row.type === 'finished');
   const owner = rows.filter(row => row.type === 'owner-host');
   const cleanup = rows.filter(row => row.type === 'cleanup');
-  if (result.mode === 'ac') {
+  if (restricted) {
     assert.equal(result.cleanup.teardown?.code, 0, 'Profile teardown missing.');
     assert(result.cleanup.teardown.signal == null, 'Profile teardown terminated.');
     assert.equal(one(result.cleanup.teardown.records, 'cleanup').hresult, 0);
@@ -28,9 +29,9 @@ export function validateEtwLifecycle(result) {
     assert.equal(result.exit?.code, kind === 'normal' ? 0 : 1);
     assert(result.exit.signal == null, 'Unexpected termination signal.');
     assert(!result.termination, 'Unexpected forced termination.');
-    if (result.mode === 'ac') { assert.equal(cleanup.length, 1); assert.equal(cleanup[0].hresult, 0); }
+    if (restricted) { assert.equal(cleanup.length, 1); assert.equal(cleanup[0].hresult, 0); }
   }
-  if (kind === 'normal') return; // Preserve acceptance of previously captured normal runs.
+  if (kind === 'normal' && !strictNormal) return; // Preserve acceptance of previously captured normal runs.
   const launched = one(rows, 'launched'), descendant = one(rows, 'descendant');
   const directPid = result.launchedChildPid;
   assert([result.driverPid, directPid, launched.pid, descendant.pid].every(pid), 'Missing process identities.');
@@ -44,6 +45,7 @@ export function validateEtwLifecycle(result) {
   assert(Array.isArray(observation.pids) && observation.pids.length === expectedPids.length, 'Incomplete process exit observation.');
   assert.deepEqual([...observation.pids].sort((a,b) => a-b), [...expectedPids].sort((a,b) => a-b));
   assert(Number.isSafeInteger(observation.checkedAtMs) && observation.checkedAtMs >= Date.parse(result.startedAt) && observation.checkedAtMs <= Date.parse(result.finishedAt), 'Exit check outside case.');
+  if (kind === 'normal') return;
   const ready = rows.filter(row => row.type === 'ready');
   if (kind === 'error') {
     assert.deepEqual(ready.map(row => row.phase), ['descendant'], 'Error must follow descendant readiness.');
