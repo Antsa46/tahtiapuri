@@ -7,23 +7,25 @@ import { fileURLToPath } from 'node:url';
 import { collect, bounded, until, alive, cleanupOwnedRun } from './process-harness.mjs';
 import { startupKinds, decodeStartupChild, validateStartupCase } from './startup-results.mjs';
 
-assert(process.platform==='win32' && process.argv.length===2,'Use native Windows Node without additional arguments.');
+assert(process.platform==='win32' && (process.argv.length===2||(process.argv.length===3&&process.argv[2]==='registry-read')),'Use native Windows Node with optional registry-read comparison only.');
+const comparison=process.argv[2]==='registry-read';
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'../../..');
 const output=join(root,'.artifacts/tests/isolation'),host=join(output,'native/bin/host.exe'),probe=join(output,'native/bin/startup-probe.exe');
-const runRoot=join(output,'startup-runs',randomUUID());await fs.mkdir(runRoot,{recursive:true});
-const summary={schema:1,scope:'native-startup-diagnosis',cases:[],diagnosticComplete:false,compatible:false,passed:false,networkAttempted:false,isolationVerified:false,originalMatrixRun:false};
-async function runCase(mode,kind){
-  const caseRoot=join(runRoot,`${mode}-${kind}`),staged=join(caseRoot,'staged');
+const runRoot=join(output,comparison?'startup-capability-runs':'startup-runs',randomUUID());await fs.mkdir(runRoot,{recursive:true});
+const summary={schema:1,scope:comparison?'native-startup-capability-comparison':'native-startup-diagnosis',cases:[],diagnosticComplete:false,compatible:false,passed:false,networkAttempted:false,isolationVerified:false,originalMatrixRun:false};
+async function runCase(mode,kind,capabilityPolicy='none'){
+  const caseRoot=join(runRoot,`${mode}${capabilityPolicy==='registryRead'?'-registry-read':''}-${kind}`),staged=join(caseRoot,'staged');
   const profile=`tahtiapuri.t09a.${randomUUID().replaceAll('-','')}`;
   for(const name of ['package','private','scratch','launcher'])await fs.mkdir(join(staged,name),{recursive:true});
   await fs.writeFile(join(staged,'owner.marker'),'TAHTIAPURI_T09A_SYNTHETIC_ONLY',{flag:'wx'});
   const caseHost=join(staged,'launcher/host.exe');await fs.copyFile(host,caseHost);await fs.copyFile(probe,join(staged,'package/probe.exe'));
   for(const [name,text] of Object.entries({'package/allowed.txt':'SYNTHETIC ALLOWED\n','package/weights.fixture':'SYNTHETIC WEIGHTS\n','package/legacy.fixture':'SYNTHETIC AAP\n','package/module.mjs':'export const synthetic = true;\n','private/secret.txt':'SYNTHETIC PRIVATE\n'}))await fs.writeFile(join(staged,name),text,{flag:'wx'});
   for(const name of ['package/probe.exe','launcher/host.exe','package/allowed.txt','package/weights.fixture','package/legacy.fixture','package/module.mjs','private/secret.txt'])assert.equal((await fs.stat(join(staged,name))).nlink,1);
+  const hostSha256=createHash('sha256').update(await fs.readFile(caseHost)).digest('hex');
   const probeSha256=createHash('sha256').update(await fs.readFile(join(staged,'package/probe.exe'))).digest('hex');
   // Host's reserved ports are validated but never used by this separate binary.
-  const child=spawn(caseHost,['run',mode,profile,staged,'1','1','1','1','1',kind],{stdio:['pipe','pipe','pipe'],windowsHide:true});
-  const report=collect(child),result={mode,kind,probeSha256,driverPid:process.pid,launchedChildPid:child.pid,startedAt:new Date().toISOString(),records:[],passed:false,diagnosticComplete:false};
+  const child=spawn(caseHost,[capabilityPolicy==='registryRead'?'run-registry-read':'run',mode,profile,staged,'1','1','1','1','1',kind],{stdio:['pipe','pipe','pipe'],windowsHide:true});
+  const report=collect(child),result={mode,kind,capabilityPolicy,hostSha256,probeSha256,driverPid:process.pid,launchedChildPid:child.pid,startedAt:new Date().toISOString(),records:[],passed:false,diagnosticComplete:false};
   try{
     result.exit=await bounded(report.exited,20000,'Startup host did not finish.');report.checkComplete();
     result.records=report.records.map(row=>({...row,source:'pipe'}));
@@ -40,19 +42,24 @@ async function runCase(mode,kind){
   finally{
     result.cleanup=await cleanupOwnedRun({child,report,host,staged,profile,restricted:['ac','lpac'].includes(mode)});
     result.stderr=report.stderr;result.finishedAt=new Date().toISOString();
-    try{result.validation=validateStartupCase(result);result.diagnosticComplete=true;result.passed=result.validation.compatible;}
+    try{result.validation=validateStartupCase(result,{capabilityPolicy});result.diagnosticComplete=true;result.passed=result.validation.compatible;}
     catch(error){result.validationError=error.message;}
     await fs.writeFile(join(caseRoot,'result.json'),JSON.stringify(result,null,2)+'\n');
-    summary.cases.push({mode,kind,probeSha256,diagnosticComplete:result.diagnosticComplete,compatible:result.validation?.compatible??false,api:result.validation?.api,code:result.validation?.code,cleanupPassed:result.cleanup.passed,error:result.error??result.validationError});
+    summary.cases.push({mode,kind,capabilityPolicy,hostSha256,probeSha256,diagnosticComplete:result.diagnosticComplete,compatible:result.validation?.compatible??false,api:result.validation?.api,code:result.validation?.code,cleanupPassed:result.cleanup.passed,error:result.error??result.validationError});
   }
-  console.log(`${mode}/${kind}: ${result.diagnosticComplete?(result.passed?'API PASS':`diagnosed API failure ${result.validation.code}; compatibility unresolved`):'INCOMPLETE'}`);
+  console.log(`${mode}/${capabilityPolicy}/${kind}: ${result.diagnosticComplete?(result.passed?'API PASS':`diagnosed API failure ${result.validation.code}; compatibility unresolved`):'INCOMPLETE'}`);
   assert(result.diagnosticComplete&&result.cleanup.passed,'Incomplete diagnosis or cleanup failure; stopped.');
   if(mode!=='lpac')assert(result.passed,'Reference startup failed; stopped.');
 }
 try{
-  for(const kind of startupKinds)for(const mode of ['control','ac','lpac','control-inherit'])await runCase(mode,kind);
+  for(const kind of startupKinds)for(const mode of ['control','ac','lpac','control-inherit']){
+    await runCase(mode,kind);
+    if(comparison&&mode==='lpac')await runCase('lpac',kind,'registryRead');
+  }
+  assert.equal(new Set(summary.cases.map(c=>c.hostSha256)).size,1,'Host changed between cases.');
   assert.equal(new Set(summary.cases.map(c=>c.probeSha256)).size,1,'Probe changed between cases.');
-  summary.diagnosticComplete=summary.cases.length===12&&summary.cases.every(c=>c.diagnosticComplete);
+  summary.diagnosticComplete=summary.cases.length===(comparison?15:12)&&summary.cases.every(c=>c.diagnosticComplete);
   summary.compatible=summary.diagnosticComplete&&summary.cases.every(c=>c.compatible);summary.passed=summary.compatible;
+  if(comparison)summary.registryReadCompatible=summary.diagnosticComplete&&summary.cases.filter(c=>c.capabilityPolicy==='registryRead').every(c=>c.compatible);
   if(!summary.passed)process.exitCode=1;
 }finally{await fs.writeFile(join(runRoot,'summary.json'),JSON.stringify(summary,null,2)+'\n');console.log(`Local startup evidence: ${runRoot}`);}

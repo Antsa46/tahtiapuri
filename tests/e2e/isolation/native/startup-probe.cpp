@@ -1,4 +1,4 @@
-#include "common.h"
+#include "capability-diagnostic.h"
 
 // Fixed, development-only diagnosis. Never opens sockets or changes policy.
 static std::string phase;
@@ -11,7 +11,7 @@ static void record(const std::string& line) {
 static void identity() {
     const auto view = inspectToken(GetCurrentProcess()); BOOL inJob = FALSE;
     if (!IsProcessInJob(GetCurrentProcess(), nullptr, &inJob)) throw WinError("startup-job");
-    record("{\"type\":\"token\",\"phase\":\"" + phase + "\",\"pid\":" + std::to_string(GetCurrentProcessId()) + ",\"job\":" + (inJob ? "true" : "false") + ",\"appContainer\":" + (view.app ? "true" : "false") + ",\"lpac\":" + jsonFlag(view.lpac) + ",\"lpacQueryError\":" + std::to_string(view.lpacQueryError) + ",\"lpacQueryBytes\":" + std::to_string(view.lpacQueryBytes) + ",\"lpacQueryAttempted\":" + (view.app ? "true" : "false") + ",\"lpacQueryApi\":\"GetTokenInformation\",\"lpacInfoClass\":" + std::to_string(static_cast<int>(TokenIsLessPrivilegedAppContainer)) + ",\"lpacBufferBytes\":4,\"capabilities\":" + std::to_string(view.capabilities) + ",\"integrity\":" + std::to_string(view.integrity) + ",\"sid\":\"" + ascii(view.sid) + "\"}");
+    record("{\"type\":\"token\",\"phase\":\"" + phase + "\",\"pid\":" + std::to_string(GetCurrentProcessId()) + ",\"job\":" + (inJob ? "true" : "false") + ",\"appContainer\":" + (view.app ? "true" : "false") + ",\"lpac\":" + jsonFlag(view.lpac) + ",\"lpacQueryError\":" + std::to_string(view.lpacQueryError) + ",\"lpacQueryBytes\":" + std::to_string(view.lpacQueryBytes) + ",\"lpacQueryAttempted\":" + (view.app ? "true" : "false") + ",\"lpacQueryApi\":\"GetTokenInformation\",\"lpacInfoClass\":" + std::to_string(static_cast<int>(TokenIsLessPrivilegedAppContainer)) + ",\"lpacBufferBytes\":4,\"capabilitySids\":" + capabilityJson(inspectCapabilities(GetCurrentProcess())) + ",\"capabilities\":" + std::to_string(view.capabilities) + ",\"integrity\":" + std::to_string(view.integrity) + ",\"sid\":\"" + ascii(view.sid) + "\"}");
     unsigned valid = 0; std::string handles;
     for (const auto kind : {STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE}) {
         DWORD flags = 0; const HANDLE handle = GetStdHandle(kind);

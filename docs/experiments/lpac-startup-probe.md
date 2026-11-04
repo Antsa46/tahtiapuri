@@ -177,14 +177,140 @@ Seuraava selvitys kohdistuu käynnistyksen muuhun resurssipääsyyn. Tarkka
 jäljitysmenetelmä ja sen tarjoama status-/nimikenttä varmistetaan ennen
 uutta keruuta; resurssikokeen valmistuminen ei itsessään käynnistä keruuta.
 
+## Kiinteiden Winsock-rekisteriavainten avauskoe
+
+Erillinen `registry-once` käyttää samaa resource-probea, neljää verrokkia
+ja muuttamatonta nollacapability-profiilia. Tavallisen resurssikuitin jälkeen
+se yrittää avata viisi kiinteää HKLM-avainta natiivissa x64-näkymässä:
+
+- `SYSTEM\CurrentControlSet\Services\WinSock2\Parameters`
+- edellisen alla `Protocol_Catalog9` ja sen `Catalog_Entries64`
+- samoin `NameSpace_Catalog5` ja sen `Catalog_Entries64`.
+
+Lista perustuu Microsoft Pressin Winsock-palveluntarjoajien kuvaukseen,
+ei oletukseen, että kaikki avaimet olisivat tämän Windows-version
+WSAStartup-polulla välttämättömiä. Jokaiselle tehdään erillinen
+`RegOpenKeyExW` pyynnöillä `KEY_QUERY_VALUE` (1) ja `KEY_READ` (0x20019),
+options=0. Kuittiin tallennetaan suora LSTATUS sekä onnistuneen kahvan
+sulun tulos. Avaimia ei luoda eikä niiden arvoja, aliavaimia tai ACL:iä
+lueta tai muuteta. Koepääte ei kutsu Winsockia tai luo lasta.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\e2e\isolation\run.ps1 -Probe registry
+```
+
+Ajuri säilyttää raportit vain paikallisessa `registry-runs/`-puussa.
+Vain kaikki kymmenen avausta ja sulut sekä alkuperäiset identiteetti-,
+resurssi- ja siivouskuitit muodostavat täydellisen diagnoosin. Kontrollin
+kaikkien avausten pitää onnistua; muuten ajo pysähtyy. Eristetyssä
+prosessissa myös epäonnistunut avaus on havainto. Puuttuva avain (2),
+pääsyn esto (5) ja muut virheet pysyvät erillisinä.
+
+Tämä ei ole käynnistyksen sisäisten kutsujen jäljitys. Estynyt avaus kertoo
+juuri nimetyn avaimen ja pyydetyn maskin pääsyongelmasta; se ei yksin
+todista WSAStartup 10107:n tai CreateProcessW 5:n syytä. Vastaavasti
+onnistunut avaus ei todista koko alustuksen toimivuutta. Capabilityjä,
+järjestelmäavainten oikeuksia tai sovelluksen ajotapaa ei muuteta.
+
+ETW:n asennetun skeeman lukua tutkittiin vaihtoehtona. Rekisterin
+OpenKey-tapahtumien kernel-providerille ei voi olettaa user-mode-providerin
+PID-suodatusta. Tapahtumakeruuta ei käynnistetä tässä kokeessa eikä
+muiden prosessien toimintaa kerätä. Metadata-apuri jää paikalliseksi.
+
+### Avauskokeen tulos
+
+Neljä tapausta valmistui. Molempien tavallisten verrokkien ja AC:n kaikki
+kymmenen avausta ja sulut onnistuivat. Nollacapability-LPAC:ssa jokainen
+viiden avaimen kahdesta avauksesta palautti pääsyn eston (5). Kaikki
+omat prosessit, profiilit ja staged-tiedostot siivoutuivat ilman hätätoimia.
+Tämä todentaa nimetyn pääsyeron, ei alustuksen sisäistä syyavainta.
+
+## Erillinen registryRead-vertailuprofiili
+
+Seuraava diagnostinen variaatio lisää vain omaan lyhytikäiseen LPAC-
+koeprosessiin Windowsin `registryRead`-capabilityn. Tämä on todellinen
+lisäoikeus: se ei rajoitu viiteen koeavaimeen, vaan sallii capability-SID:lle
+järjestelmässä jo myönnettyä pääsyä. Sitä ei oteta sovelluksen oletusprofiiliksi.
+Koebinäärin operaatiot pysyvät kiinteinä; käyttäjäaineistoa tai mallia ei ajeta.
+
+Hostin erillinen `run-registry-read` sallii vain `lpac`-politiikan ja
+`registry-once`-, `startup-child`-, `startup-no-inherit`- tai
+`startup-winsock`-kokeen. SDK, Electron, alkuperäinen verkkokoe ja muut
+elinkaaritilat eivät kuulu tähän variaatioon. Verkkocapabilityjä tai
+yleisiä ACL-muutoksia ei lisätä. Omien tiedostojen ACL:t, Job, LPAC-
+attribuutti, Low IL, kahvarajaus ja siivous säilyvät.
+
+`DeriveCapabilitySidsFromName` saa vain kiinteän nimen `registryRead`.
+Oikeasta capability-taulukosta hyväksytään täsmälleen yksi odotettu SID
+ja `SE_GROUP_ENABLED`. Muisti vapautetaan vasta tarvittavan elinkaaren jälkeen.
+Käännös käyttää olemassa olevan Windows SDK:n `OneCoreUAP.lib`-kirjastoa.
+Host tarkistaa koko todellisen capability-joukon ennen `ResumeThread`ia;
+pääprosessi ja mahdollinen lapsi raportoivat omat joukkonsa itsenäisesti.
+Validaattori hyväksyy vain saman yhden SID:n ja attribuutin. Tästä seuraa
+verkkocapabilityjen määrä nolla, ei vielä verkkoyritysten eston todistus.
+Alkuperäisessä profiilissa määrä pysyy nollana. LPAC-kyselyn 87 säilyy
+edelleen tuntemattomana; AAP-fixturen rajaa tarkistetaan erikseen.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\e2e\isolation\run.ps1 -Probe registry-read
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\e2e\isolation\run.ps1 -Probe startup-registry-read
+```
+
+Ensin ajetaan rekisterivertailu samoilla binääreillä: tavallinen kontrolli,
+AC, nollacapability-LPAC, LPAC + registryRead ja jälkikontrolli. Vasta tämän
+jälkeen vastaava vertailu tehdään kolmelle erilliselle startup-operaatiolle.
+Raportit ovat `registry-capability-runs/`- ja `startup-capability-runs/`-
+puissa. Alkuperäiset kuitit säilyvät muuttumattomina. API-epäonnistuminen
+pysyy epäonnistuneena yhteensopivuutena myös lisäoikeusprofiilissa;
+`registryReadCompatible` erotetaan koko alkuperäisen matriisin tuloksesta.
+
+Mahdollinen onnistuminen osoittaisi lisäoikeuden vaikutuksen näissä
+vertailuissa. Se ei yksilöi Windowsin sisäistä syyavainta, hyväksy
+nollacapability-LPAC:ia tai tuotantoprofiilia eikä todista verkkorajaa.
+
+### RegistryRead-vertailun mitattu tulos
+
+Kaikki viisi rekisteritapausta valmistuivat samoilla binääreillä.
+Nollacapability-LPAC esti kymmenen avausta virheellä 5;
+registryRead-LPAC:n kaikki kymmenen avausta ja sulkua onnistuivat.
+Kontrollit ja AC onnistuivat. Molempien LPAC-profiilien AAP-only-fixturen
+esto säilyi. Jokainen oma prosessijoukko poistui ennen siivousta, ja
+kaikki profiilit sekä staged-tiedostot siivoutuivat ilman hätätoimia.
+
+Käynnistysvertailun kaikki 15 tapausta valmistuivat:
+
+| Operaatio | Kontrolli / AC / jälkikontrolli | LPAC ilman capabilityjä | LPAC + registryRead |
+| --- | --- | --- | --- |
+| Lapsi kahvaperinnällä ennen Winsock-kutsua | Onnistui | Virhe 5 | Onnistui |
+| Lapsi ilman kahvaperintää | Onnistui | Virhe 5 | Onnistui |
+| Erillinen WSAStartup(2.2) ja WSACleanup | Onnistui | Virhe 10107 | Onnistui |
+
+Lisäoikeusprofiilin host, pääprosessi ja molemmat syntyneet lapset
+raportoivat täsmälleen yhden oikean capability-SID:n attribuutilla 4.
+LPAC:n AAP-fixturen esto, Low IL, Job ja package-identiteetti säilyivät;
+lapsista saatiin loppukuitit ja exit 0. Kaikki 15 prosessijoukkoa poistuivat
+ennen siivousta ja kaikki omat siivoukset onnistuivat ilman hätätoimia.
+LPAC-tokenkyselyn virhe 87 säilyi edelleen tuntemattomana.
+
+Tässä vertailussa `registryRead` poisti sekä rekisterin avauseron että
+kolme havaittua käynnistysestettä. Yksittäistä Windowsin sisäistä syyavainta
+ei ole jäljitetty. Alkuperäinen nollacapability-LPAC pysyi epäyhteensopivana;
+siksi kokonaisraportti säilyi `passed=false` ja exit 1, vaikka erikseen
+nimetty `registryReadCompatible=true`.
+
+170 kohdistettua paikallista testiä läpäisi. Kymmenen todellisen hostin
+kiellettyä lisäoikeuspyyntöä hylättiin ennen profiilin tai lapsen luontia.
+Aiemmat 20 tapauskuittia validoitiin uudelleen niiden tarkistussummien
+säilyessä. `/W4 /WX /MT`-käännös ja JavaScript-/PowerShell-syntaksitarkistukset
+läpäisivät. Lisäoikeusprofiilin verkkoyrityksiä, alkuperäistä täyttä
+elinkaarimatriisia tai sovellusta ei vielä ajettu tässä vertailussa.
+
 ## Jatko ja hyväksymisraja
 
-Seuraava rajattu selvityskohde on käynnistyksen tarvitsemien resurssien
-pääsy: esimerkiksi oman ohjelmatiedoston ja kiinteiden järjestelmäresurssien
-vain luku -diagnoosi nykyisen tokenin alla. Tarkka resurssilista ja sen
-näyttöraja on määritettävä ennen toteutusta. Lisäcapabilityn antaminen
-(esimerkiksi `registryRead`) olisi eri oikeusprofiilin koe, ei tämän
-nollacapability-kokeen korjaus tai hiljainen hyväksyntä.
+Oman ohjelmatiedoston ja kiinteiden järjestelmäavainten diagnoosit
+sekä erillinen lisäoikeusverrokki eivät muuta alkuperäisen
+nollacapability-kokeen ehtoja. Jatkotoimet valitaan mitattujen
+pääsy- ja käynnistystulosten perusteella.
 
 Alkuperäinen AC-/LPAC-matriisi ja sen avoimet elinkaarikokeet, LPAC:n
 käynnistysyhteensopivuus, ulkoinen verkko sekä koko sovelluksen CPU/GPU-
@@ -192,6 +318,14 @@ minipaketti jäävät avoimiksi. #24 ja #10 pysyvät avoinna. Tämä diagnoosi
 ei muuta aiempia verkkotuloksia tai niiden hyväksymisehtoja.
 
 ## Lähteet
+
+- [Microsoft: capabilityn johtaminen ja muistin vapautus](https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-derivecapabilitysidsfromname)
+- [Chromium: registryRead LPAC-profiileissa](https://github.com/chromium/chromium/blob/main/sandbox/policy/win/sandbox_win.cc)
+
+- [Microsoft Press: Winsock providers ja katalogiavaimet](https://www.microsoftpressstore.com/articles/article.aspx?p=2762082&seqNum=2)
+- [Microsoft: RegOpenKeyExW ja suorat paluukoodit](https://learn.microsoft.com/en-us/windows/win32/api/winreg/nf-winreg-regopenkeyexw)
+- [Microsoft: rekisteriavainten oikeusmaskit](https://learn.microsoft.com/en-us/windows/win32/sysinfo/registry-key-security-and-access-rights)
+- [Microsoft: ETW PID-suodattimen rajoitus kernel-providerilla](https://learn.microsoft.com/en-us/windows/win32/api/evntprov/ns-evntprov-event_filter_descriptor)
 
 - [Microsoft: tiedostojen tarkat pääsyoikeudet](https://learn.microsoft.com/en-us/windows/win32/fileio/file-access-rights-constants)
 - [Microsoft: TokenDefaultDacl](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-token_default_dacl)

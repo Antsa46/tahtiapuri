@@ -1,3 +1,4 @@
+#include "capability-diagnostic.h"
 #include "common.h"
 #include <memory>
 #include <tlhelp32.h>
@@ -297,7 +298,8 @@ int wmain(int argc, wchar_t** argv) {
             if (!TerminateProcess(process.value, 44) || WaitForSingleObject(process.value, 5000) != WAIT_OBJECT_0) throw WinError("emergency-stop");
             emit("{\"type\":\"emergency-stopped\"}"); return 0;
         }
-        if (argc != 11 || (std::wstring(argv[1]) != L"run" && std::wstring(argv[1]) != L"run-electron" && std::wstring(argv[1]) != L"run-sdk" && std::wstring(argv[1]) != L"run-sdk-node")) throw WinError("arguments", ERROR_INVALID_PARAMETER);
+        if (argc != 11 || (std::wstring(argv[1]) != L"run" && std::wstring(argv[1]) != L"run-registry-read" && std::wstring(argv[1]) != L"run-electron" && std::wstring(argv[1]) != L"run-sdk" && std::wstring(argv[1]) != L"run-sdk-node")) throw WinError("arguments", ERROR_INVALID_PARAMETER);
+        const bool registryRead = std::wstring(argv[1]) == L"run-registry-read";
         const bool node = std::wstring(argv[1]) == L"run-sdk-node";
         const bool sdk = node || std::wstring(argv[1]) == L"run-sdk";
         const bool electron = !node && (sdk || std::wstring(argv[1]) == L"run-electron");
@@ -308,8 +310,9 @@ int wmain(int argc, wchar_t** argv) {
         if (profile.compare(0, purpose.size(), purpose) != 0) throw WinError("profile-purpose", ERROR_INVALID_PARAMETER);
         for (int n = 5; n <= 9; ++n) if (boundedNumber(argv[n], 65535) == 0) throw WinError("port", ERROR_INVALID_PARAMETER);
         const std::wstring life(argv[10]);
+        if (registryRead && (mode != L"lpac" || (life != L"registry-once" && life != L"startup-child" && life != L"startup-no-inherit" && life != L"startup-winsock"))) throw WinError("registry-comparison-scope", ERROR_INVALID_PARAMETER);
         const bool primaryOnly = life == L"primary-once" || life == L"primary-hold" || life == L"primary-fail";
-        const bool startupDiagnostic = !electron && !node && (life == L"startup-child" || life == L"startup-no-inherit" || life == L"startup-winsock" || life == L"resource-once");
+        const bool startupDiagnostic = !electron && !node && (life == L"startup-child" || life == L"startup-no-inherit" || life == L"startup-winsock" || life == L"resource-once" || life == L"registry-once");
         if (!startupDiagnostic && life != L"once" && life != L"hold" && life != L"fail" && !(sdk && life == L"missing-binary") && !(!electron && !node && mode != L"lpac" && (life == L"network-once" || life == L"network-fail" || life == L"network-hold")) && !(primaryOnly && mode == L"lpac")) throw WinError("lifetime", ERROR_INVALID_PARAMETER);
         const std::wstring childLife = primaryOnly ? life.substr(8) : life;
         if (mode == L"ac" || mode == L"lpac") {
@@ -348,6 +351,8 @@ int wmain(int argc, wchar_t** argv) {
         if (sentinel.value == INVALID_HANDLE_VALUE || !SetHandleInformation(sentinel.value, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT)) throw WinError("sentinel");
         inherited[3] = sentinel.value;
         SECURITY_CAPABILITIES capabilities = {}; capabilities.AppContainerSid = sid; DWORD policy = PROCESS_CREATION_ALL_APPLICATION_PACKAGES_OPT_OUT;
+        RegistryReadCapability registryCapability;
+        if (registryRead) { registryCapability.derive(); capabilities.Capabilities = &registryCapability.entry; capabilities.CapabilityCount = 1; }
         AttributeList attributes(mode == L"lpac" ? 4 : mode == L"ac" ? 3 : 2);
         attributes.put(PROC_THREAD_ATTRIBUTE_HANDLE_LIST, inherited, (mode == L"control-inherit" ? 4 : 3) * sizeof(HANDLE));
         attributes.put(PROC_THREAD_ATTRIBUTE_JOB_LIST, &job.value, sizeof(job.value));
@@ -369,11 +374,12 @@ int wmain(int argc, wchar_t** argv) {
         if (sdk) { CloseHandle(workerWrite.value); workerWrite.value = nullptr; }
         BOOL inJob = FALSE; if (!IsProcessInJob(child.value, job.value, &inJob) || !inJob) throw WinError("job-membership");
         const auto view = inspectToken(child.value);
+        const auto exactCapabilities = inspectCapabilities(child.value); requireCapabilities(exactCapabilities, registryRead);
         const bool inheritedSentinel = sentinelInherited(child.value, sentinel.value);
         if (inheritedSentinel != (mode == L"control-inherit")) throw WinError("sentinel-inheritance", ERROR_ACCESS_DENIED);
-        if (sid && (!view.app || view.capabilities != 0 || view.integrity != SECURITY_MANDATORY_LOW_RID || (view.lpac >= 0 && view.lpac != (mode == L"lpac" ? 1 : 0)) || (view.lpac < 0 && view.lpacQueryError != ERROR_INVALID_PARAMETER))) throw WinError("child-token", ERROR_ACCESS_DENIED);
+        if (sid && (!view.app || view.capabilities != (registryRead ? 1u : 0u) || view.integrity != SECURITY_MANDATORY_LOW_RID || (view.lpac >= 0 && view.lpac != (mode == L"lpac" ? 1 : 0)) || (view.lpac < 0 && view.lpacQueryError != ERROR_INVALID_PARAMETER))) throw WinError("child-token", ERROR_ACCESS_DENIED);
         if (sid) { LPWSTR expected = nullptr; if (!ConvertSidToStringSidW(sid, &expected)) throw WinError("expected-sid"); bool same = view.sid == expected; LocalFree(expected); if (!same) throw WinError("child-identity", ERROR_ACCESS_DENIED); }
-        emit("{\"type\":\"launched\",\"requestedPolicy\":\"" + ascii(mode) + "\",\"aclsVerified\":true,\"sentinelInherited\":" + std::string(inheritedSentinel ? "true" : "false") + ",\"pid\":" + std::to_string(process.dwProcessId) + ",\"job\":true,\"appContainer\":" + (view.app ? "true" : "false") + ",\"lpac\":" + jsonFlag(view.lpac) + ",\"lpacQueryError\":" + std::to_string(view.lpacQueryError) + ",\"lpacQueryBytes\":" + std::to_string(view.lpacQueryBytes) + ",\"capabilities\":" + std::to_string(view.capabilities) + ",\"integrity\":" + std::to_string(view.integrity) + "}");
+        emit("{\"type\":\"launched\",\"requestedPolicy\":\"" + ascii(mode) + "\",\"aclsVerified\":true,\"sentinelInherited\":" + std::string(inheritedSentinel ? "true" : "false") + ",\"pid\":" + std::to_string(process.dwProcessId) + ",\"job\":true,\"appContainer\":" + (view.app ? "true" : "false") + ",\"lpac\":" + jsonFlag(view.lpac) + ",\"lpacQueryError\":" + std::to_string(view.lpacQueryError) + ",\"lpacQueryBytes\":" + std::to_string(view.lpacQueryBytes) + ",\"capabilitySids\":" + capabilityJson(exactCapabilities) + ",\"capabilityPolicy\":\"" + (registryRead ? "registryRead" : "none") + "\",\"capabilities\":" + std::to_string(view.capabilities) + ",\"integrity\":" + std::to_string(view.integrity) + "}");
         if (ResumeThread(thread.value) == static_cast<DWORD>(-1)) throw WinError("resume");
         const ULONGLONG deadline = GetTickCount64() + (sdk ? 60000 : 30000); bool ownerGone = false; DWORD inspected = 0; std::string pendingOutput; size_t outputBytes = 0;
         for (;;) {

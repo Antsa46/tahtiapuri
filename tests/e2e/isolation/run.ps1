@@ -1,4 +1,4 @@
-param([switch]$SkipBuild, [ValidateSet("native", "electron", "sdk", "pipe", "network", "etw", "startup", "resources")][string]$Probe = "native", [ValidateSet("electron", "official", "local-unpatched", "local-patched")][string]$SdkRuntime = "electron", [ValidateSet("normal", "error", "launcher-kill", "owner-kill")][string]$EtwCase = "normal")
+param([switch]$SkipBuild, [ValidateSet("native", "electron", "sdk", "pipe", "network", "etw", "startup", "resources", "registry", "registry-read", "startup-registry-read")][string]$Probe = "native", [ValidateSet("electron", "official", "local-unpatched", "local-patched")][string]$SdkRuntime = "electron", [ValidateSet("normal", "error", "launcher-kill", "owner-kill")][string]$EtwCase = "normal")
 $ErrorActionPreference = 'Stop'
 if ($Probe -ne 'etw' -and $EtwCase -ne 'normal') { throw 'EtwCase applies only to the ETW probe.' }
 if ($Probe -ne 'sdk' -and $SdkRuntime -ne 'electron') { throw 'SdkRuntime applies only to the SDK probe.' }
@@ -11,8 +11,10 @@ if (!$SkipBuild) {
 $tools = Get-Content -LiteralPath (Join-Path $projectRoot 'scripts/dev/toolchain.json') -Raw | ConvertFrom-Json
 $node = Join-Path $projectRoot ('.local/toolchain/node-v' + $tools.node.version + '-win-x64/node.exe')
 if (!(Test-Path -LiteralPath $node)) { throw 'The existing pinned project Node runtime is required. Nothing was installed.' }
-$entry = if ($Probe -eq 'resources') { 'run-resources.mjs' } elseif ($Probe -eq 'startup') { 'run-startup.mjs' } elseif ($Probe -eq 'pipe') { 'run-pipe.mjs' } elseif ($Probe -eq 'sdk') { 'run-sdk.mjs' } elseif ($Probe -eq 'electron') { 'run-electron.mjs' } else { 'run-synthetic.mjs' }
+$entry = if ($Probe -in @('resources','registry','registry-read')) { 'run-resources.mjs' } elseif ($Probe -in @('startup','startup-registry-read')) { 'run-startup.mjs' } elseif ($Probe -eq 'pipe') { 'run-pipe.mjs' } elseif ($Probe -eq 'sdk') { 'run-sdk.mjs' } elseif ($Probe -eq 'electron') { 'run-electron.mjs' } else { 'run-synthetic.mjs' }
 $nodeArguments = '"' + (Join-Path $PSScriptRoot $entry) + '"'
+if ($Probe -in @('registry-read','startup-registry-read')) { $nodeArguments += ' registry-read' }
+if ($Probe -eq 'registry') { $nodeArguments += ' registry' }
 if ($Probe -eq 'sdk') { $nodeArguments += ' ' + $SdkRuntime }
 if ($Probe -eq 'network') { $nodeArguments += ' observe-network' }
 if ($Probe -eq 'etw') { $nodeArguments += ' observe-etw ' + $EtwCase }

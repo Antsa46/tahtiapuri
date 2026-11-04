@@ -4,14 +4,16 @@ const uint=n=>Number.isSafeInteger(n)&&n>=0&&n<=0xffffffff;
 const pid=n=>uint(n)&&n>0;
 const one=(rows,type)=>{const found=rows.filter(r=>r.type===type);assert.equal(found.length,1,`Expected one ${type}`);return found[0];};
 function outcome(row){assert.equal(typeof row.ok,'boolean');assert(uint(row.code));assert.equal(row.ok,row.code===0);}
-export function validateResourceCase(result){
+export function validateResourceCase(result,{capabilityPolicy='none'}={}){
+  if(capabilityPolicy!=='none'||Object.hasOwn(result,'capabilityPolicy'))assert.equal(result.capabilityPolicy,capabilityPolicy);
   const {mode,records:rows}=result,restricted=['ac','lpac'].includes(mode);
   assert(['control','ac','lpac','control-inherit'].includes(mode));assert.equal(result.kind,'resource-once');
   assert(Array.isArray(rows)&&rows.length<=20&&!result.error);
   assert(rows.every(r=>['profile','network-identity','launched','token','resource-open','resource-dacl','resource-policy','resource-complete','finished','cleanup'].includes(r.type)));
   assert.equal(result.exit?.code,0);assert.equal(result.exit.signal,null);
   const launch=one(rows,'launched'),token=one(rows,'token'),done=one(rows,'resource-complete'),finished=one(rows,'finished');
-  validateStartupIdentity(launch,mode);validateStartupIdentity(token,mode);
+  if(capabilityPolicy==='registryRead')assert.equal(launch.capabilityPolicy,capabilityPolicy);
+  validateStartupIdentity(launch,mode,capabilityPolicy);validateStartupIdentity(token,mode,capabilityPolicy);
   assert.equal(launch.requestedPolicy,mode);assert.equal(launch.aclsVerified,true);assert.equal(launch.sentinelInherited,mode==='control-inherit');
   assert.equal(token.phase,'primary');assert.equal(token.pid,launch.pid);assert.equal(done.phase,'primary');assert.equal(done.observations,7);
   assert.equal(finished.exitCode,0);assert.equal(finished.activeProcesses,0);assert.equal(finished.ownerGone,false);
