@@ -13,11 +13,13 @@ import { validateNativeCase } from './native-case-validation.mjs';
 import { collect, bounded, until, alive, cleanupOwnedRun } from './process-harness.mjs';
 
 const observeEtw = process.argv[2] === 'observe-etw';
+const etwKind = process.argv[3] ?? 'normal';
+if (!['normal', 'error', 'launcher-kill', 'owner-kill'].includes(etwKind)) throw new Error('Unsupported ETW lifecycle.');
 const observeNetwork = observeEtw || process.argv[2] === 'observe-network';
 const validate = (...args) => validateNativeCase(...args, observeNetwork);
 const observationDirectory = observeEtw ? 'etw' : 'wfp';
 const stopRequest = observeEtw ? 'stop-etw.request' : 'stop-wfp.request';
-if (process.argv.length > (observeNetwork ? 3 : 2)) throw new Error('Unsupported probe arguments.');
+if (process.argv.length > (observeEtw ? 4 : observeNetwork ? 3 : 2) || (!observeNetwork && process.argv.length !== 2)) throw new Error('Unsupported probe arguments.');
 if (process.platform !== 'win32') throw new Error('This probe must run with native Windows Node.');
 const directory = dirname(fileURLToPath(import.meta.url));
 const root = resolve(directory, '../../..');
@@ -78,13 +80,14 @@ async function runCase(mode, kind, primaryOnly = false) {
   const servers = sharedServers ?? await endpoints();
   for (const key of Object.keys(servers.counts)) servers.counts[key] = 0;
   for (const key of Object.keys(servers.accepted)) servers.accepted[key] = 0;
-  const args = ['run', mode, profile, staged, ...servers.ports.map(String), `${primaryOnly ? 'primary-' : ''}${kind === 'normal' ? (observeNetwork ? 'network-once' : 'once') : kind === 'error' ? 'fail' : 'hold'}`];
+  const lifetime = kind === 'normal' ? 'once' : kind === 'error' ? 'fail' : 'hold';
+  const args = ['run', mode, profile, staged, ...servers.ports.map(String), `${primaryOnly ? 'primary-' : observeNetwork ? 'network-' : ''}${lifetime}`];
   const ownerCase = kind === 'owner-kill';
   const probeSha256 = createHash('sha256').update(await fs.readFile(join(staged, 'package/probe.exe'))).digest('hex');
   let observer;
   if (observeNetwork && mode === 'ac') {
     const powershell = join(process.env.SystemRoot, 'System32/WindowsPowerShell/v1.0/powershell.exe');
-    observer = spawn(powershell, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', join(directory, observeEtw ? 'start-etw-observer.ps1' : 'start-wfp-observer.ps1'), '-RunId', runRoot.split(/[\\/]/).at(-1), '-OwnerPid', String(process.pid), ...(observeEtw ? ['-Ports', servers.ports.slice(0, 4).join(','), '-OwnerImage', process.execPath] : [])], { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+    observer = spawn(powershell, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', join(directory, observeEtw ? 'start-etw-observer.ps1' : 'start-wfp-observer.ps1'), '-RunId', runRoot.split(/[\\/]/).at(-1), '-OwnerPid', String(process.pid), ...(observeEtw ? ['-Scenario', kind === 'normal' ? 'observe' : `observe-${kind}`, '-Ports', servers.ports.slice(0, 4).join(','), '-OwnerImage', process.execPath] : [])], { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
     const observation = collect(observer); observer.observation = observation;
     observation.exited.then(value => { observer.exitResult = value; });
     try {
@@ -108,20 +111,27 @@ async function runCase(mode, kind, primaryOnly = false) {
   const startedAt = new Date().toISOString();
   const child = spawn(ownerCase ? process.execPath : caseHost, ownerCase ? [join(directory, 'owner.mjs'), caseHost, ...args] : args, { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
   const report = collect(child);
-  const result = { startedAt, probeSha256, probeImage: join(staged, 'package/probe.exe'), endpoints: Object.fromEntries(['tcp4', 'tcp6', 'udp4', 'udp6'].map((name, index) => [name, servers.ports[index]])), mode, kind, primaryOnly, primaryDiagnosticPassed: false, cleanupPassed: false, passed: false, corePassed: false, profileIntent: profile, counts: servers.counts, accepted: servers.accepted, records: report.records };
+  const result = { startedAt, probeSha256, probeImage: join(staged, 'package/probe.exe'), driverPid: process.pid, launchedChildPid: child.pid, endpoints: Object.fromEntries(['tcp4', 'tcp6', 'udp4', 'udp6'].map((name, index) => [name, servers.ports[index]])), mode, kind, primaryOnly, primaryDiagnosticPassed: false, cleanupPassed: false, passed: false, corePassed: false, profileIntent: profile, counts: servers.counts, accepted: servers.accepted, records: report.records };
   let exit;
   try {
     if (kind === 'launcher-kill' || ownerCase) {
-      await until(() => { report.check(); return report.records.filter(row => row.type === 'ready').length >= (primaryOnly ? 1 : 2) || report.records.some(row => row.type === 'error' || row.type === 'probe-error'); });
+      await until(() => { report.check(); return (primaryOnly ? ['primary'] : ['primary', 'descendant']).every(phase => report.records.filter(row => row.type === 'ready' && row.phase === phase).length === 1) || report.records.some(row => row.type === 'error' || row.type === 'probe-error'); });
       assert(!report.records.some(row => row.type === 'error' || row.type === 'probe-error'));
       result.validation = validate(report.records, mode, servers.counts, servers.accepted, primaryOnly);
-      child.kill();
+      const targetAlive = child.exitCode === null && child.signalCode === null && alive(child.pid);
+      assert.equal(targetAlive, true, 'Termination target already exited.');
+      const requestedAtMs = Date.now();
+      const succeeded = child.kill('SIGTERM');
+      result.termination = { targetPid: child.pid, targetRole: ownerCase ? 'owner' : 'launcher',
+        requestedAtMs, signal: 'SIGTERM', succeeded, targetAliveBeforeRequest: targetAlive };
+      assert.equal(succeeded, true, 'Owned termination request failed.');
     }
     exit = await bounded(report.exited, 35000, 'Native launcher did not finish.');
     report.checkComplete();
-    const pids = report.records.filter(row => ['launched', 'token', 'descendant', 'owner-host', 'escaped'].includes(row.type)).map(row => row.pid);
+    const pids = [...new Set([child.pid, ...report.records.filter(row => ['launched', 'token', 'descendant', 'owner-host', 'escaped'].includes(row.type)).map(row => row.pid)])];
     assert(pids.length > 0, 'No owned process identity observed.');
     await until(() => pids.every(pid => !alive(pid)), 10000);
+    result.processExitObservation = { pids, allAbsent: true, checkedAtMs: Date.now(), beforeCleanup: true };
     if (kind === 'normal') { assert.equal(exit.code, 0); result.validation = validate(report.records, mode, servers.counts, servers.accepted, primaryOnly); }
     if (kind === 'error') { result.validation = validate(report.records, mode, servers.counts, servers.accepted, primaryOnly); assert.equal(exit.code, 1); assert.equal(report.records.find(row => row.type === 'finished')?.exitCode, 17); if (!primaryOnly) assert(report.records.some(row => row.type === 'descendant')); }
     if (ownerCase) assert(report.records.some(row => row.type === 'profile'));
@@ -173,7 +183,7 @@ async function waitForObserver(check, timeout) {
 try {
   if (observeNetwork) {
     sharedServers = await endpoints();
-    for (const mode of ['control', 'ac', 'control-inherit']) await runCase(mode, 'normal');
+    for (const mode of ['control', 'ac', 'control-inherit']) await runCase(mode, mode === 'ac' && observeEtw ? etwKind : 'normal');
   } else {
   for (const mode of ['control', 'control-inherit', 'ac', 'lpac']) await runCase(mode, 'normal');
   for (const kind of ['error', 'launcher-kill', 'owner-kill']) await runCase('ac', kind);
@@ -184,8 +194,8 @@ try {
       const isolated = completedCases[1];
       const evidence = await readEtwEvidence(runRoot, isolated.observerExit);
       Object.assign(summary, await finalizeEtwRun(completedCases, evidence, updated =>
-        fs.writeFile(join(runRoot, 'ac-normal/result.json'), `${JSON.stringify(updated, null, 2)}\n`)));
-      console.log(`ETW bound-loopback variation: verified ${summary.networkEvidence.attemptCount} attempts; full isolation remains unverified.`);
+        fs.writeFile(join(runRoot, `ac-${etwKind}/result.json`), `${JSON.stringify(updated, null, 2)}\n`)));
+      console.log(`ETW bound-loopback ${etwKind} variation: verified ${summary.networkEvidence.attemptCount} attempts; full isolation remains unverified.`);
     } catch (error) {
       summary.networkEvidence = { networkVerified: false, error: error.message };
     }

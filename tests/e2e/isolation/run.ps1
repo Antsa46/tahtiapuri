@@ -1,5 +1,6 @@
-param([switch]$SkipBuild, [ValidateSet("native", "electron", "sdk", "pipe", "network", "etw")][string]$Probe = "native", [ValidateSet("electron", "official", "local-unpatched", "local-patched")][string]$SdkRuntime = "electron")
+param([switch]$SkipBuild, [ValidateSet("native", "electron", "sdk", "pipe", "network", "etw")][string]$Probe = "native", [ValidateSet("electron", "official", "local-unpatched", "local-patched")][string]$SdkRuntime = "electron", [ValidateSet("normal", "error", "launcher-kill", "owner-kill")][string]$EtwCase = "normal")
 $ErrorActionPreference = 'Stop'
+if ($Probe -ne 'etw' -and $EtwCase -ne 'normal') { throw 'EtwCase applies only to the ETW probe.' }
 if ($Probe -ne 'sdk' -and $SdkRuntime -ne 'electron') { throw 'SdkRuntime applies only to the SDK probe.' }
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '../../..')).Path
 if (!$SkipBuild) {
@@ -14,7 +15,7 @@ $entry = if ($Probe -eq 'pipe') { 'run-pipe.mjs' } elseif ($Probe -eq 'sdk') { '
 $nodeArguments = '"' + (Join-Path $PSScriptRoot $entry) + '"'
 if ($Probe -eq 'sdk') { $nodeArguments += ' ' + $SdkRuntime }
 if ($Probe -eq 'network') { $nodeArguments += ' observe-network' }
-if ($Probe -eq 'etw') { $nodeArguments += ' observe-etw' }
+if ($Probe -eq 'etw') { $nodeArguments += ' observe-etw ' + $EtwCase }
 $run = Start-Process -FilePath $node -ArgumentList $nodeArguments -WorkingDirectory $projectRoot -NoNewWindow -PassThru
 $null=$run.Handle; $run.WaitForExit(); $run.Refresh()
 if ($run.ExitCode -ne 0) { throw 'Synthetic isolation probe failed. Read the ignored local artifacts.' }

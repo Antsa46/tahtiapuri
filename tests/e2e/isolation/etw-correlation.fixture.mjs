@@ -17,7 +17,7 @@ export function socketHex(family, port) {
   if (family === 4) b.set([127, 0, 0, 1], 4); else b[23] = 1;
   return b.toString('hex');
 }
-export function correlationFixture() {
+export function correlationFixture(kind = 'normal') {
   const endpoints = Object.fromEntries(names.map((name, i) => [name, 31001 + i]));
   const cases = ['control', 'ac', 'control-inherit'].map((mode, index) => {
     const restricted = mode === 'ac', start = base + index * 2000, pid = 100 + index * 10;
@@ -48,8 +48,22 @@ export function correlationFixture() {
       probeSha256: 'a'.repeat(64), endpoints: { ...endpoints }, records,
       startedAt: new Date(start).toISOString(), finishedAt: new Date(start + 1000).toISOString(), exit: { code: 0 },
       counts: Object.fromEntries(names.map(name => [name, restricted ? 0 : 2])), accepted: { tcp4: restricted ? 0 : 2, tcp6: restricted ? 0 : 2 },
-      cleanup: { passed: true, stopped: true, profileClean: true, errors: [], deletionAttempts: [{ attempt: 1, removed: true }] } };
+      cleanup: { passed: true, stopped: true, profileClean: true, errors: [], ...(restricted ? { teardown: { code: 0, signal: null, records: [{ type: 'cleanup', hresult: 0 }] } } : {}), deletionAttempts: [{ attempt: 1, removed: true }] } };
   });
+  if (kind !== 'normal') {
+    const c = cases[1]; c.kind = kind; c.driverPid = 90; c.launchedChildPid = 91;
+    c.processExitObservation = { pids: [91, 110, 111], allAbsent: true, beforeCleanup: true, checkedAtMs: base + 2950 };
+    if (kind === 'error') {
+      c.records.find(row => row.type === 'finished').exitCode = 17; c.exit = { code: 1, signal: null };
+      c.records.push({ type: 'ready', phase: 'descendant' });
+    } else {
+      c.records = c.records.filter(row => !['finished','cleanup'].includes(row.type));
+      c.records.push({ type: 'ready', phase: 'primary' }, { type: 'ready', phase: 'descendant' });
+      c.termination = { targetPid: 91, targetRole: kind === 'owner-kill' ? 'owner' : 'launcher', requestedAtMs: base + 2900, signal: 'SIGTERM', succeeded: true, targetAliveBeforeRequest: true };
+      c.exit = { code: null, signal: 'SIGTERM' };
+      if (kind === 'owner-kill') { c.records.push({ type: 'owner-host', pid: 92 }); c.processExitObservation.pids.push(92); }
+    }
+  }
   const events = cases[1].records.filter(r => r.type === 'network-detail').flatMap(d => {
     const family = d.name.endsWith('4') ? 4 : 6, filterId = String(family);
     const event = { kind: 'event', eventId: 1001, version: 2, atMs: d.startedAtMs + 10, timeSource: 'etw-header-system-time', payloadTimestampRaw: '0',

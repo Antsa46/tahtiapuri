@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { validateEtwReceipt } from './etw-observation.mjs';
 import { validateNativeCase } from './native-case-validation.mjs';
+import { validateEtwLifecycle } from './etw-lifecycle.mjs';
 import { validateFilterDescriptor } from './filter-descriptor.mjs';
 
 // Fixed Windows SDK identifiers, not names or IDs copied from a particular machine.
@@ -48,10 +49,9 @@ function socket(hex) {
   return { family: 6, address: '::1', port };
 }
 function caseAttempts(result, mode, endpoints) {
-  assert(result && result.mode === mode && result.kind === 'normal' && result.primaryOnly === false, 'Wrong case.');
+  assert(result && result.mode === mode && (mode === 'ac' || result.kind === 'normal') && result.primaryOnly === false, 'Wrong case.');
   for (const flag of ['corePassed', 'cleanupPassed']) assert.equal(result[flag], true, flag);
   assert(!result.error && !result.cleanupError && !result.expectedCompatibilityFailure, 'Failed case.');
-  assert.equal(result.exit?.code, 0, 'Unsuccessful launcher.');
   for (const flag of ['passed', 'stopped', 'profileClean']) assert.equal(result.cleanup?.[flag], true, `Cleanup ${flag}.`);
   assert.deepEqual(result.cleanup.errors, [], 'Cleanup error.');
   assert(!result.cleanup.emergency, 'Emergency cleanup is not normal lifecycle evidence.');
@@ -64,8 +64,8 @@ function caseAttempts(result, mode, endpoints) {
   const rows = result.records;
   assert(Array.isArray(rows) && rows.length <= 500, 'Unbounded case records.');
   validateNativeCase(rows, mode, result.counts, result.accepted, false, true);
-  const launched = record(rows, 'launched'), finished = record(rows, 'finished');
-  assert.equal(finished.exitCode, 0); assert.equal(finished.activeProcesses, 0); assert.equal(finished.ownerGone, false);
+  const launched = record(rows, 'launched');
+  validateEtwLifecycle(result);
   const identity = record(rows, 'network-identity'); assert.equal(identity.code, 0); pathText(identity.appIdHex);
   const descendant = record(rows, 'descendant');
   assert(integer(launched.pid, 0xffffffff) && integer(descendant.pid, 0xffffffff) && launched.pid !== descendant.pid, 'Invalid process identities.');
@@ -73,7 +73,6 @@ function caseAttempts(result, mode, endpoints) {
   const profile = restricted ? record(rows, 'profile') : null;
   if (restricted) {
     assert(typeof profile.sid === 'string' && /^S-1-15-2-(?:\d+-)*\d+$/.test(profile.sid), 'Missing package identity.');
-    assert.equal(record(rows, 'cleanup').hresult, 0, 'Native profile cleanup failed.');
   }
   assert.equal(rows.filter(row => row.type === 'token').length, 2, 'Unexpected token count.');
   assert.equal(rows.filter(row => row.type === 'network-detail').length, 8, 'Incomplete attempt matrix.');
@@ -161,7 +160,8 @@ export function correlateEtwNetwork(cases, evidence) {
   }
   assert(hits.every(eventsForAttempt => eventsForAttempt.length > 0), 'Missing drop for an attempt.');
   return {
-    scope: 'native-ac-bound-loopback-receive-v2', networkVerified: true, fullIsolationVerified: false,
+    scope: cases[1].kind === 'normal' ? 'native-ac-bound-loopback-receive-v2' : 'native-ac-bound-loopback-lifecycle-receive-v2',
+    lifecycleKind: cases[1].kind, lifecycleVerified: true, networkVerified: true, fullIsolationVerified: false,
     attemptCount: isolated.attempts.length, eventCount: events.length,
     attempts: isolated.attempts.map((attempt, i) => ({
       phase: attempt.phase, name: attempt.name, code: attempt.code,

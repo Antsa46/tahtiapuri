@@ -253,6 +253,83 @@ Automaation paikallinen näyttö:
   ei muutettu. `fullIsolationVerified=false` säilyi: tämä hyväksyy vain
   nimetyn loopback-variaation, ei alkuperäistä matriisia tai koko sovellusta.
 
+## Erilliset elinkaarivariaatiot
+
+Normaalin ajon rinnalle on rajattu kolme uutta koetapausta. Jokainen ajetaan
+omalla ajotunnisteella ja lyhyellä ETW-istunnolla: tavallinen kontrolli,
+yksi AC-tapaus ja tavallinen jälkikontrolli. Keruun aika- ja kokorajat,
+kiinteä provider sekä tapahtuma- ja päätepisterajaus säilyvät ennallaan.
+Kerääjän skenaario valitsee vain yhden ennalta nimetyn koepolun; se ei
+vastaanota vapaata tiedostopolkua eikä käynnistä koepäätettä korotettuna.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\e2e\isolation\run.ps1 -Probe etw -EtwCase error
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\e2e\isolation\run.ps1 -Probe etw -EtwCase launcher-kill -SkipBuild
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\e2e\isolation\run.ps1 -Probe etw -EtwCase owner-kill -SkipBuild
+```
+
+`SkipBuild` soveltuu vain jo käännettyyn nykyiseen lähteeseen. Jokainen ajo
+pyytää erikseen Windows-vahvistuksen vain tapahtumalukijalle.
+
+| Tapaus | Vaadittava lisänäyttö |
+| --- | --- |
+| `error` | Koepääte odottaa jälkeläisen mittausten valmistumista ja päättyy tarkoituksella koodiin 17. Hostin exit on 1, Job tyhjä ja natiivi profiilisiivous onnistunut. |
+| `launcher-kill` | Ajuri päättää vain oman host-lapsensa molempien koevaiheiden valmistuttua. Kohteen, pääprosessin ja jälkeläisen poistuminen mitataan ennen korjaavaa siivousta. |
+| `owner-kill` | Ajuri päättää vain erillisen väliomistajan. Pääajuri, vertailupalvelimet ja keruun valvonta säilyvät; väliomistajan, hostin ja molempien koepäätteiden poistuminen mitataan. |
+
+Tappokohde sidotaan todelliseen spawn-PID:hen ja rooliin. Ajuri varmistaa,
+että kohde elää, kirjaa pyynnön ajan ja onnistumisen sekä saman lapsiolion
+close-kuitin. Molempien eri koevaiheiden valmius ja kaikki kahdeksan
+verkkoyritystä edeltävät tappoa. Poistumishavainnon PID-joukon pitää vastata
+kaikkia odotettuja prosesseja; hätäsiivous, puuttuva prosessi tai odottamaton
+exit hylkäävät näytön. Profiilin erillinen poistokuitti vaaditaan.
+
+Väliomistajan mukana katkeaa hostin raportointiputki. Prosessien todettu
+poistuminen ei yksin todista hostin tietyn EOF-haaran suorittamista.
+Verkkonäyttö koskee ennen hallittua virhettä tai tappoa valmistuneita
+synteettisiä yrityksiä ja niiden jälkeistä siivousta; se ei kata tappohetken
+kilpailutilanteita tai sovelluksen uudelleenkäynnistystä.
+
+Uusien tapausten hyväksyntäraja on
+`native-ac-bound-loopback-lifecycle-receive-v2`, ja raportti nimeää
+`lifecycleKind`-arvon. `fullIsolationVerified=false` ja
+`originalMatrixRun=false` säilyvät. Alkuperäisiä tallenteita ei päivitetä.
+LPAC:n käynnistysongelmat, ulkoinen verkko ja täysi sovelluspaketti jäävät
+omiksi avoimiksi vaatimuksikseen. Tallennetun ajon lukutoistoon annetaan
+sama tapaus toisena argumenttina: `replay-etw.mjs <ajon-UUID> error`.
+
+### Elinkaarivariaatioiden mitattu tulos
+
+Kolme erillistä liveajoa läpäisi: `error`, `launcher-kill` ja `owner-kill`.
+Kussakin kontrolli, AC-tapaus ja jälkikontrolli hyväksyttiin; koko kolmikon
+exit oli 0. Error-tapauksen odotettu host-exit 1 ja koepäätteen exit 17
+eivät ole koko koesarjan epäonnistumisia.
+
+- Jokaisessa ajossa 12 Windows-pudotusta yhdistyi kaikkiin kahdeksaan
+  verkkoyritykseen. Kontrollit saivat 16 echo-vastausta ja AC:n vastaanotto-
+  ja hyväksyntälaskurit jäivät nollaan. Yhteensä näyttö kattaa 24 yritystä,
+  36 pudotusta ja 48 kontrollivastausta.
+- Error-tapauksessa jälkeläisen valmiuskuitti edelsi päättymistä. Tarkastuksessa
+  löytynyt ajoituskilpailu korjattiin ennen liveä: sidotun virhevariaation
+  kuitti kirjoitetaan ennen parentille näkyvää valmiusmerkkiä.
+- Käynnistäjän ja väliomistajan tappokohde, elossaolo, onnistunut pyyntö
+  ja odotettu close-kuitti täsmäsivät. Molemmat verkkovaiheet valmistuivat
+  ennen tappoa. Kolmen tai neljän roolikohtaisen prosessin poistuminen
+  varmistettiin ennen korjaavaa siivousta; hätäterminointia ei tarvittu.
+- Kaikkien yhdeksän tapauksen oma staged-aineisto poistui. Kaikki kolme
+  ETW-istuntoa poistuivat, kerääjät ja vahdit päättyivät koodiin 0, hävikit
+  ja callback-virheet olivat nolla ja luetut asetukset säilyivät ennallaan.
+- 168 kohdistettua paikallista testiä, 13 natiivia osoitetarkistusta sekä
+  muutettujen JavaScript- ja PowerShell-tiedostojen syntaksitarkistukset
+  läpäisivät. Natiivikäännös läpäisi `/W4 /WX`. Aiemman normaalin liveajon
+  tallennetoisto läpäisi uudella tulkinnalla muuttamatta alkuperäisiä tiedostoja.
+
+Näyttö koskee vain näitä sidottujen loopback-päätepisteiden variaatioita.
+Alkuperäistä AC-/LPAC-matriisia ei ajettu uudelleen, eikä vanhoja tuloksia
+merkitty jälkikäteen hyväksytyiksi. LPAC:n Winsock-alustus ja jälkeläisen
+käynnistyminen tarvitsevat erillisen diagnoosin. Koko sovelluksen, ulkoisen
+verkon ja CPU/GPU-paketin näyttö pysyy avoinna; #24 ja parent #10 eivät sulkeudu.
+
 ## Lähteet
 
 - [WFP:n sovelluseristyksen alikerros](https://learn.microsoft.com/en-us/windows/win32/fwp/management-filtering-sublayer-identifiers)

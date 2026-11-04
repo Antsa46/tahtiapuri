@@ -165,6 +165,13 @@ static void createOutput(const Run& run) {
     PSECURITY_DESCRIPTOR security = nullptr; if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(dacl.c_str(), SDDL_REVISION_1, &security, nullptr)) throw WinError("output-dacl");
     SECURITY_ATTRIBUTES attr = { sizeof(attr), security, FALSE }; const BOOL made = CreateDirectoryW(run.output.c_str(), &attr); const DWORD code = made ? 0 : GetLastError(); LocalFree(security); if (!made) throw WinError("output-create", code);
 }
+static std::wstring observedCase(const std::wstring& scenario) {
+    if (scenario == L"observe") return L"ac-normal";
+    if (scenario == L"observe-error") return L"ac-error";
+    if (scenario == L"observe-launcher-kill") return L"ac-launcher-kill";
+    if (scenario == L"observe-owner-kill") return L"ac-owner-kill";
+    return L"";
+}
 static int observe(const Run& run, DWORD ownerPid, const std::wstring& scenario, const std::array<unsigned short, 4>& ports, const std::wstring& expectedOwner) {
     createOutput(run); Handle directory(CreateFileW(run.output.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
     if (directory.value == INVALID_HANDLE_VALUE) throw WinError("output-lock");
@@ -185,15 +192,17 @@ static int observe(const Run& run, DWORD ownerPid, const std::wstring& scenario,
         DWORD code = FwpmEngineOpen0(nullptr, RPC_C_AUTHN_WINNT, nullptr, &engineSession, &engine.value); if (code) throw WinError("engine-open", code);
         const auto beforeCollect = option(engine.value, FWPM_ENGINE_COLLECT_NET_EVENTS), beforeKeywords = option(engine.value, FWPM_ENGINE_NET_EVENT_MATCH_ANY_KEYWORDS);
         log.line("{\"kind\":\"baseline\",\"collect\":" + std::to_string(beforeCollect) + ",\"keywords\":\"" + std::to_string(beforeKeywords) + "\"}");
-        Blob app; code = FwpmGetAppIdFromFileName0((run.root + L"\\ac-normal\\staged\\package\\probe.exe").c_str(), &app.value); if (code) throw WinError("app-id", code);
+        const auto caseName = observedCase(scenario);
+        const auto probeImage = run.root + L"\\" + (caseName.empty() ? L"ac-normal" : caseName) + L"\\staged\\package\\probe.exe";
+        Blob app; code = FwpmGetAppIdFromFileName0(probeImage.c_str(), &app.value); if (code) throw WinError("app-id", code);
         if (!app.value || app.value->size < 2 || app.value->size % 2) throw WinError("app-shape", ERROR_INVALID_DATA);
         context.app = std::wstring(reinterpret_cast<wchar_t*>(app.value->data), app.value->size/2-1);
-        context.dosApp = run.root + L"\\ac-normal\\staged\\package\\probe.exe";
+        context.dosApp = probeImage;
         context.canonicalAppId = hex(app.value->data, app.value->size); context.ports = ports;
         std::vector<wchar_t> ownerImage(32768); DWORD ownerLength = static_cast<DWORD>(ownerImage.size());
         if (!QueryFullProcessImageNameW(owner.value, 0, ownerImage.data(), &ownerLength)) throw WinError("owner-image");
         context.ownerDosApp.assign(ownerImage.data(), ownerLength);
-        if (scenario == L"observe" && _wcsicmp(context.ownerDosApp.c_str(), expectedOwner.c_str()) != 0) throw WinError("owner-image-mismatch", ERROR_INVALID_DATA);
+        if (!caseName.empty() && _wcsicmp(context.ownerDosApp.c_str(), expectedOwner.c_str()) != 0) throw WinError("owner-image-mismatch", ERROR_INVALID_DATA);
         Blob ownerApp; code = FwpmGetAppIdFromFileName0(context.ownerDosApp.c_str(), &ownerApp.value); if (code) throw WinError("owner-app-id", code);
         if (!ownerApp.value || ownerApp.value->size < 2 || ownerApp.value->size % 2) throw WinError("owner-app-shape", ERROR_INVALID_DATA);
         context.ownerApp.assign(reinterpret_cast<wchar_t*>(ownerApp.value->data), ownerApp.value->size/2-1);
@@ -245,9 +254,9 @@ int wmain(int argc, wchar_t** argv) {
         if (argc == 2 && std::wstring(argv[1]) == L"selftest-endpoints") { checkEndpoints(); return 0; }
         if (argc != 4 && argc != 5 && argc != 6) return 64; const Run run(argv[1]); const auto pid = boundedNumber(argv[2], MAXDWORD); const std::wstring mode(argv[3]);
         if (mode == L"guard") return guard(run, pid);
-        if (mode != L"observe" && mode != L"selftest-stop" && mode != L"selftest-crash") return 64;
+        if (observedCase(mode).empty() && mode != L"selftest-stop" && mode != L"selftest-crash") return 64;
         std::array<unsigned short, 4> ports = {};
-        if (mode == L"observe") {
+        if (!observedCase(mode).empty()) {
             if (argc != 6) return 64; const std::wstring values(argv[4]); size_t offset = 0;
             for (size_t i = 0; i < ports.size(); ++i) {
                 const auto end = values.find(L',', offset);

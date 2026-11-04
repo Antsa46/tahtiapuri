@@ -96,7 +96,8 @@ int wmain(int argc, wchar_t** argv) {
     try {
         if (argc != 10) throw WinError("probe-arguments", ERROR_INVALID_PARAMETER);
         const std::wstring root(argv[1]); std::wstring life(argv[7]); phase = ascii(argv[9]);
-        const bool bindLoopback = life == L"network-once"; if (bindLoopback) life = L"once";
+        const bool bindLoopback = life == L"network-once" || life == L"network-fail" || life == L"network-hold";
+        if (bindLoopback) life = life.substr(8);
         const bool primaryOnly = phase == "primary-only"; if (primaryOnly) phase = "primary";
         if (phase != "primary" && phase != "descendant") throw WinError("probe-phase", ERROR_INVALID_PARAMETER);
         const auto view = inspectToken(GetCurrentProcess()); BOOL inJob = FALSE;
@@ -160,11 +161,15 @@ int wmain(int argc, wchar_t** argv) {
             if (life != L"hold") { DWORD code = 1; if (!GetExitCodeProcess(process.value, &code) || code != 0) throw WinError("descendant-code", code); }
         }
         if (life == L"fail" && primaryOnly) return 17;
+        // In the observed error variation, publish the pipe receipt before the
+        // marker lets the parent exit and the Job terminate this descendant.
+        const bool reportBeforeMarker = bindLoopback && life == L"fail" && phase == "descendant";
+        if (reportBeforeMarker) emit("{\"type\":\"ready\",\"phase\":\"" + phase + "\"}");
         if (life == L"fail" && phase == "descendant") {
             Handle ready(CreateFileW((root + L"\\scratch\\descendant.ready").c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_NEW, 0, nullptr));
             if (ready.value == INVALID_HANDLE_VALUE) throw WinError("failure-ready");
         }
-        emit("{\"type\":\"ready\",\"phase\":\"" + phase + "\"}");
+        if (!reportBeforeMarker) emit("{\"type\":\"ready\",\"phase\":\"" + phase + "\"}");
         if (life == L"hold" || (life == L"fail" && phase == "descendant")) Sleep(INFINITE);
         return 0;
     } catch (const WinError& error) { try { emit("{\"type\":\"probe-error\",\"phase\":\"" + phase + "\",\"stage\":\"" + std::string(error.what()) + "\",\"code\":" + std::to_string(error.code) + "}"); } catch (...) {} }
