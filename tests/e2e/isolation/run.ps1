@@ -3,6 +3,11 @@ $ErrorActionPreference = 'Stop'
 if ($Probe -notin @('etw','etw-lpac','etw-lpac-socket') -and $EtwCase -ne 'normal') { throw 'EtwCase applies only to the ETW probe.' }
 if ($Probe -notin @('sdk','sdk-lpac') -and $SdkRuntime -ne 'electron') { throw 'SdkRuntime applies only to the SDK probe.' }
 if ($Probe -eq 'sdk-lpac' -and $SdkRuntime -ne 'local-patched') { throw 'The named SDK candidate requires the existing local-patched runtime.' }
+if ($Probe -eq 'model') {
+  if (!$SkipBuild) { throw 'Build the reviewed native host separately with bounded resources before the model experiment.' }
+  & (Join-Path $PSScriptRoot 'run-model-limited.ps1')
+  return
+}
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '../../..')).Path
 if (!$SkipBuild) {
   $build = Start-Process -FilePath (Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe') -ArgumentList ('-NoProfile -ExecutionPolicy Bypass -File "' + (Join-Path $PSScriptRoot 'build.ps1') + '"') -NoNewWindow -PassThru
@@ -12,7 +17,7 @@ if (!$SkipBuild) {
 $tools = Get-Content -LiteralPath (Join-Path $projectRoot 'scripts/dev/toolchain.json') -Raw | ConvertFrom-Json
 $node = Join-Path $projectRoot ('.local/toolchain/node-v' + $tools.node.version + '-win-x64/node.exe')
 if (!(Test-Path -LiteralPath $node)) { throw 'The existing pinned project Node runtime is required. Nothing was installed.' }
-$entry = if ($Probe -eq 'model') { 'run-model.mjs' } elseif ($Probe -in @('resources','registry','registry-read')) { 'run-resources.mjs' } elseif ($Probe -in @('startup','startup-registry-read')) { 'run-startup.mjs' } elseif ($Probe -eq 'pipe') { 'run-pipe.mjs' } elseif ($Probe -in @('sdk','sdk-lpac')) { 'run-sdk.mjs' } elseif ($Probe -eq 'electron') { 'run-electron.mjs' } else { 'run-synthetic.mjs' }
+$entry = if ($Probe -in @('resources','registry','registry-read')) { 'run-resources.mjs' } elseif ($Probe -in @('startup','startup-registry-read')) { 'run-startup.mjs' } elseif ($Probe -eq 'pipe') { 'run-pipe.mjs' } elseif ($Probe -in @('sdk','sdk-lpac')) { 'run-sdk.mjs' } elseif ($Probe -eq 'electron') { 'run-electron.mjs' } else { 'run-synthetic.mjs' }
 $nodeArguments = '"' + (Join-Path $PSScriptRoot $entry) + '"'
 if ($Probe -in @('registry-read','startup-registry-read')) { $nodeArguments += ' registry-read' }
 if ($Probe -eq 'registry') { $nodeArguments += ' registry' }

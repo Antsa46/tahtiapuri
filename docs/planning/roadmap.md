@@ -120,8 +120,9 @@ T09d (#27) vertaa saman korjatun Noden SDK-polun kontrollia, AC:ta ja
 nimettyä LPAC + registryRead -profiilia ennen varsinaista mallilatausta.
 [SDK-kokeen jatkosopimus](../experiments/sdk-isolation-probe.md#t09d-nimetty-lpac-sdk-koe)
 erottaa sen verkon, GGUF:n ja koko sovelluksen näytöstä.
-T09e (#28) jatkaa [oikean 4B-painon rajattuun CPU-lataukseen](../experiments/model-isolation-probe.md),
-ennen kontekstia, generointia tai GPU- ja sovelluspakettinäyttöä.
+T09e (#28) todensi [oikean 4B-painon rajatun CPU-latauksen](../experiments/model-isolation-probe.md)
+kuudessa kontrolli-/LPAC-tapauksessa. Konteksti, generointi, GPU ja
+sovelluspaketin oikeusrajat säilyvät erillisinä jatkoportteina.
 
 T15 rakentaa lopullisen asentimen, ja T16 toistaa oikeusrajojen
 hyväksymisnäytön lopullisella toimitettavalla kokoonpanolla.

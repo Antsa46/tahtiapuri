@@ -1,9 +1,10 @@
 # Rajattu 4B-mallin CPU-lataus eristyksessä
 
 T09e / #28 jatkaa parentia #10 ja [SDK:n LPAC-koetta](sdk-isolation-probe.md#t09d-nimetty-lpac-sdk-koe).
-Tila: lähdekoodi, kevyt validointinäyttö ja koesuunnitelma valmisteltavana.
-Natiivikäännös, painotiedoston käsittely ja todellinen malliajo ovat erillinen
-jatkovaihe. Ajamatonta koetta ei tulkita läpäisseeksi.
+Tila: rajattu oikean 4B-mallin CPU-latauskoe on ajettu 4.11.2026.
+Kontrollin ja nimetyn LPAC + registryRead -profiilin kaikki kuusi tapausta
+läpäisivät. Tulos koskee tätä koepakettia; koko sovelluksen eristys ja
+alla erotetut jatkoportit eivät valmistu tämän näytön perusteella.
 
 ## Tavoite ja kiinteä kokoonpano
 
@@ -103,12 +104,17 @@ hostin käännöksen jälkeen; se ei lue GGUF:ää tai luo onnistuvaa malliprose
 
 Varsinainen ajo tehdään vain tämän lähdeversion käännetyllä ja
 katselmoidulla hostilla, kun koeympäristön kuormarajoitus sallii sen.
-Ennen komentoa tarvitaan erillinen kehityskäynnistin, joka asettaa ja
-varmistaa valmisteluajurin BelowNormal-prioriteetin ja yhden suorittimen
-affiniteetin. Alla oleva run.ps1-komento ei yksin toteuta ajurin rajausta:
+Rajattu `run-model-limited.ps1` asettaa oman lyhytikäisen prosessinsa
+BelowNormal-prioriteetin ja yhden suorittimen affiniteetin ennen Node-ajurin
+käynnistämistä. Ajuri lukee oman PIDinsä todelliset Windows-arvot takaisin
+ennen hakemistojen tai painojen valmistelua, ennen jokaista tapausta ja
+ennen lopun painotarkistusta. Väärä tai puuttuva raja pysäyttää raskaan työn.
+`-CheckOnly` varmentaa saman portin ilman koepakettia tai mallipainoja.
+Suora rajoittamaton Node-kutsu hylätään ennen runRootin luontia.
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\e2e\isolation\run.ps1 -Probe model -SkipBuild
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\e2e\isolation\run-model-limited.ps1 -CheckOnly
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\e2e\isolation\run-model-limited.ps1
 ```
 
 Komento käsittelee usean gigatavun painoa. Se ei kuulu tavalliseen testiajoon.
@@ -121,3 +127,53 @@ Raakatulokset säilyvät ohitetussa `.artifacts/tests/isolation/model-runs/`-
 puussa. Julkinen laadullinen tulos, tehdyt tarkistukset, ajamattomat kohdat
 ja tokeniseuranta kirjataan issueen #28. Parentin #10 verkko-/FMI-, GPU-,
 MCP- ja koko sovelluspaketin hyväksymisehdot säilyvät erillisinä.
+
+
+## Mitattu tulos
+
+| Tapaus | Kontrolli | LPAC + registryRead |
+| --- | --- | --- |
+| Oikea lataus ja normaali vapautus | Läpäisi | Läpäisi |
+| Puuttuva malli, SDK:n ENOENT ja hallittu sulku | Läpäisi | Läpäisi |
+| Omistajan poistuminen mallin ollessa ladattuna | Läpäisi | Läpäisi |
+
+Kaikissa kuudessa tapauksessa valmisteluajurin kuormarajat ja malliprosessin
+Job-rajat varmennettiin. Neljä todellista mallilatausta tarkisti koko painon
+SHA-256:n pidetyn pin-kahvan aikana ja käytti vocabOnly=false-asetusta.
+Metadata, chat-template, GPU-kerrosten nolla ja mmap varmennettiin.
+Normaalipolkujen model- ja llama-dispose sekä puuttuvan painon täsmällinen
+ENOENT toimivat. Omistajan sulkeminen tapahtui vasta model-loaded/hold-näytön jälkeen.
+
+Kontrollin kaikki seitsemän tiedosto-operaatiota onnistuivat. LPAC:n paketin
+luku ja scratch-kirjoitus onnistuivat, viisi muuta operaatiota estyi EPERM:llä.
+Tähän sisältyvät erillisen painofixturen kirjoitus ja AAP-only-fixturen luku.
+Hostin lukituskokeen write/delete-estot olivat erikseen sharing violation 32.
+
+Omien prosessien ja konsolien poistuminen todettiin ennen korjaavaa siivousta.
+Kaikki kuusi siivousta onnistuivat ilman hätätoimia; profiilit, staged-puut
+ja yhteinen template poistuivat. Alkuperäisen painon SHA-256, koko,
+tiedostoidentiteetti ja muokkausaika säilyivät. Kontrollin omistajansulkutapauksessa
+tilapäisen tiedostonpoiston ensimmäinen yritys sai EPERM:n; rajattu uusinta
+onnistui. Prosessit olivat jo poistuneet ennen tiedostonpoistoyrityksiä.
+Ensimmäinen virhe säilyy paikallisessa tuloksessa; sen syytä ei yksilöity.
+
+Host käännettiin varoitukset virheiksi käsittelevillä asetuksilla. Kaikki
+18 kielteistä käynnistystapausta ja 588 kevyttä yksikkö-/rajatestiä läpäisivät.
+CheckOnly varmisti rajatun ajurin; rajoittamaton ajuri hylättiin ennen
+painovalmistelua. Kummankaan tarkistuksen aikana ei syntynyt mallikoepuuta.
+Lähde- ja binääriversiot sekä kuuden tapauksen raakatulokset on sidottu
+tarkistein paikalliseen tarkistusraporttiin. Julkinen loppuraportti,
+riippumaton katselmus ja tokeniseuranta kuuluvat issueen #28.
+
+### Näytön rajat
+
+Suora LPAC-tokenkysely palautti edelleen null / virhe 87 / tavumäärä 0,
+ei true-arvoa. Nimetyssä profiilissa tarkistettiin käynnistysasetuksen lisäksi
+paketti-identiteetti, tarkka registryRead-capabilityjoukko, low integrity
+sekä kontrollista poikkeava AAP-lukuesto. Tämä aiemmasta SDK-kokeesta tuttu
+kyselyraja säilyy näkyvissä eikä sitä tulkita onnistuneeksi tokenlipun luvuksi.
+
+Koe ei luonut keskustelukontekstia, generoinut tekstiä tai käyttänyt GPU:ta
+ja verkkoa. Se ei valitse registryReadia, jaettua koekonsolia tai korjattua
+omaa Node-runtimea tuotantoratkaisuksi. Parentin #10 FMI-, GPU-, MCP-,
+Electron-toimitus- ja koko minipaketin hyväksymisportit pysyvät avoimina.

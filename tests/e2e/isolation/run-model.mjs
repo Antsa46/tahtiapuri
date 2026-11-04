@@ -10,12 +10,15 @@ import {validateRuntimeProfile} from './sdk-runtime.mjs';
 import {modelProfile} from './model-contract.mjs';
 import {validateModelProgress,modelProcessIds,validateModelLifecycle} from './model-results.mjs';
 import {collect,bounded,until,alive,cleanupOwnedRun} from './process-harness.mjs';
-assert(process.platform==='win32'&&process.argv.length===2);
+import {verifyPreparationLimits} from './model-load-limits.mjs';
+assert(process.platform==='win32'&&(process.argv.length===2||(process.argv.length===3&&process.argv[2]==='--check-limits')));
+const preparationLimits=verifyPreparationLimits();
+if(process.argv[2]==='--check-limits'){console.log(JSON.stringify({passed:true,preparationLimits}));process.exit(0);}
 const directory=dirname(fileURLToPath(import.meta.url)),root=resolve(directory,'../../..');
 const output=join(root,'.artifacts/tests/isolation'),host=join(output,'native/bin/host.exe');
 const runRoot=join(output,'model-runs',randomUUID()),template=join(runRoot,'template');
 const source=join(root,'.local/models/Qwen3-4B-Q4_K_M.gguf');
-const summary={schema:1,scope:'4b-cpu-load-only',cases:[],passed:false,unrunCases:[],generation:false,gpu:false};
+const summary={schema:1,scope:'4b-cpu-load-only',preparationLimits,cases:[],passed:false,unrunCases:[],generation:false,gpu:false};
 const matrix=['control','lpac'].flatMap(mode=>['normal','missing-model','owner-loaded'].map(kind=>({mode,kind})));
 let runtime,bindingSha256,original;
 async function prepare(){
@@ -39,6 +42,7 @@ async function prepare(){
  summary.scriptHashes={};for(const name of ['model-probe.mjs','model-contract.mjs','sdk-runtime.mjs']){await fs.copyFile(join(directory,name),join(template,name),constants.COPYFILE_EXCL);summary.scriptHashes[name]=await sha256(join(template,name));}
 }
 async function runCase(mode,kind){
+ const caseLimits=verifyPreparationLimits();
  assert(freemem()>=6*1024**3,'Insufficient available memory; no further model launched.');
  const profile=`tahtiapuri.t09e.${randomUUID().replaceAll('-','')}`,caseRoot=join(runRoot,`${mode}-${kind}`),staged=join(caseRoot,'staged');
  await fs.mkdir(caseRoot);await fs.mkdir(staged);
@@ -61,7 +65,7 @@ async function runCase(mode,kind){
  const caseHost=join(staged,'launcher/host.exe');
  const args=['run-model-candidate',mode,profile,staged,'1','1','1','1','1',kind==='normal'?'once':kind==='owner-loaded'?'hold':'missing-model'];
  const owner=kind==='owner-loaded',child=spawn(owner?process.execPath:caseHost,owner?[join(directory,'owner.mjs'),caseHost,...args]:args,{stdio:['pipe','pipe','pipe'],windowsHide:true});
- const report=collect(child,{workerEnvelope:true});const result={mode,kind,profileIntent:profile,driverPid:process.pid,launchedChildPid:child.pid,startedAtMs:Date.now(),records:report.records,passed:false};
+ const report=collect(child,{workerEnvelope:true});const result={mode,kind,preparationLimits:caseLimits,profileIntent:profile,driverPid:process.pid,launchedChildPid:child.pid,startedAtMs:Date.now(),records:report.records,passed:false};
  try{
   if(owner){
    await until(()=>{report.check();return report.records.some(x=>['model-held','model-error','error','finished'].includes(x.type));},115000);
@@ -84,7 +88,7 @@ catch(error){summary.error=error.stack;process.exitCode=1;}
 finally{
  summary.unrunCases=matrix.filter(c=>!summary.cases.some(r=>r.mode===c.mode&&r.kind===c.kind));
  try{
-  if(original){const after=await fs.lstat(source);const digest=await sha256(source);assert.equal(digest,modelProfile.sha256);assert.equal(after.ino,original.ino);assert.equal(after.size,original.size);assert.equal(after.mtimeMs,original.mtimeMs);summary.sourceUnchanged=true;}
+  if(original){verifyPreparationLimits();const after=await fs.lstat(source);const digest=await sha256(source);assert.equal(digest,modelProfile.sha256);assert.equal(after.ino,original.ino);assert.equal(after.size,original.size);assert.equal(after.mtimeMs,original.mtimeMs);summary.sourceUnchanged=true;}
  }catch(error){summary.finalizationError=error.stack;summary.passed=false;process.exitCode=1;}
  try{await fs.rm(template,{recursive:true,force:true});}
  catch(error){summary.templateCleanupError=error.stack;summary.passed=false;process.exitCode=1;}
