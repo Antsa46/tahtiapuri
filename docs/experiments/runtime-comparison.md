@@ -96,21 +96,34 @@ riippuvuuden kehittämistä tai testaamista. Tässä muutetaan ja testataan
 libuvia, joten pelkkää riippuvuuden kääntämistä koskevaa poikkeusta ei käytetä
 lisenssiperusteena. Mahdollisen organisaatiokäytön ehdot arvioidaan erikseen.
 
-Molempien paikallisten varianttien käännöskomento on sama:
+Molemmat paikalliset variantit valmistellaan ja rakennetaan samalla tavalla.
+Projektit generoidaan ensin ilman käännöstä, minkä jälkeen rakennetaan vain
+Node-kohde:
 
 ```text
-vcbuild.bat release projgen x64 vs2022 clang-cl openssl-no-asm nonpm nocorepack no-cctest
+vcbuild.bat release projgen x64 vs2022 clang-cl openssl-no-asm nonpm nocorepack no-cctest nobuild
+msbuild node.sln /t:node /p:Configuration=Release /p:Platform=x64 /m:1 /nodeReuse:false /p:MultiProcMaxCount=1 /p:EnforceProcessCountAcrossBuilds=true /p:UseMultiToolTask=true
 ```
 
-Käännösprosessissa `NUMBER_OF_PROCESSORS=2` ja
-`msbuild_args=/m:1 /nodeReuse:false /p:MultiProcMaxCount=2
-/p:EnforceProcessCountAcrossBuilds=true /p:UseMultiToolTask=true` rajaavat kuormaa.
+Suora Node-kohteen valinta välttää tämän lähdeversion `release`-option
+aktivoimat ylimääräiset C++-testikohteet. Konfigurointi säilyy upstreamin
+vcbuild-skriptillä; sen lähdettä ei muuteta. Aiempi keskeytynyt valmistelu
+käytti koko ratkaisun käännöstä ja kahden kääntäjän rajaa. Se ei tuottanut
+hyväksyttyä paikallista vertailubinääriä.
+
+Käännös rajataan yhteen MSBuild-työntekijään ja yhteen kääntäjään.
 Raja asetetaan MSBuild-ominaisuutena, koska Visual Studion ympäristö voi
-korvata pelkän NUMBER_OF_PROCESSORS-arvon. PATH ja PATHEXT
-asetetaan vain tätä prosessia varten. `release` ottaa tässä lähdeversiossa
-käyttöön myös `--with-ltcg`-option. `openssl-no-asm` välttää erillisen NASM-
-työkalun; omat koebinäärit eivät siksi vastaa virallisen julkaisun optimointeja.
-Tämä ero on molemmille paikallisille varianteille yhteinen.
+korvata pelkän NUMBER_OF_PROCESSORS-arvon. Käynnistin pyytää lisäksi
+BelowNormal-prioriteettia ja yhden loogisen suorittimen affiniteettia;
+toteutuneet arvot tarkistetaan jälkeläisprosesseista. Rajat koskevat vain
+koekäännöstä, eivät koneen yleisiä asetuksia, eikä niitä tulkita
+lämpötilavalvonnaksi tai vakaustakuuksi.
+
+PATH ja PATHEXT asetetaan vain tätä prosessia varten. `release` ottaa tässä
+lähdeversiossa käyttöön myös `--with-ltcg`-option. `openssl-no-asm` välttää
+erillisen NASM-työkalun; omat koebinäärit eivät siksi vastaa virallisen
+julkaisun optimointeja. Tämä ero on molemmille paikallisille varianteille
+yhteinen.
 
 Lähteet, binäärit, valmisteluskriptit ja alkuperäiset epäonnistumiset
 säilytetään projektin ohitetuissa paikallishakemistoissa. Lyhyt lähdepolku
