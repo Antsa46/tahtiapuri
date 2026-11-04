@@ -161,6 +161,58 @@ Winsock-alustuksen virheen vuoksi tekemättä. Nykyisten WFP-tapahtumien
 read-only-luku ei onnistunut ilman ylläpito-oikeuksia (5); oikeuksia ei nostettu.
 Näistä ei päätellä yleistä LPAC-lapsikieltoa tai kaikkia Winsockin virheen syitä.
 
-Jatko tarvitsee todennetun verkkopudotuksen syyn sekä Electron-/SDK-/CPU-/GPU-
-yhteensopivuusnäytön. Tämä testihost ei muuta sovelluksen UtilityProcess-ajotapaa,
-avaa sääverkkoa tai valitse tuotantoon AC-/LPAC-politiikkaa.
+Myöhempi [Electron-koe](electron-isolation-probe.md) ja
+[korjatun Node-/SDK-polun vertailu](runtime-comparison.md) ovat tuottaneet
+rajattua AC-yhteensopivuusnäyttöä. Oikea GGUF-/GPU-ajo, verkkoraja ja koko
+sovelluksen eristys ovat edelleen erillisiä portteja. Tämä testihost ei muuta
+sovelluksen UtilityProcess-ajotapaa, avaa sääverkkoa tai valitse tuotantoon
+AC-/LPAC-politiikkaa.
+
+## Verkkodiagnostiikan jatkokoe
+
+Natiivikoepääte täydentää socket-kokeen tulosta erillisellä
+`network-detail`-rivillä: prosessin rooli ja PID, protokolla, osoitteet, portit,
+UTC-aikaväli, viimeinen vaihe ja alkuperäinen tuloskoodi. Oma kahden sekunnin
+`select`-odotusraja on `connect-deadline`; sitä ei esitetä Winsockin palauttamana
+estovirheenä. `getsockname`-diagnostiikka ei korvaa aiempaa virhekoodia.
+Socket-asetusten tai tilanvaihdon virhe voi keskeyttää kokeen ennen lisäriviä;
+silloin native-virhe säilyy ja metatietonäyttö puuttuu. Alustamatta jääneelle
+Winsockille ei synny tekaistua yhteysyritystä.
+
+Luotettu käynnistin tallentaa natiivipolulla ennen käynnistystä Windowsin
+`FwpmGetAppIdFromFileName0`-tunnisteen heksamuodossa. Ajuri säilyttää myös
+staged-koebinäärin SHA-256:n, kohdeportit ja ajankohdat. Varsinaiset polut,
+SID:t, PID:t ja raakadata jäävät ohitettuihin paikallisiin artefakteihin.
+Uudelleen käännetyn hostin tarkiste tallennetaan ajon yhteyteen; aiempien
+SDK-kokeiden host-tarkisteet kuvaavat niiden omia binäärejä.
+
+Uusinnassa kaikki 11 siivousta onnistuivat ilman hätäsiivousta. Kontrollien
+16 echo-vastausta toimivat. AC:n 32 yrityksestä 16 TCP-yritystä päätyi omaan
+`connect-deadline`-rajaan ja 16 UDP-yritystä `receive`-vaiheen aikakatkaisuun.
+AC:n TCP-lähdeosoite jäi socket-kyselyssä arvoon `0.0.0.0` tai `::`; se ei
+ole mitattu loopback-lähdeosoite eikä sitä korvata jälkikäteen oletuksella.
+LPAC:n viidessä pääprosessikokeessa yhteensä 20 verkkotoimintoa jäi tekemättä
+alustusvirheen 10107 vuoksi. Aiemmat LPAC-lapsen luonti- ja tokenkyselyhavainnot
+säilyivät. Koko matriisi jäi hylätyksi (`passed=false`, exit 1).
+
+Olemassa olevia WFP-tapahtumia luettiin käyttäjän hyväksymässä erillisessä
+kokeessa ylläpito-oikeuksilla. Vain lukija käytti näitä oikeuksia;
+koeprosessit ajettiin tavallisella käyttäjäoikeudella. Kahdeksan kiinteää
+`netsh wfp show netevents` -hakua rajattiin AC:n normaalin pääprosessin ja
+jälkeläisen loopback-kohteisiin, protokolliin, lähde-/kohdeportteihin ja
+viimeiseen tuntiin. Kaikki lukukomennot onnistuivat, mutta kaikissa XML-
+tuloksissa oli nolla tapahtumaa. Palomuuri-, loopback-, capability- tai
+lokikeruuasetuksia ei muutettu. Tyhjä rajattu hakutulos ei osoita sallimista
+eikä estoa; myöskään puuttuvan tapahtuman syytä ei tällä kokeella ratkaistu.
+
+Tämä lisädiagnostiikka ei muuta `networkVerified`-hyväksyntää. Seuraava
+verkkonäyttö tarvitsee erikseen suunnitellun ja hyväksytyn rajatun tapahtuma-
+tallennuksen sekä toimivan kontrollin. Tapahtuma pitää yhdistää täsmälliseen
+ajoon, appId:hen, paketti-SID:hen, liikenteeseen ja aikaan. Puuttuvat kentät,
+TCP:n tuntematon lähdeosoite tai ristiriitainen echo-näyttö jäävät avoimiksi.
+WFP-pudotus ja nimenomaan AppContainer-säännön aiheuttama pudotus erotetaan:
+jälkimmäinen vaatii myös pudottavan suodattimen alkuperän tarkistamisen.
+
+Menetelmän tausta: [Microsoftin WFP-vianrajaus](https://learn.microsoft.com/en-us/windows/security/operating-system-security/network-security/windows-firewall/troubleshooting-uwp-firewall),
+[netsh wfp](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/netsh-wfp)
+ja [ohjelmatunnisteen haku](https://learn.microsoft.com/en-us/windows/win32/api/fwpmu/nf-fwpmu-fwpmgetappidfromfilename0).

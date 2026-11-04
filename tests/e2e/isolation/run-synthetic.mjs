@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
 import { createSocket } from 'node:dgram';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,7 +16,7 @@ const host = join(output, 'native/bin/host.exe');
 const probe = join(output, 'native/bin/probe.exe');
 const runRoot = join(output, 'runs', randomUUID());
 await fs.mkdir(runRoot, { recursive: true });
-const summary = { schema: 1, scope: 'synthetic-native-loopback-only', cases: [], passed: false, corePassed: false, unrunOriginalCases: ['lpac/error', 'lpac/launcher-kill', 'lpac/owner-kill'] };
+const summary = { schema: 2, scope: 'synthetic-native-loopback-only', cases: [], passed: false, corePassed: false, unrunOriginalCases: ['lpac/error', 'lpac/launcher-kill', 'lpac/owner-kill'] };
 
 async function endpoints() {
   const resources = [];
@@ -102,9 +102,11 @@ async function runCase(mode, kind, primaryOnly = false) {
   const servers = await endpoints();
   const args = ['run', mode, profile, staged, ...servers.ports.map(String), `${primaryOnly ? 'primary-' : ''}${kind === 'normal' ? 'once' : kind === 'error' ? 'fail' : 'hold'}`];
   const ownerCase = kind === 'owner-kill';
+  const probeSha256 = createHash('sha256').update(await fs.readFile(join(staged, 'package/probe.exe'))).digest('hex');
+  const startedAt = new Date().toISOString();
   const child = spawn(ownerCase ? process.execPath : caseHost, ownerCase ? [join(directory, 'owner.mjs'), caseHost, ...args] : args, { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
   const report = collect(child);
-  const result = { mode, kind, primaryOnly, primaryDiagnosticPassed: false, cleanupPassed: false, passed: false, corePassed: false, profileIntent: profile, counts: servers.counts, accepted: servers.accepted, records: report.records };
+  const result = { startedAt, probeSha256, probeImage: join(staged, 'package/probe.exe'), endpoints: Object.fromEntries(['tcp4', 'tcp6', 'udp4', 'udp6'].map((name, index) => [name, servers.ports[index]])), mode, kind, primaryOnly, primaryDiagnosticPassed: false, cleanupPassed: false, passed: false, corePassed: false, profileIntent: profile, counts: servers.counts, accepted: servers.accepted, records: report.records };
   let exit;
   try {
     if (kind === 'launcher-kill' || ownerCase) {
@@ -140,7 +142,7 @@ async function runCase(mode, kind, primaryOnly = false) {
     result.cleanupPassed = result.cleanup.passed;
     if (!result.cleanupPassed) { result.corePassed = false; result.passed = false; result.primaryDiagnosticPassed = false; result.cleanupError = result.cleanup.errors.join('; '); }
     await servers.close();
-    result.exit = exit; result.stderr = report.stderr;
+    result.exit = exit; result.stderr = report.stderr; result.finishedAt = new Date().toISOString();
     await fs.writeFile(join(caseRoot, 'result.json'), `${JSON.stringify(result, null, 2)}\n`);
     summary.cases.push({ mode, kind, primaryOnly, primaryDiagnosticPassed: result.primaryDiagnosticPassed, cleanupPassed: result.cleanupPassed, expectedCompatibilityFailure: result.expectedCompatibilityFailure, passed: result.passed, corePassed: result.corePassed, networkVerified: result.validation?.networkVerified ?? false, error: result.error, cleanupError: result.cleanupError });
   }
@@ -155,5 +157,6 @@ try {
   summary.passed = summary.cases.every(row => row.passed);
   if (!summary.passed) process.exitCode = 1;
 } finally {
+  console.log(`Local evidence: ${runRoot}`);
   await fs.writeFile(join(runRoot, 'summary.json'), `${JSON.stringify(summary, null, 2)}\n`);
 }

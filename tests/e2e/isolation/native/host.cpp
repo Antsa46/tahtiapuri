@@ -1,6 +1,8 @@
 #include "common.h"
 #include <memory>
 #include <tlhelp32.h>
+#include <fwpmu.h>
+#pragma comment(lib, "Fwpuclnt.lib")
 
 static bool ownedProfile(const std::wstring& name) {
     for (const std::wstring prefix : { L"tahtiapuri.t09a.", L"tahtiapuri.t09b.", L"tahtiapuri.t09c." }) {
@@ -320,6 +322,16 @@ int wmain(int argc, wchar_t** argv) {
         const std::wstring image = root + (node ? L"\\package\\node.exe" : electron ? L"\\package\\electron.exe" : L"\\package\\probe.exe");
         if (node) inspectOwnConsole(console);
         if (electron || node) prepareRuntimeResources(root, sid, sdk, image); else prepareResources(root, sid);
+        if (!electron && !node) {
+            FWP_BYTE_BLOB* appId = nullptr;
+            const DWORD status = FwpmGetAppIdFromFileName0(image.c_str(), &appId);
+            std::string hex; const char* digits = "0123456789abcdef";
+            if (status == ERROR_SUCCESS && appId && appId->data && appId->size <= 65536) {
+                for (UINT32 i = 0; i < appId->size; ++i) { const BYTE value = appId->data[i]; hex += digits[value >> 4]; hex += digits[value & 15]; }
+            }
+            if (appId) FwpmFreeMemory0(reinterpret_cast<void**>(&appId));
+            emit("{\"type\":\"network-identity\",\"code\":" + std::to_string(status) + ",\"appIdHex\":\"" + hex + "\"}");
+        }
         job.value = CreateJobObjectW(nullptr, nullptr); if (!job.value) throw WinError("job");
         JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits = {}; limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
         if (!SetInformationJobObject(job.value, JobObjectExtendedLimitInformation, &limits, sizeof(limits))) throw WinError("job-limits");

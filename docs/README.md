@@ -19,7 +19,7 @@ vastuurajan, lue myös toisen osapuolen sopimus.
 | Nykyhetken kartta, katsaus, keskustelun karttaohjaus, sääasetukset ja poikkeukset | [product/observing-session-use-cases.md](product/observing-session-use-cases.md) |
 | Valittu kansiorakenne A, moduulit, kerrokset ja prosessien kulkureitit | [architecture/base-architecture.md](architecture/base-architecture.md) |
 | Osien oikeudet, malliprosessin ajotapa ja eristyksen vaiheistus sekä Windows-/kontti-/VM-vertailu | [architecture/security-and-permissions-plan.md](architecture/security-and-permissions-plan.md) |
-| Natiivin AppContainer/LPAC-kokeen rajaus, toistaminen ja rajattu näyttö | [experiments/windows-isolation-probe.md](experiments/windows-isolation-probe.md) |
+| Natiivin AppContainer/LPAC-kokeen rajaus, toistaminen ja verkkodiagnostiikan näyttö | [experiments/windows-isolation-probe.md](experiments/windows-isolation-probe.md) |
 | Electronin Node-tilan eristyskäynnistyksen synteettinen yhteensopivuuskoe | [experiments/electron-isolation-probe.md](experiments/electron-isolation-probe.md) |
 | SDK:n CPU-alustus, riippuvuuksien kopiointi ja instrumentoidun binäärilapsen eristyskoe | [experiments/sdk-isolation-probe.md](experiments/sdk-isolation-probe.md) |
 | Putkidiagnoosi, mitattu korjattu Node-/SDK-vertailu ja näyttörajat | [experiments/runtime-comparison.md](experiments/runtime-comparison.md) |

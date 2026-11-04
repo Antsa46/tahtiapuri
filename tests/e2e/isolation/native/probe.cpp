@@ -28,9 +28,37 @@ static void writeFile(const std::wstring& path, const char* name, bool create) {
     DWORD written = 0; const bool ok = WriteFile(file.value, "W", 1, &written, nullptr) != FALSE;
     report(name, ok && written == 1, ok ? 0 : GetLastError());
 }
+static ULONGLONG utcMilliseconds() {
+    FILETIME time = {}; GetSystemTimePreciseAsFileTime(&time);
+    ULARGE_INTEGER ticks = {}; ticks.LowPart = time.dwLowDateTime; ticks.HighPart = time.dwHighDateTime;
+    return (ticks.QuadPart - 116444736000000000ULL) / 10000;
+}
 static void network(bool ipv6, bool datagram, unsigned short port, const char* name) {
+    const auto startedAt = utcMilliseconds();
     Socket socket(::socket(ipv6 ? AF_INET6 : AF_INET, datagram ? SOCK_DGRAM : SOCK_STREAM, datagram ? IPPROTO_UDP : IPPROTO_TCP));
-    if (socket.value == INVALID_SOCKET) { report(name, false, WSAGetLastError()); return; }
+    const auto finish = [&](bool ok, int code, const char* stage) {
+        const auto finishedAt = utcMilliseconds();
+        sockaddr_storage local = {}; int length = sizeof(local); unsigned short localPort = 0;
+        int endpointError = 0;
+        if (socket.value == INVALID_SOCKET) endpointError = WSAENOTSOCK;
+        else if (getsockname(socket.value, reinterpret_cast<sockaddr*>(&local), &length) == SOCKET_ERROR) endpointError = WSAGetLastError();
+        else if (local.ss_family == AF_INET) localPort = ntohs(reinterpret_cast<sockaddr_in*>(&local)->sin_port);
+        else if (local.ss_family == AF_INET6) localPort = ntohs(reinterpret_cast<sockaddr_in6*>(&local)->sin6_port);
+        else endpointError = WSAEAFNOSUPPORT;
+        char localAddress[INET6_ADDRSTRLEN] = {};
+        if (endpointError == 0) {
+            const void* raw = local.ss_family == AF_INET ? static_cast<const void*>(&reinterpret_cast<sockaddr_in*>(&local)->sin_addr) : static_cast<const void*>(&reinterpret_cast<sockaddr_in6*>(&local)->sin6_addr);
+            if (!InetNtopA(local.ss_family, const_cast<void*>(raw), localAddress, sizeof(localAddress))) endpointError = WSAGetLastError();
+        }
+        // Diagnostic correlation only: a local deadline is never a WFP deny event.
+        emit("{\"type\":\"network-detail\",\"phase\":\"" + phase + "\",\"name\":\"" + name + "\",\"pid\":" + std::to_string(GetCurrentProcessId()) +
+             ",\"stage\":\"" + stage + "\",\"protocol\":" + std::to_string(datagram ? IPPROTO_UDP : IPPROTO_TCP) +
+             ",\"remoteAddress\":\"" + (ipv6 ? "::1" : "127.0.0.1") + "\",\"remotePort\":" + std::to_string(port) +
+             ",\"startedAtMs\":" + std::to_string(startedAt) + ",\"finishedAtMs\":" + std::to_string(finishedAt) + ",\"localAddress\":\"" + localAddress + "\",\"localPort\":" + std::to_string(localPort) + ",\"localEndpointError\":" + std::to_string(endpointError) +
+             ",\"ok\":" + (ok ? "true" : "false") + ",\"code\":" + std::to_string(code) + "}");
+        report(name, ok, static_cast<DWORD>(code));
+    };
+    if (socket.value == INVALID_SOCKET) { const int error = WSAGetLastError(); finish(false, error, "socket"); return; }
     const DWORD timeout = 1500;
     if (setsockopt(socket.value, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&timeout), sizeof(timeout)) == SOCKET_ERROR) throw WinError("socket-timeout", WSAGetLastError());
     if (setsockopt(socket.value, SOL_SOCKET, SO_SNDTIMEO, reinterpret_cast<const char*>(&timeout), sizeof(timeout)) == SOCKET_ERROR) throw WinError("socket-timeout", WSAGetLastError());
@@ -41,20 +69,22 @@ static void network(bool ipv6, bool datagram, unsigned short port, const char* n
     // Blocking connect is bounded with a nonblocking select, including on controls.
     u_long nonblocking = 1; if (ioctlsocket(socket.value, FIONBIO, &nonblocking) == SOCKET_ERROR) throw WinError("socket-nonblocking", WSAGetLastError());
     if (connect(socket.value, address, length) == SOCKET_ERROR) {
-        int error = WSAGetLastError();
+        int error = WSAGetLastError(); const char* stage = "connect";
         if (error == WSAEWOULDBLOCK) {
             fd_set writable, failed; FD_ZERO(&writable); FD_ZERO(&failed); FD_SET(socket.value, &writable); FD_SET(socket.value, &failed);
             timeval limit = {}; limit.tv_sec = 2;
             const int ready = select(0, nullptr, &writable, &failed, &limit);
-            if (ready > 0) { int bytes = sizeof(error); if (getsockopt(socket.value, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&error), &bytes) == SOCKET_ERROR) error = WSAGetLastError(); }
-            else error = ready == 0 ? WSAETIMEDOUT : WSAGetLastError();
+            if (ready > 0) { int bytes = sizeof(error); stage = "connect-result"; if (getsockopt(socket.value, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&error), &bytes) == SOCKET_ERROR) { error = WSAGetLastError(); stage = "connect-query"; } }
+            else { error = ready == 0 ? WSAETIMEDOUT : WSAGetLastError(); stage = ready == 0 ? "connect-deadline" : "connect-select"; }
         }
-        if (error != 0) { report(name, false, error); return; }
+        if (error != 0) { finish(false, error, stage); return; }
     }
     nonblocking = 0; if (ioctlsocket(socket.value, FIONBIO, &nonblocking) == SOCKET_ERROR) throw WinError("socket-blocking", WSAGetLastError());
-    if (send(socket.value, "T09A", 4, 0) != 4) { report(name, false, WSAGetLastError()); return; }
+    const int sent = send(socket.value, "T09A", 4, 0);
+    if (sent != 4) { const int error = sent == SOCKET_ERROR ? WSAGetLastError() : 0; finish(false, error, "send"); return; }
     char response[4] = {}; const int received = recv(socket.value, response, sizeof(response), 0);
-    report(name, received == 4 && std::string(response, 4) == "T09A", received == SOCKET_ERROR ? WSAGetLastError() : 0);
+    const int error = received == SOCKET_ERROR ? WSAGetLastError() : 0;
+    finish(received == 4 && std::string(response, 4) == "T09A", error, received == SOCKET_ERROR ? "receive" : "echo");
 }
 int wmain(int argc, wchar_t** argv) {
     try {
