@@ -1,0 +1,90 @@
+{
+  "schema": 1,
+  "id": "llama-cpp-v0.9.0-b12110-cpu-x64",
+  "version": "v0.9.0",
+  "binaryRelease": "b12110",
+  "revision": "cd959bae99ff4bed22bef2604f45241c09bbb8c8",
+  "archive": {
+    "file": "llama-b12110-bin-win-cpu-x64.zip",
+    "bytes": 24708445,
+    "sha256": "98901e327c252875accaf2d1bf364e10e868843b0b63468baad1aa945cdc5da2",
+    "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12110/llama-b12110-bin-win-cpu-x64.zip"
+  },
+  "backend": "ggml-cpu-x64.dll",
+  "licenses": [
+    "MIT",
+    "Apache-2.0 WITH LLVM-exception (LLVM OpenMP)"
+  ],
+  "files": {
+    "bin/llama.dll": {
+      "bytes": 3834880,
+      "sha256": "211b91d86e67c49f12eb97992b45ae4c2fc797d6edab48637835a877c808890e",
+      "origin": "archive:llama.dll"
+    },
+    "bin/ggml.dll": {
+      "bytes": 78848,
+      "sha256": "06dfdff8b7b834c757ec5b5411abfc0f732604fb595eaaffbdc6da563523e8a1",
+      "origin": "archive:ggml.dll"
+    },
+    "bin/ggml-base.dll": {
+      "bytes": 832512,
+      "sha256": "3a0399fa51102a86824255beda9d021ea7e8cd2bd8ca448a43a9a80aa4829290",
+      "origin": "archive:ggml-base.dll"
+    },
+    "bin/ggml-cpu-x64.dll": {
+      "bytes": 936448,
+      "sha256": "81877c8787f9d5680b990f4cf5f8b89ba5b02ee5064b36abfd53d9d2ffb50916",
+      "origin": "archive:ggml-cpu-x64.dll"
+    },
+    "bin/libomp.dll": {
+      "bytes": 768000,
+      "sha256": "a12116ba72d1d6820407cf30be23da04ce79d6bb8a71a5ee71759c5a1faa6f1c",
+      "origin": "archive:libomp.dll"
+    },
+    "licenses/LICENSE-LLVM-OpenMP": {
+      "bytes": 19741,
+      "sha256": "fdad1758a9e1f9d5a81e18879b3406772115edc92c24bfa36b70c654f325e8e4",
+      "origin": "archive:LICENSE-LLVM-OpenMP"
+    },
+    "include/llama.h": {
+      "bytes": 91030,
+      "sha256": "f07ffbabd3fbe9ef21d97b4d4ce8328d9c2a123ccbf5266f04a3146d70ce4f91",
+      "origin": "https://raw.githubusercontent.com/ggml-org/llama.cpp/cd959bae99ff4bed22bef2604f45241c09bbb8c8/include/llama.h"
+    },
+    "include/gguf.h": {
+      "bytes": 11355,
+      "sha256": "e56714aab702e5ce62ee587a409643c08f7e93e8fbb77f48ef7cc85075f96fa4",
+      "origin": "https://raw.githubusercontent.com/ggml-org/llama.cpp/cd959bae99ff4bed22bef2604f45241c09bbb8c8/ggml/include/gguf.h"
+    },
+    "include/ggml.h": {
+      "bytes": 119365,
+      "sha256": "1aef7a5f465b1c19de305dd6f9a0c303f88e485133a94b9a0ee1cce6345c9101",
+      "origin": "https://raw.githubusercontent.com/ggml-org/llama.cpp/cd959bae99ff4bed22bef2604f45241c09bbb8c8/ggml/include/ggml.h"
+    },
+    "include/ggml-opt.h": {
+      "bytes": 14040,
+      "sha256": "3586de1bc8a934b5c72339e2b6937b0641e8f149b512231e666f67de0736eea2",
+      "origin": "https://raw.githubusercontent.com/ggml-org/llama.cpp/cd959bae99ff4bed22bef2604f45241c09bbb8c8/ggml/include/ggml-opt.h"
+    },
+    "include/ggml-backend.h": {
+      "bytes": 29047,
+      "sha256": "34464da4b46314c710cd634626578c6f2a6811431d41eddaf5e8aa77082fea2a",
+      "origin": "https://raw.githubusercontent.com/ggml-org/llama.cpp/cd959bae99ff4bed22bef2604f45241c09bbb8c8/ggml/include/ggml-backend.h"
+    },
+    "include/ggml-alloc.h": {
+      "bytes": 3689,
+      "sha256": "d114067f9099c4a0e2bbc0625c676d4894d9cf0ea27168ee072c7de0e71bb51d",
+      "origin": "https://raw.githubusercontent.com/ggml-org/llama.cpp/cd959bae99ff4bed22bef2604f45241c09bbb8c8/ggml/include/ggml-alloc.h"
+    },
+    "include/ggml-cpu.h": {
+      "bytes": 7753,
+      "sha256": "316279e004cdeb8e6ef78599acb602bf79a8abdf897fed9fd1914808c1518c6e",
+      "origin": "https://raw.githubusercontent.com/ggml-org/llama.cpp/cd959bae99ff4bed22bef2604f45241c09bbb8c8/ggml/include/ggml-cpu.h"
+    },
+    "licenses/LICENSE-llama.cpp": {
+      "bytes": 1078,
+      "sha256": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d",
+      "origin": "https://raw.githubusercontent.com/ggml-org/llama.cpp/cd959bae99ff4bed22bef2604f45241c09bbb8c8/LICENSE"
+    }
+  }
+}

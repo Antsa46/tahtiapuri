@@ -24,10 +24,10 @@ async function checkBuild() {
   const build=JSON.parse(await fs.readFile(join(output,'native/build-manifest.json'),'utf8'));
   assert.equal(build.schema,1);assert.equal(build.affinity,1);assert.equal(build.priority,'BelowNormal');
   for(const entry of build.files) {
-    assert(/^(?:tests\/e2e\/isolation\/native\/(?:common\.h|transport-[a-z]+\.(?:cpp|h))|\.artifacts\/tests\/isolation\/transport\/native\/bin\/transport-(?:host|worker)\.exe)$/.test(entry.path));
+    assert(/^(?:tests\/e2e\/isolation\/native\/(?:common\.h|isolated-launcher\.h|transport-[a-z]+\.(?:cpp|h))|\.artifacts\/tests\/isolation\/transport\/native\/bin\/transport-(?:host|worker)\.exe)$/.test(entry.path));
     assert.equal(await hash(join(root,entry.path)),entry.sha256.toLowerCase(),'Build input/output changed.');
   }
-  const expected=['common.h','transport-wire.h','transport-resources.h','transport-host.cpp','transport-worker.cpp']
+  const expected=['common.h','isolated-launcher.h','transport-wire.h','transport-resources.h','transport-host.cpp','transport-worker.cpp']
     .map(name=>'tests/e2e/isolation/native/'+name).concat(['host','worker'].map(name=>'.artifacts/tests/isolation/transport/native/bin/transport-'+name+'.exe'));
   assert.deepEqual(build.files.map(x=>x.path).sort(),expected.sort());
   summary.build=build;

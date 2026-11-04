@@ -15,6 +15,9 @@ asennuspaketin lisenssiliite. Se viimeistellään T17:ssä toimitetun sisällön
 | @playwright/test 1.64.1 | Oikean Electronin E2E-testit. | Apache-2.0 |
 | @types/node 24.10.0, @types/react ja @types/react-dom 19.3.0 | Käännösaikaiset tyypit. | MIT |
 | node-llama-cpp 3.22.2 ja sen Windows CPU-/CUDA-binäärit | Erillisen mallityöntekijän llama.cpp-sovitin. | MIT; binäärien mukana tulevat llama.cpp- ja muut ilmoitukset säilytetään. |
+| llama.cpp v0.9.0 lähdekäännös, CPU | Erillinen natiivin mallin koe; tarkka revisio, lähde ja rakennusprofiili resources/runtimes-puussa. | MIT; upstream LICENSE säilytetään. |
+| llama.cpp b12110 CPU ja LLVM OpenMP | Alkuperäinen binääriverrokki latausdiagnoosissa. | MIT sekä mukana säilytettävä LICENSE-LLVM-OpenMP ilmoituksineen. |
+| CMake 4.4.5 | Projektikohtainen natiivin CPU-moottorin rakennustyökalu. | BSD-3-Clause; doc/cmake/LICENSE.rst ja komponenttien ilmoitukset säilytetään. Ei sovelluksen runtime-riippuvuus. |
 | Astronomy Engine 2.1.19 | Offline-efemeridit ja koordinaattimuunnokset sky-sovittimessa. | MIT |
 | HYG Database 4.1, johdettu 5 070 tähden aineisto | Paikallinen mag≤6-katalogi. | CC BY-SA 4.0; lähde, muutokset ja aineistolisenssi resources/catalogs-puussa. |
 | @modelcontextprotocol/server, client ja core 2.4.0 | Rajattu stdio-palvelin sekä oikean asiakkaan integraatiotestit. | Apache-2.0 |
@@ -57,3 +60,6 @@ SDK:n Git-aliriippuvuuden rajatun yliajon syy, lähteet ja tarkistusraja ovat
 T07:n kartta käyttää selaimen Canvas 2D -rajapintaa ja samoja HYG/Astronomy Engine
 -resursseja. D3-Celestialia tai uusia kuva-/fontti-/katalogiriippuvuuksia ei
 otettu käyttöön. Kartan aineistomerkinnät kuvataan [tähtikarttasopimuksessa](../architecture/sky-map.md).
+
+Natiivin CPU-kokeen alkuperä, DLL-rajaus ja avoin MSVC-toimitusriippuvuus
+kuvataan [koedokumentissa](../experiments/native-cpu-model-probe.md).

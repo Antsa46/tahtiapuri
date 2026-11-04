@@ -11,7 +11,7 @@ static void regular(const std::wstring& path, bool directory) {
         if (file.value == INVALID_HANDLE_VALUE || !GetFileInformationByHandle(file.value, &info) || info.nNumberOfLinks != 1) throw WinError("resource-link", ERROR_INVALID_DATA);
     }
 }
-static std::wstring ownedRoot(const std::wstring& input) {
+static std::wstring ownedRoot(const std::wstring& input,const std::string& markerValue="TAHTIAPURI_T09H_TRANSPORT_ONLY") {
     if (input.size() > 1024 || input.size() < 4 || input[1] != L':' || input[2] != L'\\' || input.find(L"..") != std::wstring::npos) throw WinError("root", ERROR_INVALID_PARAMETER);
     DWORD length = GetFullPathNameW(input.c_str(), 0, nullptr, nullptr); std::vector<wchar_t> full(length + 1);
     if (!length || !GetFullPathNameW(input.c_str(), static_cast<DWORD>(full.size()), full.data(), nullptr)) throw WinError("root");
@@ -20,7 +20,7 @@ static std::wstring ownedRoot(const std::wstring& input) {
     regular(root + L"\\owner.marker", false);
     Handle marker(CreateFileW((root + L"\\owner.marker").c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr));
     char value[64] = {}; DWORD read = 0;
-    if (marker.value == INVALID_HANDLE_VALUE || !ReadFile(marker.value, value, 63, &read, nullptr) || std::string(value, read) != "TAHTIAPURI_T09H_TRANSPORT_ONLY") throw WinError("marker", ERROR_INVALID_DATA);
+    if (marker.value == INVALID_HANDLE_VALUE || !ReadFile(marker.value, value, 63, &read, nullptr) || std::string(value, read) != markerValue) throw WinError("marker", ERROR_INVALID_DATA);
     return root;
 }
 

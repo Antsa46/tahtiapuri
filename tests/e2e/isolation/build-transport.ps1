@@ -57,7 +57,7 @@ Get-Content -LiteralPath $stdout
 Get-Content -LiteralPath $stderr
 if ($p.ExitCode -ne 0) { throw "Native probe compilation failed (exit $($p.ExitCode))." }
 $entries = @()
-foreach ($name in @('common.h','transport-wire.h','transport-resources.h','transport-host.cpp','transport-worker.cpp')) {
+foreach ($name in @('common.h','isolated-launcher.h','transport-wire.h','transport-resources.h','transport-host.cpp','transport-worker.cpp')) {
   $relative = 'tests/e2e/isolation/native/' + $name
   $entries += @{path=$relative; sha256=(Get-FileHash -LiteralPath (Join-Path $projectRoot $relative) -Algorithm SHA256).Hash.ToLowerInvariant()}
 }

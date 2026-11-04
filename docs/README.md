@@ -20,6 +20,7 @@ vastuurajan, lue myös toisen osapuolen sopimus.
 | Valittu kansiorakenne A, moduulit, kerrokset ja prosessien kulkureitit | [architecture/base-architecture.md](architecture/base-architecture.md) |
 | Osien oikeudet, malliprosessin ajotapa ja eristyksen vaiheistus sekä Windows-/kontti-/VM-vertailu | [architecture/security-and-permissions-plan.md](architecture/security-and-permissions-plan.md) |
 | Natiivin CPU-runtimen rajattu viestiyhteys ilman mallia | [experiments/native-transport-probe.md](experiments/native-transport-probe.md) |
+| Oikea 4B-malli natiivissa CPU-työntekijässä: alkuperä, lukot ja elinkaari | [experiments/native-cpu-model-probe.md](experiments/native-cpu-model-probe.md) |
 | Malli- ja ajotapavalinta, eristetty CPU/CUDA ja tietoisesti valittu tavallinen ajo | [architecture/model-execution-profiles.md](architecture/model-execution-profiles.md) |
 | Natiivin AppContainer/LPAC-kokeen rajaus, toistaminen, verkkodiagnostiikka ja vain lukeva WFP-tilaus | [experiments/windows-isolation-probe.md](experiments/windows-isolation-probe.md) |
 | LPAC:n lapsenluonnin ja Winsock-alustuksen erotettu diagnoosi | [experiments/lpac-startup-probe.md](experiments/lpac-startup-probe.md) |

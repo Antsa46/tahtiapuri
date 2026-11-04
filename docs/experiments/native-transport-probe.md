@@ -12,7 +12,8 @@ Koekoodi pysyy tests/e2e/isolation/-puussa; sovellus ei importoi sitä.
 Uusia kolmannen osapuolen riippuvuuksia ei lisätä. Kaksi pientä C++-ohjelmaa
 käyttää olemassa olevaa Windows SDK:ta ja MSVC-kääntäjää:
 
-- native/transport-host.cpp on luotettu käynnistäjä. Se tarkistaa todellisen
+- native/transport-host.cpp määrittelee kuljetuskokeen; yhteinen
+  native/isolated-launcher.h omistaa luotetun käynnistyksen. Se tarkistaa todellisen
   lapsiprosessin tokenin ja Job-jäsenyyden ennen suorittamisen aloittamista.
 - native/transport-worker.cpp on synteettinen työntekijä. Sen virhekomennot
   kuuluvat vain testiin, eivät tuotteen tulevaan rajapintaan.
@@ -129,3 +130,6 @@ Koebinääriä tai testikomentoja ei toimiteta sovelluksen mukana.
 - [Microsoft: Anonymous Pipe Operations](https://learn.microsoft.com/en-us/windows/win32/ipc/anonymous-pipe-operations)
 - [Microsoft: Anonymous Pipe Security and Access Rights](https://learn.microsoft.com/en-us/windows/win32/ipc/anonymous-pipe-security-and-access-rights)
 - [Microsoft: Implementing an AppContainer](https://learn.microsoft.com/en-us/windows/win32/secauthz/implementing-an-appcontainer)
+
+Käynnistimen erottamisen jälkeen synteettinen matriisi ajettiin uudelleen:
+57/57 läpäisi. Oikean mallin jatko on [CPU-mallikokeessa](native-cpu-model-probe.md).

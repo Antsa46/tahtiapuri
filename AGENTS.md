@@ -28,7 +28,8 @@ Lue tehtävän mukaan:
   [turvallisuus ja oikeudet](docs/architecture/security-and-permissions-plan.md)
 - mallin ajotavan valinta, CPU-perusta, CUDA tai toimitettava mallityöntekijä:
   [mallien ajotavat](docs/architecture/model-execution-profiles.md) sekä
-  [natiivin viestiyhteyden koe](docs/experiments/native-transport-probe.md)
+  [natiivin viestiyhteyden koe](docs/experiments/native-transport-probe.md) ja
+  [natiivin CPU-mallin koe](docs/experiments/native-cpu-model-probe.md)
 - Windowsin eristyskokeen natiivi käynnistin, koeoikeudet tai koesiivous:
   [rajattu Windows-koe](docs/experiments/windows-isolation-probe.md),
   [LPAC:n käynnistysdiagnoosi](docs/experiments/lpac-startup-probe.md),

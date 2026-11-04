@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 export const transportCases = Object.freeze(['normal','generation','shutdown-pending','bad-magic','bad-version','bad-session','bad-id','bad-op','oversize','truncated-header','truncated-body','bad-reply','flood','stalled-reader','owner-loss','broker-loss','crash','request-budget','valid-eof']);
 const keys=(value,names)=>assert.deepEqual(Object.keys(value).sort(),names.split(' ').sort());
-export function validateLaunch(records,mode) {
+export function validateLaunch(records,mode,expectedJobCommitBytes=268435456) {
   assert(['control','ac','lpac'].includes(mode));
   const rows=records.filter(x=>x.type==='launched');assert.equal(rows.length,1);
   const row=rows[0];
@@ -10,7 +10,7 @@ export function validateLaunch(records,mode) {
   assert(Number.isSafeInteger(row.pid)&&row.pid>0&&row.pid<=0xffffffff);
   assert.equal(row.appContainer,mode!=='control');assert.equal(row.capabilities,0);
   assert.equal(row.job,true);assert.equal(row.activeProcessLimit,1);assert.equal(row.affinity,1);
-  assert.equal(row.priority,'BelowNormal');assert.equal(row.jobCommitBytes,268435456);
+  assert.equal(row.priority,'BelowNormal');assert.equal(row.jobCommitBytes,expectedJobCommitBytes);
   assert.equal(row.sentinelInherited,false);assert.equal(row.aclsVerified,true);assert.equal(row.networkVerified,false);
   if(mode==='control') {
     assert.equal(row.lpac,false);assert.equal(row.lpacQueryError,0);assert.equal(row.lpacQueryBytes,0);

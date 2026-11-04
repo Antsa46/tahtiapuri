@@ -102,6 +102,12 @@ koko omistetun prosessipuun sulku testataan ennen mallipainojen lataamista.
 [Natiivin viestintäkokeen](../experiments/native-transport-probe.md) koebinäärit
 erottavat tämän kuljetusnäytön malliruntimen ja koko sovelluksen hyväksynnästä.
 
+[Natiivin CPU-mallin koe](../experiments/native-cpu-model-probe.md) käyttää
+lukittuun, muuttamattomaan llama.cpp-lähderevisioon perustuvaa omaa
+CPU-rakennusta ja yhteistä natiivia käynnistintä. Virallinen b12110-binääri
+säilyy aiempana verrokkina.
+Se ei vielä vaihda sovelluksen ajotapaa tai hyväksy koko oikeusrajaa.
+
 ## Toteutusjärjestys ja näyttö
 
 1. Yhteinen viesti- ja elinkaarisopimus sekä nykyisen työntekijän sulkuvirheet.
