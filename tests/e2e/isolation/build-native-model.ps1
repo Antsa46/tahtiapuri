@@ -87,6 +87,7 @@ foreach ($name in $dlls) {
 $pins += '};'; $pins += '}'
 Write-Owned (Join-Path $outputRoot 'native-model-runtime-pins.h') ([Text.UTF8Encoding]::new($false).GetBytes(($pins -join "`n")))
 $sourcePaths = @('common.h','isolated-launcher.h','transport-wire.h','transport-resources.h','native-model-protocol.h','native-model-pins.h','native-model-fixture.h','native-model-engine.h','native-model-host.cpp','native-model-worker.cpp') | ForEach-Object { 'tests/e2e/isolation/native/' + $_ }
+$sourcePaths += @('common.h','transport-wire.h','transport-resources.h','isolated-launcher.h') | ForEach-Object { 'packages/windows-runtime/native/' + $_ }
 $sourcePaths += @('.artifacts/tests/isolation/native-source-runtime/runtime-manifest.json','resources/runtimes/llama-cpp-source-cpu.json','resources/models/qwen3-4b.json','tests/fixtures/native-cpu-prompt.json','tests/e2e/isolation/build-native-model.ps1','tests/e2e/isolation/build-native-runtime.ps1','tests/e2e/isolation/prepare-native-runtime.ps1','.artifacts/tests/isolation/native-model/native/native-model-runtime-pins.h')
 $inputHashes = @{}
 foreach ($relative in $sourcePaths) {

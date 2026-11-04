@@ -42,6 +42,7 @@ async function checkBuild() {
     'native-model-fixture.h','native-model-engine.h','native-model-host.cpp','native-model-worker.cpp'].map(x=>'tests/e2e/isolation/native/'+x)
     .concat(['host','worker'].map(x=>'.artifacts/tests/isolation/native-model/native/bin/native-model-'+x+'.exe'),
       ['.artifacts/tests/isolation/native-source-runtime/runtime-manifest.json','resources/runtimes/llama-cpp-source-cpu.json','resources/models/qwen3-4b.json','tests/fixtures/native-cpu-prompt.json','tests/e2e/isolation/build-native-model.ps1','tests/e2e/isolation/build-native-runtime.ps1','tests/e2e/isolation/prepare-native-runtime.ps1','.artifacts/tests/isolation/native-model/native/native-model-runtime-pins.h']);
+  expected.push(...['common.h','transport-wire.h','transport-resources.h','isolated-launcher.h'].map(x=>'packages/windows-runtime/native/'+x));
   assert.deepEqual(build.files.map(x=>x.path).sort(),expected.sort());
   for(const entry of build.files)assert.equal(await hash(join(root,entry.path)),entry.sha256,'Build input/output changed.');
   assert.equal(runtime.id,'llama-cpp-v0.9.0-source-cpu');

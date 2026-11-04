@@ -29,7 +29,7 @@ foreach ($required in @('um/x64/kernel32.lib', 'ucrt/x64/ucrt.lib')) {
 $lines = @('@echo off', ('call "' + $environmentScript + '" >nul'), 'if errorlevel 1 exit /b 1')
 $lines += 'set "INCLUDE=' + $sdkInclude + '\um;' + $sdkInclude + '\shared;' + $sdkInclude + '\ucrt;%INCLUDE%"'
 $lines += 'set "LIB=' + $sdkLib + '\um\x64;' + $sdkLib + '\ucrt\x64;%LIB%"'
-foreach ($name in @('transport-host', 'transport-worker')) {
+foreach ($name in @('transport-host', 'transport-worker', 'owner-input-tests')) {
   $source = Join-Path $PSScriptRoot "native/$name.cpp"
   $binary = Join-Path $outputRoot "bin/$name.exe"
   $object = Join-Path $outputRoot "$name.obj"
@@ -57,11 +57,15 @@ Get-Content -LiteralPath $stdout
 Get-Content -LiteralPath $stderr
 if ($p.ExitCode -ne 0) { throw "Native probe compilation failed (exit $($p.ExitCode))." }
 $entries = @()
-foreach ($name in @('common.h','isolated-launcher.h','transport-wire.h','transport-resources.h','transport-host.cpp','transport-worker.cpp')) {
+foreach ($name in @('common.h','isolated-launcher.h','transport-wire.h','transport-resources.h','transport-host.cpp','transport-worker.cpp','owner-input-tests.cpp')) {
   $relative = 'tests/e2e/isolation/native/' + $name
   $entries += @{path=$relative; sha256=(Get-FileHash -LiteralPath (Join-Path $projectRoot $relative) -Algorithm SHA256).Hash.ToLowerInvariant()}
 }
-foreach ($name in @('transport-host','transport-worker')) {
+foreach ($name in @('common.h','transport-wire.h','transport-resources.h','isolated-launcher.h','owner-input.h')) {
+  $relative = 'packages/windows-runtime/native/' + $name
+  $entries += @{path=$relative;sha256=(Get-FileHash -LiteralPath (Join-Path $projectRoot $relative) -Algorithm SHA256).Hash.ToLowerInvariant()}
+}
+foreach ($name in @('transport-host','transport-worker','owner-input-tests')) {
   $relative = '.artifacts/tests/isolation/transport/native/bin/' + $name + '.exe'
   $entries += @{path=$relative; sha256=(Get-FileHash -LiteralPath (Join-Path $projectRoot $relative) -Algorithm SHA256).Hash.ToLowerInvariant()}
 }

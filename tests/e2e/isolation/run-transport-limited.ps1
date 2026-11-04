@@ -1,4 +1,4 @@
-param([switch]$Smoke,[switch]$CheckOnly)
+param([switch]$Smoke,[switch]$CheckOnly,[switch]$OwnerInputOnly,[switch]$PrepareOwnerOnly)
 $ErrorActionPreference = 'Stop'
 $self = [Diagnostics.Process]::GetCurrentProcess()
 $self.PriorityClass = [Diagnostics.ProcessPriorityClass]::BelowNormal
@@ -10,6 +10,8 @@ $tools = Get-Content -LiteralPath (Join-Path $projectRoot 'scripts/dev/toolchain
 $node = Join-Path $projectRoot ('.local/toolchain/node-v' + $tools.node.version + '-win-x64/node.exe')
 if (!(Test-Path -LiteralPath $node)) { throw 'Existing pinned Node runtime is required.' }
 $arguments = '"' + (Join-Path $PSScriptRoot 'run-transport.mjs') + '"'
+if ($OwnerInputOnly) { $arguments += ' --owner-input-only' }
+if ($PrepareOwnerOnly) { $arguments += ' --prepare-owner-only' }
 if ($Smoke) { $arguments += ' --smoke' }
 if ($CheckOnly) { $arguments += ' --check-limits' }
 $child = $null

@@ -1,6 +1,8 @@
 #include "isolated-launcher.h"
+#include "../../../../packages/windows-runtime/native/owner-input.h"
 using namespace isolation;
 namespace {
+const std::atomic<bool>* preparingOwner=nullptr;
 void prepare(const std::wstring& root,PSID sid,const std::wstring&,Pins&) {
     std::vector<std::wstring> entries={L"owner.marker",L"package",L"launcher",L"private",L"scratch"};
     if(sid) entries.push_back(L"profile.receipt");
@@ -26,10 +28,18 @@ void prepare(const std::wstring& root,PSID sid,const std::wstring&,Pins&) {
     setOwnedAcl(root+L"\\scratch",sid,FILE_GENERIC_READ|FILE_GENERIC_WRITE|FILE_GENERIC_EXECUTE,true);
     lowScratch(root+L"\\scratch");
     setOwnedAcl(root,sid,FILE_GENERIC_READ|FILE_GENERIC_EXECUTE,false);
+    if(preparingOwner) {
+        emit("{\"type\":\"await-prepare-owner\"}");
+        const auto deadline=GetTickCount64()+5000;
+        while(!preparingOwner->load()) {
+            if(GetTickCount64()>=deadline)throw WinError("prepare-owner-deadline",ERROR_TIMEOUT);
+            Sleep(2);
+        }
+    }
 }
 const std::vector<std::wstring> cases={L"normal",L"shutdown-pending",L"bad-magic",L"bad-version",L"bad-session",
     L"bad-id",L"bad-op",L"oversize",L"truncated-header",L"truncated-body",L"bad-reply",L"flood",
-    L"stalled-reader",L"owner-loss",L"broker-loss",L"crash",L"request-budget",L"generation",L"valid-eof"};
+    L"stalled-reader",L"owner-loss",L"broker-loss",L"crash",L"request-budget",L"generation",L"valid-eof",L"owner-loss-prepare"};
 void noPendingResponse(HANDLE input) {
     DWORD bytes=0;
     if(PeekNamedPipe(input,nullptr,0,nullptr,&bytes,nullptr)) {
@@ -120,7 +130,11 @@ void exercise(const std::wstring& name,Channel& ch,HANDLE child,Handle& writer,H
 }
 
 int wmain(int argc,wchar_t** argv) {
+    std::unique_ptr<OwnerInput> owner;
+    if(argc==6&&std::wstring(argv[5])==L"owner-loss-prepare") {
+        owner=std::make_unique<OwnerInput>(GetStdHandle(STD_INPUT_HANDLE),Session{});preparingOwner=&owner->lost;
+    }
     const Experiment spec{L"tahtiapuri.t09h.","TAHTIAPURI_T09H_TRANSPORT_ONLY",L"transport-worker.exe",256*1024*1024,cases,
-        [](const std::wstring& name)->DWORD{return name==L"stalled-reader"?5000:15000;},prepare,exercise};
+        [](const std::wstring& name)->DWORD{return name==L"stalled-reader"?5000:15000;},prepare,exercise,preparingOwner};
     return isolation::run(argc,argv,spec);
 }

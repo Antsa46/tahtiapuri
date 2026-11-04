@@ -108,6 +108,11 @@ CPU-rakennusta ja yhteistä natiivia käynnistintä. Virallinen b12110-binääri
 säilyy aiempana verrokkina.
 Se ei vielä vaihda sovelluksen ajotapaa tai hyväksy koko oikeusrajaa.
 
+[Natiivin sovittimen sopimus](native-model-runtime.md) kuvaa T09j:n jaetut
+Windows-käynnistysosat, tavurajat ja backendin aikakatkaisun sulkuportin.
+Toteutettu parseri ja jonosuoja valmistavat sovellusliitosta; nykyinen
+SDK-/UtilityProcess-käynnistys ei vielä vaihdu natiiviseen CPU-polkuun.
+
 ## Toteutusjärjestys ja näyttö
 
 1. Yhteinen viesti- ja elinkaarisopimus sekä nykyisen työntekijän sulkuvirheet.

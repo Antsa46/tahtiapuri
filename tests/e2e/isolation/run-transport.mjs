@@ -6,34 +6,50 @@ import {dirname,join,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {collect,bounded,until,alive,helper} from './process-harness.mjs';
 import {verifyPreparationLimits} from './model-load-limits.mjs';
-import {transportCases,validateLaunch,validateResult,validateFailedCreationCleanup} from './transport-results.mjs';
+import {transportCases,validateLaunch,validateResult,validateFailedCreationCleanup,validatePrepareOwnerLoss} from './transport-results.mjs';
 const flags=process.argv.slice(2);
-assert(new Set(flags).size===flags.length&&flags.every(x=>['--smoke','--check-limits'].includes(x)));
+assert(new Set(flags).size===flags.length&&flags.every(x=>['--smoke','--check-limits','--owner-input-only','--prepare-owner-only'].includes(x)));
 const preparationLimits=verifyPreparationLimits();
 if(flags.includes('--check-limits')) {console.log(JSON.stringify({passed:true,preparationLimits}));process.exit(0);}
 const source=dirname(fileURLToPath(import.meta.url)),root=resolve(source,'../../..');
 const output=join(root,'.artifacts/tests/isolation/transport'),bin=join(output,'native/bin');
 const runRoot=join(output,'runs',randomUUID());
 const hash=async path=>createHash('sha256').update(await fs.readFile(path)).digest('hex');
-const matrix=['control','ac','lpac'].flatMap(mode=>(flags.includes('--smoke')?['normal']:transportCases).map(kind=>({mode,kind})));
-const summary={schema:1,scope:'native-transport-only',model:false,gpu:false,networkVerified:false,preparationLimits,cases:[],passed:false,unrun:matrix};
+const matrix=(flags.includes('--owner-input-only')?[]:['control','ac','lpac']).flatMap(mode=>(flags.includes('--smoke')?['normal']:flags.includes('--prepare-owner-only')?['owner-loss-prepare']:transportCases).map(kind=>({mode,kind})));
+const summary={schema:1,scope:flags.includes('--owner-input-only')?'native-owner-input-only':'native-transport-only',model:false,gpu:false,networkVerified:false,preparationLimits,cases:[],passed:false,unrun:matrix};
 await fs.mkdir(runRoot,{recursive:true});
 const summaryPath=join(runRoot,'summary.json');
 const save=()=>fs.writeFile(summaryPath,JSON.stringify(summary,null,2)+'\n');
 async function checkBuild() {
   const build=JSON.parse(await fs.readFile(join(output,'native/build-manifest.json'),'utf8'));
   assert.equal(build.schema,1);assert.equal(build.affinity,1);assert.equal(build.priority,'BelowNormal');
-  for(const entry of build.files) {
-    assert(/^(?:tests\/e2e\/isolation\/native\/(?:common\.h|isolated-launcher\.h|transport-[a-z]+\.(?:cpp|h))|\.artifacts\/tests\/isolation\/transport\/native\/bin\/transport-(?:host|worker)\.exe)$/.test(entry.path));
-    assert.equal(await hash(join(root,entry.path)),entry.sha256.toLowerCase(),'Build input/output changed.');
-  }
-  const expected=['common.h','isolated-launcher.h','transport-wire.h','transport-resources.h','transport-host.cpp','transport-worker.cpp']
+  const expected=['common.h','isolated-launcher.h','transport-wire.h','transport-resources.h','transport-host.cpp','transport-worker.cpp','owner-input-tests.cpp']
     .map(name=>'tests/e2e/isolation/native/'+name).concat(['host','worker'].map(name=>'.artifacts/tests/isolation/transport/native/bin/transport-'+name+'.exe'));
+  expected.push(...['common.h','transport-wire.h','transport-resources.h','isolated-launcher.h','owner-input.h'].map(x=>'packages/windows-runtime/native/'+x));
+  expected.push('.artifacts/tests/isolation/transport/native/bin/owner-input-tests.exe');
   assert.deepEqual(build.files.map(x=>x.path).sort(),expected.sort());
+  for(const entry of build.files) assert.equal(await hash(join(root,entry.path)),entry.sha256.toLowerCase(),'Build input/output changed.');
   summary.build=build;
   summary.scriptHashes={};
   for(const name of ['run-transport.mjs','run-transport-limited.ps1','build-transport.ps1','transport-results.mjs','process-harness.mjs','model-load-limits.mjs'])
     summary.scriptHashes[name]=await hash(join(source,name));
+}
+async function runOwnerInput() {
+  const child=spawn(join(bin,'owner-input-tests.exe'),[],{stdio:['pipe','pipe','pipe'],windowsHide:true});
+  const report=collect(child);
+  try {
+    const exit=await bounded(report.exited,10000,'Owner input test deadline exceeded.');
+    report.checkComplete();assert.deepEqual(exit,{code:0,signal:null});assert.equal(report.stderr,'');
+    assert.deepEqual(report.records,['frame-and-owner-eof','partial-frame-deadline','wrong-session','unknown-owner-operation',
+      'bounded-owner-queue','stop-partial-reader','watchdog-independent-of-owner-read'].map(name=>({type:'owner-input',passed:true,case:name})));
+    summary.ownerInput={passed:true,exit,records:report.records};
+  } catch(error) {
+    summary.ownerInput={passed:false,records:report.records,stderr:report.stderr,rejectedOutput:report.rejectedOutput,failure:error.message};throw error;
+  } finally {
+    if(child.exitCode===null&&child.signalCode===null)child.kill();
+    await bounded(report.exited,5000,'Owner input test exit unconfirmed.');
+    child.stdin.destroy();child.stdout.destroy();child.stderr.destroy();
+  }
 }
 async function runCase({mode,kind}) {
   const id=randomUUID(),staged=join(runRoot,id),profile='tahtiapuri.t09h.'+id.replaceAll('-','');
@@ -53,7 +69,10 @@ async function runCase({mode,kind}) {
   }
   child=spawn(host,['run',mode,profile,staged,kind],{cwd:staged,stdio:['pipe','pipe','pipe'],windowsHide:true});
   report=collect(child);
-    if(kind==='owner-loss'||kind==='broker-loss') {
+    if(kind==='owner-loss-prepare') {
+      await until(()=>{report.check();return report.records.some(x=>x.type==='await-prepare-owner');},12000);
+      child.stdin.end();
+    } else if(kind==='owner-loss'||kind==='broker-loss') {
       await until(()=>{report.check();return report.records.some(x=>x.type==='await-owner');},12000);
       validateLaunch(report.records,mode);
       assert.equal(report.records.find(x=>x.type==='await-owner').pid,report.records.find(x=>x.type==='launched').pid);
@@ -69,6 +88,10 @@ async function runCase({mode,kind}) {
     }
     evidence.exit=await bounded(report.exited,20000,'Transport broker deadline exceeded.');brokerExited=true;
     report.checkComplete();assert.equal(report.stderr,'');
+    if(kind==='owner-loss-prepare') {
+      evidence.validation=validatePrepareOwnerLoss(report.records,evidence.exit);
+      validated=true;stopped=true;deleted=true;evidence.passed=true;
+    } else {
     evidence.validation=validateResult(report.records,mode,kind,evidence.exit);validated=true;
     const launch=validateLaunch(report.records,mode);
     if(observation) {
@@ -89,6 +112,7 @@ async function runCase({mode,kind}) {
       assert.deepEqual(evidence.profileCleanup.records,[{type:'cleanup',hresult:0}]);deleted=true;
     } else deleted=mode==='control'||report.records.at(-1).profileDeleted===true;
     assert(deleted);evidence.passed=true;
+    }
   } catch(error) {
     evidence.failure=String(error.message);
   } finally {
@@ -138,7 +162,7 @@ async function runCase({mode,kind}) {
   console.log(JSON.stringify({mode,kind,passed:true}));
 }
 try {
-  await checkBuild();await save();
+  await checkBuild();await runOwnerInput();await save();
   for(let index=0;index<matrix.length;index++) {
     summary.unrun=matrix.slice(index+1);summary.attempting=matrix[index];await save();
     await runCase(matrix[index]);delete summary.attempting;await save();

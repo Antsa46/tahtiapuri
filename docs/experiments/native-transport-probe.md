@@ -9,16 +9,19 @@ Ajotapojen omistava sopimus on
 ## Toteutus ja luottamusraja
 
 Koekoodi pysyy tests/e2e/isolation/-puussa; sovellus ei importoi sitä.
+Yhteiset Windows-osat omistaa `packages/windows-runtime/native/`;
+vanhat test-headerit ovat vain välittäviä includeja. Sovellussovittimen
+vastuut erottaa [natiivin mallin sopimus](../architecture/native-model-runtime.md).
 Uusia kolmannen osapuolen riippuvuuksia ei lisätä. Kaksi pientä C++-ohjelmaa
 käyttää olemassa olevaa Windows SDK:ta ja MSVC-kääntäjää:
 
 - native/transport-host.cpp määrittelee kuljetuskokeen; yhteinen
-  native/isolated-launcher.h omistaa luotetun käynnistyksen. Se tarkistaa todellisen
+  `packages/windows-runtime/native/isolated-launcher.h` omistaa luotetun käynnistyksen. Se tarkistaa todellisen
   lapsiprosessin tokenin ja Job-jäsenyyden ennen suorittamisen aloittamista.
 - native/transport-worker.cpp on synteettinen työntekijä. Sen virhekomennot
   kuuluvat vain testiin, eivät tuotteen tulevaan rajapintaan.
-- native/transport-wire.h omistaa koekanavan kehystyksen.
-  native/transport-resources.h rajaa tämän kokeen ACL- ja siivousavun.
+- Jaetut `transport-wire.h` ja `transport-resources.h` omistavat
+  kehystyksen sekä ACL- ja siivousavun.
 - run-transport.mjs omistaa tapausten järjestyksen ja jälkisiivouksen.
   transport-results.mjs hylkää ristiriitaisen näytön.
 
@@ -133,3 +136,17 @@ Koebinääriä tai testikomentoja ei toimiteta sovelluksen mukana.
 
 Käynnistimen erottamisen jälkeen synteettinen matriisi ajettiin uudelleen:
 57/57 läpäisi. Oikean mallin jatko on [CPU-mallikokeessa](native-cpu-model-probe.md).
+
+
+T09j: jaettujen Windows-osien ja omistajan keskeytysporttien jälkeen
+laajennettu 20 tapauksen matriisi läpäisi kaikissa kolmessa ajotavassa: 60/60.
+Uusi owner-loss-prepare todentaa hylätyn käynnistyksen ennen workeria,
+tyhjän Jobin ja profiilin siivouksen. Se ei ole onnistunut malliajo.
+Seitsemän erillistä OwnerInput-tapausta läpäisi; mukana ovat osittainen
+viesti, väärä istunto, kielletty operaatio, jonoraja ja lukijan rajattu sulku.
+
+Yksi laajennetun sarjan yritys päättyi ensimmäisessä normaalitapauksessa
+vahdin prosessikatkaisuun ilman raporttitietueita. Syytä ei eroteltu.
+Epäonnistunut raakadata ja sen valmisteluhakemisto säilyvät paikallisina;
+puuttuva launch-raportti ei yksin anna siivouslupaa. Rajattu normaalikoe
+ja uusi koko sarja läpäisivät, mutta eivät muuta aiempaa yritystä läpäistyksi.

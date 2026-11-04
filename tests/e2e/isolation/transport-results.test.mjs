@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {validateLaunch,validateResult,transportCases,validateFailedCreationCleanup} from './transport-results.mjs';
+import {validateLaunch,validateResult,transportCases,validateFailedCreationCleanup,validatePrepareOwnerLoss} from './transport-results.mjs';
 const launched=(mode='lpac')=>({type:'launched',requestedPolicy:mode,pid:123,appContainer:mode!=='control',
   lpac:mode==='control'?false:null,lpacQueryError:mode==='control'?0:87,lpacQueryBytes:0,capabilities:0,integrity:mode==='control'?8192:4096,
   sid:mode==='control'?'':'S-1-15-2-1-2-3-4-5-6-7',job:true,activeProcessLimit:1,affinity:1,priority:'BelowNormal',jobCommitBytes:268435456,
@@ -14,7 +14,7 @@ test('unknown LPAC token status stays unknown and never proves network isolation
     {transportCompatible:true,networkVerified:false,lpacTokenReported:null});
 });
 for(const mode of ['control','ac','lpac']) test('validates exact launch policy '+mode,()=>validateLaunch([launched(mode)],mode));
-for(const kind of transportCases) test('accepts completed synthetic scenario '+kind,()=>{
+for(const kind of transportCases.filter(x=>x!=='owner-loss-prepare')) test('accepts completed synthetic scenario '+kind,()=>{
   validateResult(rows(kind),'lpac',kind,kind==='broker-loss'?{code:null,signal:'SIGTERM'}:{code:0,signal:null});
 });
 for(const [name,mutate] of [
@@ -59,4 +59,18 @@ test('positive creation failure can be cleaned but never passes runtime validati
   assert.throws(()=>validateResult([row],'lpac','normal',{code:1,signal:null}));
   for(const r of [[],[{...row,jobEmpty:false}],[{...row,profileDeleted:false}],[{...row,failure:'unknown'}],[{...row,passed:true}]])
     assert.throws(()=>validateFailedCreationCleanup(r,'normal',{code:1,signal:null}));
+});
+
+test('prepare owner loss is a rejected launch, not a successful worker scenario',()=>{
+  const rows=[{type:'await-prepare-owner'},{...result('owner-loss-prepare'),passed:false,failure:'owner-stopped',error:995}];
+  for(const watchdogReason of [0,1]) {
+    rows[1].watchdogReason=watchdogReason;
+    assert.equal(validatePrepareOwnerLoss(rows,{code:1,signal:null}).launchRejected,true);
+  }
+  assert.throws(()=>validateResult([launched(),result('owner-loss-prepare')],'lpac','owner-loss-prepare',{code:0,signal:null}));
+  for(const mutate of [r=>r.splice(1,0,launched()),r=>r[1].passed=true,r=>r[1].jobEmpty=false,
+    r=>r[1].profileDeleted=false,r=>r[1].watchdogReason=2,r=>r[1].error=5,r=>r[1].failure='unknown']) {
+    const copy=structuredClone(rows);mutate(copy);
+    assert.throws(()=>validatePrepareOwnerLoss(copy,{code:1,signal:null}));
+  }
 });

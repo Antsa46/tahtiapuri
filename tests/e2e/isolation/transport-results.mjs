@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-export const transportCases = Object.freeze(['normal','generation','shutdown-pending','bad-magic','bad-version','bad-session','bad-id','bad-op','oversize','truncated-header','truncated-body','bad-reply','flood','stalled-reader','owner-loss','broker-loss','crash','request-budget','valid-eof']);
+export const transportCases = Object.freeze(['normal','generation','shutdown-pending','bad-magic','bad-version','bad-session','bad-id','bad-op','oversize','truncated-header','truncated-body','bad-reply','flood','stalled-reader','owner-loss','broker-loss','crash','request-budget','valid-eof','owner-loss-prepare']);
 const keys=(value,names)=>assert.deepEqual(Object.keys(value).sort(),names.split(' ').sort());
 export function validateLaunch(records,mode,expectedJobCommitBytes=268435456) {
   assert(['control','ac','lpac'].includes(mode));
@@ -23,7 +23,7 @@ export function validateLaunch(records,mode,expectedJobCommitBytes=268435456) {
   return row;
 }
 export function validateResult(records,mode,kind,exit) {
-  assert(transportCases.includes(kind));const launch=validateLaunch(records,mode);
+  assert(transportCases.includes(kind) && kind!=='owner-loss-prepare');const launch=validateLaunch(records,mode);
   const owner=kind==='owner-loss'||kind==='broker-loss';
   const types=kind==='broker-loss'?['launched','await-owner']:owner?['launched','await-owner','result']:['launched','result'];
   assert.deepEqual(records.map(x=>x.type),types);
@@ -47,4 +47,15 @@ export function validateFailedCreationCleanup(records,kind,exit) {
   assert.equal(row.failure,'create-child');assert(Number.isInteger(row.error)&&row.error>0&&row.error<=0xffffffff);
   // Only a verified broker failure BEFORE a worker existed. The case stays failed.
   return true;
+}
+
+export function validatePrepareOwnerLoss(records,exit) {
+  assert.deepEqual(exit,{code:1,signal:null});
+  assert.deepEqual(records.map(x=>x.type),['await-prepare-owner','result']);
+  keys(records[0],'type');
+  const row=records[1];keys(row,'type case passed jobEmpty profileDeleted watchdogReason failure error');
+  assert.equal(row.case,'owner-loss-prepare');assert.equal(row.passed,false);
+  assert.equal(row.jobEmpty,true);assert.equal(row.profileDeleted,true);
+  assert([0,1].includes(row.watchdogReason));assert.equal(row.failure,'owner-stopped');assert.equal(row.error,995);
+  return {launchRejected:true,jobEmpty:true,profileDeleted:true,networkVerified:false};
 }

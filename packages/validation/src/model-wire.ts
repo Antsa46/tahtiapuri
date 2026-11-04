@@ -22,3 +22,7 @@ export function isModelProgress(value: unknown, session: string): value is Model
 }
 
 export type ApprovedModel = { file: string; bytes: number; sha256: string; templateSha256: string };
+
+// The owner adapter's complete job budget includes preparation and cleanup.
+// The parent waits for a terminal acknowledgement before reusing its queue.
+export const MODEL_TIME_BUDGET = Object.freeze({ ownerJobMs: 180_000, resultMs: 185_000, cancelAckMs: 10_000 });
