@@ -99,6 +99,8 @@ Tämä ei yksin todista uuden runtimen LPAC-, IPC- tai SDK-yhteensopivuutta.
 Natiivityöntekijän viestikanava erotetaan natiivikirjaston lokitulosteista.
 Kanavan tunnistus, sanomakoon rajat, katkennut yhteys, käynnistysvirhe ja
 koko omistetun prosessipuun sulku testataan ennen mallipainojen lataamista.
+[Natiivin viestintäkokeen](../experiments/native-transport-probe.md) koebinäärit
+erottavat tämän kuljetusnäytön malliruntimen ja koko sovelluksen hyväksynnästä.
 
 ## Toteutusjärjestys ja näyttö
 
