@@ -28,6 +28,7 @@ Lue tehtävän mukaan:
   [turvallisuus ja oikeudet](docs/architecture/security-and-permissions-plan.md)
 - Windowsin eristyskokeen natiivi käynnistin, koeoikeudet tai koesiivous:
   [rajattu Windows-koe](docs/experiments/windows-isolation-probe.md),
+  [LPAC:n käynnistysdiagnoosi](docs/experiments/lpac-startup-probe.md),
   [ETW-verkkokoe ja siivousvahti](docs/experiments/etw-network-probe.md) sekä
   [Electron Node -yhteensopivuuskoe](docs/experiments/electron-isolation-probe.md) sekä
   [SDK:n ja binäärilapsen koe](docs/experiments/sdk-isolation-probe.md) sekä

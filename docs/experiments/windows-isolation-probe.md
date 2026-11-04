@@ -312,3 +312,9 @@ ja [engine-asetusten pysyvyys](https://learn.microsoft.com/en-us/windows/win32/a
 
 Oman ETW-istunnon seuraava rajattu koe ja sen siivousvahti kuvataan
 [ETW-verkkokokeessa](etw-network-probe.md). Se ei muuta tämän kokeen tulosta.
+
+
+LPAC:n lapsenluonnin ja Winsock-alustuksen myöhempi erotettu diagnoosi
+kuvataan [käynnistyskokeessa](lpac-startup-probe.md). Sen 12 mitattua tapausta
+rajasivat virheen selityksiä, mutta LPAC:n virheet 5 ja 10107 säilyivät.
+Tämä ei muuta alkuperäisen matriisin tulosta.
