@@ -32,7 +32,8 @@ Lue tehtävän mukaan:
   [ETW-verkkokoe ja siivousvahti](docs/experiments/etw-network-probe.md) sekä
   [Electron Node -yhteensopivuuskoe](docs/experiments/electron-isolation-probe.md) sekä
   [SDK:n ja binäärilapsen AC-/LPAC-kokeet](docs/experiments/sdk-isolation-probe.md) sekä
-  [Node-/SDK-runtimevertailu](docs/experiments/runtime-comparison.md)
+  [Node-/SDK-runtimevertailu](docs/experiments/runtime-comparison.md) sekä
+  [rajattu 4B-latauskoe](docs/experiments/model-isolation-probe.md)
 - havaintopaikkojen asetukset, tallennus tai observing-IPC:
   [nimetyt havaintopaikat](docs/architecture/observing-places.md)
 - käyttäjätieto, historian säilytys ja poisto, välimuistit tai vienti/palautus:

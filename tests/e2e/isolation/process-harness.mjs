@@ -22,10 +22,10 @@ export function collect(child, { workerEnvelope = false } = {}) {
           if (row?.type === 'worker-output') {
             if (typeof row.data !== 'string' || Buffer.from(row.data, 'base64').toString('base64') !== row.data) throw new Error('Invalid worker envelope.');
             row = JSON.parse(Buffer.from(row.data, 'base64').toString('utf8'));
-            if (!['sdk-phase','sdk-child','sdk-child-message','sdk-policy','sdk-parent-policy','sdk-held','sdk-child-exit','sdk-ready','sdk-error','sdk-expected-failure','sdk-instrumentation-error'].includes(row?.type)) throw new Error('Worker cannot emit host records.');
+            if (!['sdk-phase','sdk-child','sdk-child-message','sdk-policy','sdk-parent-policy','sdk-held','sdk-child-exit','sdk-ready','sdk-error','sdk-expected-failure','sdk-instrumentation-error','model-phase','model-policy','model-error','model-held','model-expected-failure'].includes(row?.type)) throw new Error('Worker cannot emit host records.');
             row = { ...row, source: 'worker' };
           } else {
-            if (!['profile','launched','inspected-child','finished','error','cleanup','owner-host','console-host','console-finished'].includes(row?.type)) throw new Error('Invalid host record.');
+            if (!['profile','launched','inspected-child','finished','error','cleanup','owner-host','console-host','console-finished','model-pin','model-pin-released','model-limits'].includes(row?.type)) throw new Error('Invalid host record.');
             row = { ...row, source: 'host' };
           }
         }

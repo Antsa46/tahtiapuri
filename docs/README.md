@@ -25,6 +25,7 @@ vastuurajan, lue myös toisen osapuolen sopimus.
 | Electronin Node-tilan eristyskäynnistyksen synteettinen yhteensopivuuskoe | [experiments/electron-isolation-probe.md](experiments/electron-isolation-probe.md) |
 | SDK:n CPU-alustus, riippuvuuksien kopiointi ja instrumentoidun binäärilapsen eristyskoe | [experiments/sdk-isolation-probe.md](experiments/sdk-isolation-probe.md) |
 | Putkidiagnoosi, mitattu korjattu Node-/SDK-vertailu ja näyttörajat | [experiments/runtime-comparison.md](experiments/runtime-comparison.md) |
+| Oikean 4B-painon CPU-lataus, koetiedoston lukitus ja malliprosessin elinkaari | [experiments/model-isolation-probe.md](experiments/model-isolation-probe.md) |
 | Havaintopaikkojen asetukset, viimeksi käytetty paikka ja observing-IPC | [architecture/observing-places.md](architecture/observing-places.md) |
 | Käyttäjätiedot, keskusteluhistoria ja mallin konteksti, poisto, välimuistit ja vienti/palautus | [architecture/data-lifecycle-plan.md](architecture/data-lifecycle-plan.md) |
 | Tähtilaskenta, UTC/paikallisaika, koordinaatit, magnitudit ja paikallinen katalogi | [architecture/sky-calculation.md](architecture/sky-calculation.md) |

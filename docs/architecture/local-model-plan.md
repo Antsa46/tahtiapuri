@@ -131,6 +131,9 @@ Ensimmäisen kokeen täsmäversiot on lukittu
 node-llama-cpp 3.22.2:n UtilityProcess-yhteensopivuuden paikallisessa
 Windows-kehityskokoonpanossa. T04:n erillinen [4B/8B-laatuvertailu](../experiments/model-comparison.md)
 on tehty; paketoitu ajo on vielä kokeilematta.
+T09e:n [rajattu 4B-latauskoe](../experiments/model-isolation-probe.md) käsittelee
+todellisen painon muuttumattoman koepolun, CPU-latauksen ja sulun.
+Se ei vaihda sovelluksen runtimea eikä hyväksy koko sovelluksen eristystä.
 T09c:n erillinen [SDK-eristyskoe](../experiments/sdk-isolation-probe.md)
 käyttää CPU-binääriä ilman mallipainoja. Julkinen CPU-alustus, SDK:n sisäinen
 binäärikoelapsi ja mallin lataus/generointi ovat erillisiä hyväksymisnäyttöjä.

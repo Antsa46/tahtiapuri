@@ -6,7 +6,7 @@
 #pragma comment(lib, "Fwpuclnt.lib")
 
 static bool ownedProfile(const std::wstring& name) {
-    for (const std::wstring prefix : { L"tahtiapuri.t09a.", L"tahtiapuri.t09b.", L"tahtiapuri.t09c.", L"tahtiapuri.t09d." }) {
+    for (const std::wstring prefix : { L"tahtiapuri.t09a.", L"tahtiapuri.t09b.", L"tahtiapuri.t09c.", L"tahtiapuri.t09d.", L"tahtiapuri.t09e." }) {
         if (name.size() == prefix.size() + 32 && name.compare(0, prefix.size(), prefix) == 0)
             return std::all_of(name.begin() + prefix.size(), name.end(), [](wchar_t c) { return (c >= L'0' && c <= L'9') || (c >= L'a' && c <= L'f'); });
     }
@@ -154,11 +154,11 @@ static void readOnlyTree(const std::wstring& path, PSID sid, unsigned& remaining
     } catch (...) { FindClose(search); throw; }
     FindClose(search);
 }
-static void prepareRuntimeResources(const std::wstring& root, PSID sid, bool sdk, const std::wstring& image, bool candidate) {
+static void prepareRuntimeResources(const std::wstring& root, PSID sid, bool sdk, const std::wstring& image, bool candidate, bool model) {
     for (const auto& dir : { L"package", L"private", L"scratch", L"launcher" }) regular(root + L"\\" + dir, true);
     regular(image, false);
     for (const auto& name : { L"package\\allowed.txt", L"package\\module.mjs", L"private\\secret.txt", L"launcher\\host.exe" }) regular(root + L"\\" + name, false);
-    regular(root + (sdk ? L"\\package\\sdk-probe.mjs" : L"\\package\\runtime-probe.mjs"), false);
+    regular(root + (model ? L"\\package\\model-probe.mjs" : sdk ? L"\\package\\sdk-probe.mjs" : L"\\package\\runtime-probe.mjs"), false);
     unsigned verified = sdk ? 25000 : 2000; readOnlyTree(root, sid, verified, false);
     setOwnedAcl(root, sid, FILE_TRAVERSE, true);
     for (const auto& name : { L"owner.marker", L"profile.receipt" }) if (GetFileAttributesW((root + L"\\" + name).c_str()) != INVALID_FILE_ATTRIBUTES) setOwnedAcl(root + L"\\" + name, nullptr, 0, false);
@@ -176,6 +176,30 @@ static void prepareRuntimeResources(const std::wstring& root, PSID sid, bool sdk
     setOwnedAcl(root + L"\\scratch", sid, FILE_GENERIC_READ | FILE_GENERIC_WRITE | FILE_GENERIC_EXECUTE | DELETE | FILE_DELETE_CHILD, true);
     lowScratch(root + L"\\scratch");
 }
+// The pin is owned by wmain, including its error-path Job cleanup.
+static void pinModelWeights(const std::wstring& root, bool missing, Handle& pin) {
+    const auto path = root + L"\\package\\model.gguf";
+    if (missing) {
+        if (GetFileAttributesW(filePath(path).c_str()) != INVALID_FILE_ATTRIBUTES || GetLastError() != ERROR_FILE_NOT_FOUND)
+            throw WinError("model-missing-fixture", ERROR_INVALID_DATA);
+        emit("{\"type\":\"model-pin\",\"present\":false,\"missingError\":2}"); return;
+    }
+    regular(path, false);
+    pin.value = CreateFileW(filePath(path).c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+    if (pin.value == INVALID_HANDLE_VALUE) throw WinError("model-pin-open");
+    BY_HANDLE_FILE_INFORMATION info = {};
+    if (!GetFileInformationByHandle(pin.value, &info) || info.nNumberOfLinks != 1 || (info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT))
+        throw WinError("model-pin-identity", ERROR_INVALID_DATA);
+    const ULONGLONG size = (ULONGLONG(info.nFileSizeHigh) << 32) | info.nFileSizeLow;
+    if (size != 2497280256ULL) throw WinError("model-pin-size", ERROR_INVALID_DATA);
+    for (const DWORD access : { DWORD(GENERIC_WRITE), DWORD(DELETE) }) {
+        Handle attempt(CreateFileW(filePath(path).c_str(), access, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
+        if (attempt.value != INVALID_HANDLE_VALUE || GetLastError() != ERROR_SHARING_VIOLATION)
+            throw WinError("model-pin-sharing", ERROR_INVALID_DATA);
+    }
+    emit("{\"type\":\"model-pin\",\"present\":true,\"bytes\":2497280256,\"writeError\":32,\"deleteError\":32,\"inherit\":false}");
+}
+
 static std::wstring environment(const std::wstring& root, bool electron, bool sdk) {
     wchar_t windows[MAX_PATH] = {}; if (!GetWindowsDirectoryW(windows, MAX_PATH)) throw WinError("windows-directory");
     std::vector<std::wstring> entries = { L"APPDATA=" + root + L"\\scratch", L"LOCALAPPDATA=" + root + L"\\scratch", L"PATH=" + std::wstring(windows) + L"\\System32", L"SystemRoot=" + std::wstring(windows), L"TEMP=" + root + L"\\scratch", L"TMP=" + root + L"\\scratch", L"USERPROFILE=" + root + L"\\scratch", L"WINDIR=" + std::wstring(windows) };
@@ -288,7 +312,7 @@ static void inspectSdkChild(HANDLE job, DWORD parent, DWORD& observed, const std
     }
 }
 int wmain(int argc, wchar_t** argv) {
-    PSID sid = nullptr; std::wstring profile; bool created = false; int result = 1; Handle job, console;
+    PSID sid = nullptr; std::wstring profile; bool created = false; int result = 1; Handle job, console, modelPin;
     try {
         if (argc == 4 && std::wstring(argv[1]) == L"cleanup" && ownedProfile(argv[2])) {
             receipt(ownedRoot(argv[3]), argv[2], false);
@@ -305,26 +329,28 @@ int wmain(int argc, wchar_t** argv) {
             if (!TerminateProcess(process.value, 44) || WaitForSingleObject(process.value, 5000) != WAIT_OBJECT_0) throw WinError("emergency-stop");
             emit("{\"type\":\"emergency-stopped\"}"); return 0;
         }
-        if (argc != 11 || (std::wstring(argv[1]) != L"run" && std::wstring(argv[1]) != L"run-registry-read" && std::wstring(argv[1]) != L"run-lpac-candidate" && std::wstring(argv[1]) != L"run-electron" && std::wstring(argv[1]) != L"run-sdk" && std::wstring(argv[1]) != L"run-sdk-node" && std::wstring(argv[1]) != L"run-sdk-node-candidate")) throw WinError("arguments", ERROR_INVALID_PARAMETER);
+        if (argc != 11 || (std::wstring(argv[1]) != L"run" && std::wstring(argv[1]) != L"run-registry-read" && std::wstring(argv[1]) != L"run-lpac-candidate" && std::wstring(argv[1]) != L"run-electron" && std::wstring(argv[1]) != L"run-sdk" && std::wstring(argv[1]) != L"run-sdk-node" && std::wstring(argv[1]) != L"run-sdk-node-candidate" && std::wstring(argv[1]) != L"run-model-candidate")) throw WinError("arguments", ERROR_INVALID_PARAMETER);
+        const bool modelCandidate = std::wstring(argv[1]) == L"run-model-candidate";
         const bool sdkCandidate = std::wstring(argv[1]) == L"run-sdk-node-candidate";
         const bool candidate = std::wstring(argv[1]) == L"run-lpac-candidate";
-        const bool registryRead = (sdkCandidate && std::wstring(argv[2]) == L"lpac") || candidate || std::wstring(argv[1]) == L"run-registry-read";
-        const bool node = sdkCandidate || std::wstring(argv[1]) == L"run-sdk-node";
+        const bool registryRead = ((sdkCandidate || modelCandidate) && std::wstring(argv[2]) == L"lpac") || candidate || std::wstring(argv[1]) == L"run-registry-read";
+        const bool node = modelCandidate || sdkCandidate || std::wstring(argv[1]) == L"run-sdk-node";
         const bool sdk = node || std::wstring(argv[1]) == L"run-sdk";
         const bool electron = !node && (sdk || std::wstring(argv[1]) == L"run-electron");
         std::wstring mode(argv[2]); profile = argv[3]; const std::wstring root = ownedRoot(argv[4]);
         if ((mode != L"control" && mode != L"control-inherit" && mode != L"ac" && mode != L"lpac") || !ownedProfile(profile)) throw WinError("profile-arguments", ERROR_INVALID_PARAMETER);
-        const std::wstring purpose = sdkCandidate ? L"tahtiapuri.t09d." : sdk ? L"tahtiapuri.t09c." : electron ? L"tahtiapuri.t09b." : L"tahtiapuri.t09a.";
-        if (sdk && mode != L"control" && mode != L"ac" && !(sdkCandidate && mode == L"lpac")) throw WinError("sdk-policy", ERROR_INVALID_PARAMETER);
+        const std::wstring purpose = modelCandidate ? L"tahtiapuri.t09e." : sdkCandidate ? L"tahtiapuri.t09d." : sdk ? L"tahtiapuri.t09c." : electron ? L"tahtiapuri.t09b." : L"tahtiapuri.t09a.";
+        if (sdk && mode != L"control" && mode != L"ac" && !((sdkCandidate || modelCandidate) && mode == L"lpac")) throw WinError("sdk-policy", ERROR_INVALID_PARAMETER);
         if (profile.compare(0, purpose.size(), purpose) != 0) throw WinError("profile-purpose", ERROR_INVALID_PARAMETER);
         for (int n = 5; n <= 9; ++n) if (boundedNumber(argv[n], 65535) == 0) throw WinError("port", ERROR_INVALID_PARAMETER);
         const std::wstring life(argv[10]);
+        if (modelCandidate && ((mode != L"control" && mode != L"lpac") || (life != L"once" && life != L"hold" && life != L"missing-model"))) throw WinError("model-candidate-scope", ERROR_INVALID_PARAMETER);
         if (sdkCandidate && (life != L"once" && life != L"hold" && life != L"missing-binary")) throw WinError("sdk-candidate-scope", ERROR_INVALID_PARAMETER);
-        if (registryRead && !candidate && !sdkCandidate && (mode != L"lpac" || (life != L"registry-once" && life != L"startup-child" && life != L"startup-no-inherit" && life != L"startup-winsock"))) throw WinError("registry-comparison-scope", ERROR_INVALID_PARAMETER);
+        if (registryRead && !candidate && !sdkCandidate && !modelCandidate && (mode != L"lpac" || (life != L"registry-once" && life != L"startup-child" && life != L"startup-no-inherit" && life != L"startup-winsock"))) throw WinError("registry-comparison-scope", ERROR_INVALID_PARAMETER);
         if (candidate && (mode != L"lpac" || (life != L"network-once" && life != L"network-fail" && life != L"network-hold"))) throw WinError("candidate-comparison-scope", ERROR_INVALID_PARAMETER);
         const bool primaryOnly = life == L"primary-once" || life == L"primary-hold" || life == L"primary-fail";
         const bool startupDiagnostic = !electron && !node && (life == L"startup-child" || life == L"startup-no-inherit" || life == L"startup-winsock" || life == L"resource-once" || life == L"registry-once");
-        if (!startupDiagnostic && life != L"once" && life != L"hold" && life != L"fail" && !(sdk && life == L"missing-binary") && !(!electron && !node && (mode != L"lpac" || candidate) && (life == L"network-once" || life == L"network-fail" || life == L"network-hold")) && !(primaryOnly && mode == L"lpac")) throw WinError("lifetime", ERROR_INVALID_PARAMETER);
+        if (!startupDiagnostic && life != L"once" && life != L"hold" && life != L"fail" && !(sdk && life == L"missing-binary") && !(modelCandidate && life == L"missing-model") && !(!electron && !node && (mode != L"lpac" || candidate) && (life == L"network-once" || life == L"network-fail" || life == L"network-hold")) && !(primaryOnly && mode == L"lpac")) throw WinError("lifetime", ERROR_INVALID_PARAMETER);
         const std::wstring childLife = primaryOnly ? life.substr(8) : life;
         if (mode == L"ac" || mode == L"lpac") {
             const HRESULT hr = CreateAppContainerProfile(profile.c_str(), L"Tahtiapuri synthetic isolation probe", L"Temporary owned test profile", nullptr, 0, &sid);
@@ -336,7 +362,7 @@ int wmain(int argc, wchar_t** argv) {
         }
         const std::wstring image = root + (node ? L"\\package\\node.exe" : electron ? L"\\package\\electron.exe" : L"\\package\\probe.exe");
         if (node) inspectOwnConsole(console);
-        if (electron || node) prepareRuntimeResources(root, sid, sdk, image, sdkCandidate); else prepareResources(root, sid);
+        if (electron || node) prepareRuntimeResources(root, sid, sdk, image, sdkCandidate || modelCandidate, modelCandidate); else prepareResources(root, sid);
         if (!electron && !node) {
             FWP_BYTE_BLOB* appId = nullptr;
             const DWORD status = FwpmGetAppIdFromFileName0(image.c_str(), &appId);
@@ -347,9 +373,25 @@ int wmain(int argc, wchar_t** argv) {
             if (appId) FwpmFreeMemory0(reinterpret_cast<void**>(&appId));
             emit("{\"type\":\"network-identity\",\"code\":" + std::to_string(status) + ",\"appIdHex\":\"" + hex + "\"}");
         }
+        if (modelCandidate) pinModelWeights(root, life == L"missing-model", modelPin);
         job.value = CreateJobObjectW(nullptr, nullptr); if (!job.value) throw WinError("job");
         JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits = {}; limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        if (modelCandidate) {
+            limits.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_ACTIVE_PROCESS | JOB_OBJECT_LIMIT_AFFINITY | JOB_OBJECT_LIMIT_PRIORITY_CLASS | JOB_OBJECT_LIMIT_JOB_MEMORY;
+            limits.BasicLimitInformation.ActiveProcessLimit = 1;
+            limits.BasicLimitInformation.Affinity = 1;
+            limits.BasicLimitInformation.PriorityClass = BELOW_NORMAL_PRIORITY_CLASS;
+            limits.JobMemoryLimit = SIZE_T(6) * 1024 * 1024 * 1024;
+        }
         if (!SetInformationJobObject(job.value, JobObjectExtendedLimitInformation, &limits, sizeof(limits))) throw WinError("job-limits");
+        if (modelCandidate) {
+            JOBOBJECT_EXTENDED_LIMIT_INFORMATION actual = {};
+            if (!QueryInformationJobObject(job.value, JobObjectExtendedLimitInformation, &actual, sizeof(actual), nullptr)
+                || actual.BasicLimitInformation.LimitFlags != limits.BasicLimitInformation.LimitFlags
+                || actual.BasicLimitInformation.ActiveProcessLimit != 1 || actual.BasicLimitInformation.Affinity != 1
+                || actual.BasicLimitInformation.PriorityClass != BELOW_NORMAL_PRIORITY_CLASS || actual.JobMemoryLimit != limits.JobMemoryLimit)
+                throw WinError("model-job-limits", ERROR_INVALID_DATA);
+        }
         Handle input, ack, workerRead, workerWrite;
         if (sdk) {
             SECURITY_ATTRIBUTES pipeAttributes = { sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE };
@@ -372,10 +414,10 @@ int wmain(int argc, wchar_t** argv) {
         STARTUPINFOEXW startup = {}; startup.StartupInfo.cb = sizeof(startup); startup.lpAttributeList = attributes.list;
         startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES; startup.StartupInfo.hStdInput = inherited[0]; startup.StartupInfo.hStdOutput = inherited[1]; startup.StartupInfo.hStdError = inherited[2];
         std::wstring command = quote(image);
-        if (electron || node) command += L" --preserve-symlinks --preserve-symlinks-main " + quote(root + (sdk ? L"\\package\\sdk-probe.mjs" : L"\\package\\runtime-probe.mjs"));
+        if (electron || node) command += L" --preserve-symlinks --preserve-symlinks-main " + quote(root + (modelCandidate ? L"\\package\\model-probe.mjs" : sdk ? L"\\package\\sdk-probe.mjs" : L"\\package\\runtime-probe.mjs"));
         command += L" " + quote(root);
         for (int n = 5; n <= 9; ++n) command += L" " + quote(argv[n]);
-        command += L" " + quote(childLife) + L" " + std::to_wstring(reinterpret_cast<ULONG_PTR>(sentinel.value)) + (sdkCandidate ? L" primary-sdk-candidate" : primaryOnly ? L" primary-only" : L" primary");
+        command += L" " + quote(childLife) + L" " + std::to_wstring(reinterpret_cast<ULONG_PTR>(sentinel.value)) + (modelCandidate ? L" primary-model-candidate" : sdkCandidate ? L" primary-sdk-candidate" : primaryOnly ? L" primary-only" : L" primary");
         std::wstring env = environment(root, electron, sdk); PROCESS_INFORMATION process = {};
         // Node and its unchanged SDK fork share the host's hidden console. Creating
         // a second console would add conhost.exe to the strictly two-process Job.
@@ -384,6 +426,12 @@ int wmain(int argc, wchar_t** argv) {
         Handle child(process.hProcess), thread(process.hThread);
         if (sdk) { CloseHandle(workerWrite.value); workerWrite.value = nullptr; }
         BOOL inJob = FALSE; if (!IsProcessInJob(child.value, job.value, &inJob) || !inJob) throw WinError("job-membership");
+        if (modelCandidate) {
+            DWORD_PTR affinity = 0, systemAffinity = 0;
+            if (!GetProcessAffinityMask(child.value, &affinity, &systemAffinity) || affinity != 1 || GetPriorityClass(child.value) != BELOW_NORMAL_PRIORITY_CLASS)
+                throw WinError("model-process-limits", ERROR_INVALID_DATA);
+            emit("{\"type\":\"model-limits\",\"activeProcessLimit\":1,\"affinity\":1,\"priority\":\"BelowNormal\",\"jobCommitBytes\":6442450944,\"readback\":true}");
+        }
         const auto view = inspectToken(child.value);
         const auto exactCapabilities = inspectCapabilities(child.value); requireCapabilities(exactCapabilities, registryRead);
         const bool inheritedSentinel = sentinelInherited(child.value, sentinel.value);
@@ -392,11 +440,11 @@ int wmain(int argc, wchar_t** argv) {
         if (sid) { LPWSTR expected = nullptr; if (!ConvertSidToStringSidW(sid, &expected)) throw WinError("expected-sid"); bool same = view.sid == expected; LocalFree(expected); if (!same) throw WinError("child-identity", ERROR_ACCESS_DENIED); }
         emit("{\"type\":\"launched\",\"requestedPolicy\":\"" + ascii(mode) + "\",\"aclsVerified\":true,\"sentinelInherited\":" + std::string(inheritedSentinel ? "true" : "false") + ",\"pid\":" + std::to_string(process.dwProcessId) + ",\"job\":true,\"appContainer\":" + (view.app ? "true" : "false") + ",\"lpac\":" + jsonFlag(view.lpac) + ",\"lpacQueryError\":" + std::to_string(view.lpacQueryError) + ",\"lpacQueryBytes\":" + std::to_string(view.lpacQueryBytes) + ",\"capabilitySids\":" + capabilityJson(exactCapabilities) + ",\"capabilityPolicy\":\"" + (registryRead ? "registryRead" : "none") + "\",\"capabilities\":" + std::to_string(view.capabilities) + ",\"sid\":\"" + ascii(view.sid) + "\",\"integrity\":" + std::to_string(view.integrity) + "}");
         if (ResumeThread(thread.value) == static_cast<DWORD>(-1)) throw WinError("resume");
-        const ULONGLONG deadline = GetTickCount64() + (sdk ? 60000 : 30000); bool ownerGone = false; DWORD inspected = 0; std::string pendingOutput; size_t outputBytes = 0;
+        const ULONGLONG deadline = GetTickCount64() + (modelCandidate ? 120000 : sdk ? 60000 : 30000); bool ownerGone = false; DWORD inspected = 0; std::string pendingOutput; size_t outputBytes = 0;
         for (;;) {
             if (WaitForSingleObject(child.value, 20) == WAIT_OBJECT_0) break;
             if (sdk) relayWorker(workerRead.value, pendingOutput, outputBytes, false);
-            if (sdk) inspectSdkChild(job.value, process.dwProcessId, inspected, profile.substr(purpose.size()), view, ack.value, image, registryRead);
+            if (sdk && !modelCandidate) inspectSdkChild(job.value, process.dwProcessId, inspected, profile.substr(purpose.size()), view, ack.value, image, registryRead);
             DWORD available = 0;
             if (!PeekNamedPipe(GetStdHandle(STD_INPUT_HANDLE), nullptr, 0, nullptr, &available, nullptr)) { ownerGone = true; break; }
             if (available > 0) { ownerGone = true; break; }
@@ -422,6 +470,10 @@ int wmain(int argc, wchar_t** argv) {
     if (job.value) {
         processesStopped = stopJob(job.value); CloseHandle(job.value); job.value = nullptr;
         if (!processesStopped) { result = 1; try { emit("{\"type\":\"error\",\"stage\":\"error-path-job-cleanup\"}"); } catch (...) {} }
+    }
+    if (modelPin.value && modelPin.value != INVALID_HANDLE_VALUE && processesStopped) {
+        CloseHandle(modelPin.value); modelPin.value = nullptr;
+        try { emit("{\"type\":\"model-pin-released\",\"processesStopped\":true}"); } catch (...) { result = 1; }
     }
     if (console.value) {
         const bool detached = FreeConsole() != FALSE;
