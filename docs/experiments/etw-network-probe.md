@@ -242,6 +242,16 @@ Automaation paikallinen näyttö:
   tuloshakemistoa ei syntynyt, omat staged-tiedostot poistuivat eikä
   tähän yritykseen kuuluvaa kerääjäprosessia jäänyt. Tätä yritystä ei hyväksytä
   uutena tapahtuma- tai korrelaationäyttönä.
+- Seuraava saman variaation liveajo onnistui julkaistulla koodilla ilman
+  lähdemuutoksia: kontrolli, AC ja jälkikontrolli hyväksyttiin automaattisesti,
+  kokonaisajon `passed=true` ja exit 0. Kontrollit saivat yhteensä 16 echoa;
+  AC:n pääprosessin ja jälkeläisen kahdeksaan yritykseen yhdistyi 12
+  Windows-pudotusta. AC:n palvelimet eivät hyväksyneet yhteyksiä tai dataa.
+  Kerääjä ja vahti päättyivät koodiin 0, oma istunto todettiin poistuneeksi,
+  hävikkiä tai callback-virheitä ei ollut, luetut asetukset täsmäsivät ja
+  kaikkien kolmen tapauksen oma staged-aineisto poistui. Pysyviä asetuksia
+  ei muutettu. `fullIsolationVerified=false` säilyi: tämä hyväksyy vain
+  nimetyn loopback-variaation, ei alkuperäistä matriisia tai koko sovellusta.
 
 ## Lähteet
 
