@@ -6,7 +6,7 @@
 #pragma comment(lib, "Fwpuclnt.lib")
 
 static bool ownedProfile(const std::wstring& name) {
-    for (const std::wstring prefix : { L"tahtiapuri.t09a.", L"tahtiapuri.t09b.", L"tahtiapuri.t09c." }) {
+    for (const std::wstring prefix : { L"tahtiapuri.t09a.", L"tahtiapuri.t09b.", L"tahtiapuri.t09c.", L"tahtiapuri.t09d." }) {
         if (name.size() == prefix.size() + 32 && name.compare(0, prefix.size(), prefix) == 0)
             return std::all_of(name.begin() + prefix.size(), name.end(), [](wchar_t c) { return (c >= L'0' && c <= L'9') || (c >= L'a' && c <= L'f'); });
     }
@@ -154,7 +154,7 @@ static void readOnlyTree(const std::wstring& path, PSID sid, unsigned& remaining
     } catch (...) { FindClose(search); throw; }
     FindClose(search);
 }
-static void prepareRuntimeResources(const std::wstring& root, PSID sid, bool sdk, const std::wstring& image) {
+static void prepareRuntimeResources(const std::wstring& root, PSID sid, bool sdk, const std::wstring& image, bool candidate) {
     for (const auto& dir : { L"package", L"private", L"scratch", L"launcher" }) regular(root + L"\\" + dir, true);
     regular(image, false);
     for (const auto& name : { L"package\\allowed.txt", L"package\\module.mjs", L"private\\secret.txt", L"launcher\\host.exe" }) regular(root + L"\\" + name, false);
@@ -167,6 +167,12 @@ static void prepareRuntimeResources(const std::wstring& root, PSID sid, bool sdk
     setOwnedAcl(root + L"\\private", nullptr, 0, true);
     setOwnedAcl(root + L"\\private\\secret.txt", nullptr, 0, false);
     unsigned remaining = sdk ? 25000 : 2000; readOnlyTree(root + L"\\package", sid, remaining, true);
+    if (candidate) {
+        const auto path = root + L"\\package\\legacy.fixture"; regular(path, false);
+        PSID legacy = nullptr; if (!ConvertStringSidToSidW(L"S-1-15-2-1", &legacy)) throw WinError("sdk-aap-sid");
+        try { setOwnedAcl(path, legacy, FILE_GENERIC_READ, false); } catch (...) { LocalFree(legacy); throw; }
+        LocalFree(legacy);
+    }
     setOwnedAcl(root + L"\\scratch", sid, FILE_GENERIC_READ | FILE_GENERIC_WRITE | FILE_GENERIC_EXECUTE | DELETE | FILE_DELETE_CHILD, true);
     lowScratch(root + L"\\scratch");
 }
@@ -251,7 +257,7 @@ static void inspectOwnConsole(Handle& console) {
     console.value = candidate.value; candidate.value = nullptr;
     emit("{\"type\":\"console-host\",\"pid\":" + std::to_string(pid) + ",\"soleClient\":true,\"hidden\":true,\"imageVerified\":true}");
 }
-static void inspectSdkChild(HANDLE job, DWORD parent, DWORD& observed, const std::wstring& nonce, const TokenView& primary, HANDLE ack, const std::wstring& expectedImage) {
+static void inspectSdkChild(HANDLE job, DWORD parent, DWORD& observed, const std::wstring& nonce, const TokenView& primary, HANDLE ack, const std::wstring& expectedImage, bool registryRead) {
     std::vector<BYTE> storage(sizeof(JOBOBJECT_BASIC_PROCESS_ID_LIST) + sizeof(ULONG_PTR) * 7);
     auto members = reinterpret_cast<JOBOBJECT_BASIC_PROCESS_ID_LIST*>(storage.data());
     if (!QueryInformationJobObject(job, JobObjectBasicProcessIdList, members, static_cast<DWORD>(storage.size()), nullptr)) throw WinError("sdk-job-members");
@@ -273,8 +279,9 @@ static void inspectSdkChild(HANDLE job, DWORD parent, DWORD& observed, const std
             throw WinError("sdk-child-image", ERROR_ACCESS_DENIED);
         }
         const auto token = inspectToken(child.value);
-        if (token.app != primary.app || token.sid != primary.sid || token.capabilities != 0 || token.integrity != primary.integrity || token.lpac != primary.lpac || token.lpacQueryError != primary.lpacQueryError) throw WinError("sdk-child-token", ERROR_ACCESS_DENIED);
-        emit("{\"type\":\"inspected-child\",\"pid\":" + std::to_string(pid) + ",\"job\":true,\"imageVerified\":true,\"appContainer\":" + (token.app ? "true" : "false") + ",\"sid\":\"" + ascii(token.sid) + "\",\"capabilities\":" + std::to_string(token.capabilities) + ",\"integrity\":" + std::to_string(token.integrity) + ",\"lpac\":" + jsonFlag(token.lpac) + "}");
+        const auto capabilities = inspectCapabilities(child.value); requireCapabilities(capabilities, registryRead);
+        if (token.app != primary.app || token.sid != primary.sid || token.capabilities != primary.capabilities || token.integrity != primary.integrity || token.lpac != primary.lpac || token.lpacQueryError != primary.lpacQueryError) throw WinError("sdk-child-token", ERROR_ACCESS_DENIED);
+        emit("{\"type\":\"inspected-child\",\"pid\":" + std::to_string(pid) + ",\"job\":true,\"imageVerified\":true,\"appContainer\":" + (token.app ? "true" : "false") + ",\"sid\":\"" + ascii(token.sid) + "\",\"capabilities\":" + std::to_string(token.capabilities) + ",\"integrity\":" + std::to_string(token.integrity) + ",\"lpac\":" + jsonFlag(token.lpac) + ",\"lpacQueryError\":" + std::to_string(token.lpacQueryError) + ",\"lpacQueryBytes\":" + std::to_string(token.lpacQueryBytes) + ",\"capabilitySids\":" + capabilityJson(capabilities) + ",\"capabilityPolicy\":\"" + (registryRead ? "registryRead" : "none") + "\"}");
         const std::string message = "{\"type\":\"sdk-child-ack\",\"nonce\":\"" + ascii(nonce) + "\",\"pid\":" + std::to_string(pid) + "}\n";
         DWORD written = 0; if (!WriteFile(ack, message.data(), static_cast<DWORD>(message.size()), &written, nullptr) || written != static_cast<DWORD>(message.size())) throw WinError("sdk-child-ack");
         observed = pid;
@@ -298,20 +305,22 @@ int wmain(int argc, wchar_t** argv) {
             if (!TerminateProcess(process.value, 44) || WaitForSingleObject(process.value, 5000) != WAIT_OBJECT_0) throw WinError("emergency-stop");
             emit("{\"type\":\"emergency-stopped\"}"); return 0;
         }
-        if (argc != 11 || (std::wstring(argv[1]) != L"run" && std::wstring(argv[1]) != L"run-registry-read" && std::wstring(argv[1]) != L"run-lpac-candidate" && std::wstring(argv[1]) != L"run-electron" && std::wstring(argv[1]) != L"run-sdk" && std::wstring(argv[1]) != L"run-sdk-node")) throw WinError("arguments", ERROR_INVALID_PARAMETER);
+        if (argc != 11 || (std::wstring(argv[1]) != L"run" && std::wstring(argv[1]) != L"run-registry-read" && std::wstring(argv[1]) != L"run-lpac-candidate" && std::wstring(argv[1]) != L"run-electron" && std::wstring(argv[1]) != L"run-sdk" && std::wstring(argv[1]) != L"run-sdk-node" && std::wstring(argv[1]) != L"run-sdk-node-candidate")) throw WinError("arguments", ERROR_INVALID_PARAMETER);
+        const bool sdkCandidate = std::wstring(argv[1]) == L"run-sdk-node-candidate";
         const bool candidate = std::wstring(argv[1]) == L"run-lpac-candidate";
-        const bool registryRead = candidate || std::wstring(argv[1]) == L"run-registry-read";
-        const bool node = std::wstring(argv[1]) == L"run-sdk-node";
+        const bool registryRead = (sdkCandidate && std::wstring(argv[2]) == L"lpac") || candidate || std::wstring(argv[1]) == L"run-registry-read";
+        const bool node = sdkCandidate || std::wstring(argv[1]) == L"run-sdk-node";
         const bool sdk = node || std::wstring(argv[1]) == L"run-sdk";
         const bool electron = !node && (sdk || std::wstring(argv[1]) == L"run-electron");
         std::wstring mode(argv[2]); profile = argv[3]; const std::wstring root = ownedRoot(argv[4]);
         if ((mode != L"control" && mode != L"control-inherit" && mode != L"ac" && mode != L"lpac") || !ownedProfile(profile)) throw WinError("profile-arguments", ERROR_INVALID_PARAMETER);
-        const std::wstring purpose = sdk ? L"tahtiapuri.t09c." : electron ? L"tahtiapuri.t09b." : L"tahtiapuri.t09a.";
-        if (sdk && mode != L"control" && mode != L"ac") throw WinError("sdk-policy", ERROR_INVALID_PARAMETER);
+        const std::wstring purpose = sdkCandidate ? L"tahtiapuri.t09d." : sdk ? L"tahtiapuri.t09c." : electron ? L"tahtiapuri.t09b." : L"tahtiapuri.t09a.";
+        if (sdk && mode != L"control" && mode != L"ac" && !(sdkCandidate && mode == L"lpac")) throw WinError("sdk-policy", ERROR_INVALID_PARAMETER);
         if (profile.compare(0, purpose.size(), purpose) != 0) throw WinError("profile-purpose", ERROR_INVALID_PARAMETER);
         for (int n = 5; n <= 9; ++n) if (boundedNumber(argv[n], 65535) == 0) throw WinError("port", ERROR_INVALID_PARAMETER);
         const std::wstring life(argv[10]);
-        if (registryRead && !candidate && (mode != L"lpac" || (life != L"registry-once" && life != L"startup-child" && life != L"startup-no-inherit" && life != L"startup-winsock"))) throw WinError("registry-comparison-scope", ERROR_INVALID_PARAMETER);
+        if (sdkCandidate && (life != L"once" && life != L"hold" && life != L"missing-binary")) throw WinError("sdk-candidate-scope", ERROR_INVALID_PARAMETER);
+        if (registryRead && !candidate && !sdkCandidate && (mode != L"lpac" || (life != L"registry-once" && life != L"startup-child" && life != L"startup-no-inherit" && life != L"startup-winsock"))) throw WinError("registry-comparison-scope", ERROR_INVALID_PARAMETER);
         if (candidate && (mode != L"lpac" || (life != L"network-once" && life != L"network-fail" && life != L"network-hold"))) throw WinError("candidate-comparison-scope", ERROR_INVALID_PARAMETER);
         const bool primaryOnly = life == L"primary-once" || life == L"primary-hold" || life == L"primary-fail";
         const bool startupDiagnostic = !electron && !node && (life == L"startup-child" || life == L"startup-no-inherit" || life == L"startup-winsock" || life == L"resource-once" || life == L"registry-once");
@@ -327,7 +336,7 @@ int wmain(int argc, wchar_t** argv) {
         }
         const std::wstring image = root + (node ? L"\\package\\node.exe" : electron ? L"\\package\\electron.exe" : L"\\package\\probe.exe");
         if (node) inspectOwnConsole(console);
-        if (electron || node) prepareRuntimeResources(root, sid, sdk, image); else prepareResources(root, sid);
+        if (electron || node) prepareRuntimeResources(root, sid, sdk, image, sdkCandidate); else prepareResources(root, sid);
         if (!electron && !node) {
             FWP_BYTE_BLOB* appId = nullptr;
             const DWORD status = FwpmGetAppIdFromFileName0(image.c_str(), &appId);
@@ -366,7 +375,7 @@ int wmain(int argc, wchar_t** argv) {
         if (electron || node) command += L" --preserve-symlinks --preserve-symlinks-main " + quote(root + (sdk ? L"\\package\\sdk-probe.mjs" : L"\\package\\runtime-probe.mjs"));
         command += L" " + quote(root);
         for (int n = 5; n <= 9; ++n) command += L" " + quote(argv[n]);
-        command += L" " + quote(childLife) + L" " + std::to_wstring(reinterpret_cast<ULONG_PTR>(sentinel.value)) + (primaryOnly ? L" primary-only" : L" primary");
+        command += L" " + quote(childLife) + L" " + std::to_wstring(reinterpret_cast<ULONG_PTR>(sentinel.value)) + (sdkCandidate ? L" primary-sdk-candidate" : primaryOnly ? L" primary-only" : L" primary");
         std::wstring env = environment(root, electron, sdk); PROCESS_INFORMATION process = {};
         // Node and its unchanged SDK fork share the host's hidden console. Creating
         // a second console would add conhost.exe to the strictly two-process Job.
@@ -381,13 +390,13 @@ int wmain(int argc, wchar_t** argv) {
         if (inheritedSentinel != (mode == L"control-inherit")) throw WinError("sentinel-inheritance", ERROR_ACCESS_DENIED);
         if (sid && (!view.app || view.capabilities != (registryRead ? 1u : 0u) || view.integrity != SECURITY_MANDATORY_LOW_RID || (view.lpac >= 0 && view.lpac != (mode == L"lpac" ? 1 : 0)) || (view.lpac < 0 && view.lpacQueryError != ERROR_INVALID_PARAMETER))) throw WinError("child-token", ERROR_ACCESS_DENIED);
         if (sid) { LPWSTR expected = nullptr; if (!ConvertSidToStringSidW(sid, &expected)) throw WinError("expected-sid"); bool same = view.sid == expected; LocalFree(expected); if (!same) throw WinError("child-identity", ERROR_ACCESS_DENIED); }
-        emit("{\"type\":\"launched\",\"requestedPolicy\":\"" + ascii(mode) + "\",\"aclsVerified\":true,\"sentinelInherited\":" + std::string(inheritedSentinel ? "true" : "false") + ",\"pid\":" + std::to_string(process.dwProcessId) + ",\"job\":true,\"appContainer\":" + (view.app ? "true" : "false") + ",\"lpac\":" + jsonFlag(view.lpac) + ",\"lpacQueryError\":" + std::to_string(view.lpacQueryError) + ",\"lpacQueryBytes\":" + std::to_string(view.lpacQueryBytes) + ",\"capabilitySids\":" + capabilityJson(exactCapabilities) + ",\"capabilityPolicy\":\"" + (registryRead ? "registryRead" : "none") + "\",\"capabilities\":" + std::to_string(view.capabilities) + ",\"integrity\":" + std::to_string(view.integrity) + "}");
+        emit("{\"type\":\"launched\",\"requestedPolicy\":\"" + ascii(mode) + "\",\"aclsVerified\":true,\"sentinelInherited\":" + std::string(inheritedSentinel ? "true" : "false") + ",\"pid\":" + std::to_string(process.dwProcessId) + ",\"job\":true,\"appContainer\":" + (view.app ? "true" : "false") + ",\"lpac\":" + jsonFlag(view.lpac) + ",\"lpacQueryError\":" + std::to_string(view.lpacQueryError) + ",\"lpacQueryBytes\":" + std::to_string(view.lpacQueryBytes) + ",\"capabilitySids\":" + capabilityJson(exactCapabilities) + ",\"capabilityPolicy\":\"" + (registryRead ? "registryRead" : "none") + "\",\"capabilities\":" + std::to_string(view.capabilities) + ",\"sid\":\"" + ascii(view.sid) + "\",\"integrity\":" + std::to_string(view.integrity) + "}");
         if (ResumeThread(thread.value) == static_cast<DWORD>(-1)) throw WinError("resume");
         const ULONGLONG deadline = GetTickCount64() + (sdk ? 60000 : 30000); bool ownerGone = false; DWORD inspected = 0; std::string pendingOutput; size_t outputBytes = 0;
         for (;;) {
             if (WaitForSingleObject(child.value, 20) == WAIT_OBJECT_0) break;
             if (sdk) relayWorker(workerRead.value, pendingOutput, outputBytes, false);
-            if (sdk) inspectSdkChild(job.value, process.dwProcessId, inspected, profile.substr(purpose.size()), view, ack.value, image);
+            if (sdk) inspectSdkChild(job.value, process.dwProcessId, inspected, profile.substr(purpose.size()), view, ack.value, image, registryRead);
             DWORD available = 0;
             if (!PeekNamedPipe(GetStdHandle(STD_INPUT_HANDLE), nullptr, 0, nullptr, &available, nullptr)) { ownerGone = true; break; }
             if (available > 0) { ownerGone = true; break; }

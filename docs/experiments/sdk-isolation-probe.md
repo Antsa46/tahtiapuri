@@ -3,8 +3,8 @@
 T09c / #26 jatkaa [Electron Node -kokeen](electron-isolation-probe.md)
 AppContainer-polusta. SDK:n importti, julkinen CPU-alustus ja erillinen
 instrumentoitu binäärilapsikoe ovat eri näyttöjä. GGUF-painoja, generointia,
-CUDAa, käyttäjäaineistoa tai sääverkkoa ei käytetä. #24:n verkkonäyttö ja
-LPAC:n nykyiset esteet pysyvät avoimina.
+CUDAa, käyttäjäaineistoa tai sääverkkoa ei käytetä. #24:n synteettinen natiivinäyttö on valmistunut erikseen.
+SDK:n oma LPAC-yhteensopivuus käsitellään jäljempänä T09d-kokeessa.
 
 Korjattu erillinen Node 24.22.2 läpäisi myöhemmässä
 [runtimevertailussa](runtime-comparison.md#mitattu-node-sdk-vertailu) kaikki
@@ -170,3 +170,105 @@ Tämä täyttää #26:n rajatun Node-/CPU-helper-polun näyttötarpeen. Electron
 sisäinen runtime säilyy alkuperäisessä tilassaan. Tuotannon runtime-valinta,
 verkko, LPAC, GGUF/CUDA ja koko sovelluksen eristys ovat seuraavia erillisiä
 portteja; SDK-osakoe ei hyväksy niitä.
+
+## T09d: nimetty LPAC-SDK-koe
+
+Issue #27 jatkaa parentia #10. Lähtökohtana ovat #24:n nimetty
+LPAC + registryRead -natiivinäyttö ja #26:n korjattu erillinen Node.
+Tämä koe ei vaihda sovelluksen Electron-runtimea tai toimita omaa Node-haaraa
+käyttöversioon. Ei GGUF-painoja, generointia, CUDAa, verkkoa tai käyttäjätietoja.
+
+Valinta tehdään ennen kokeen alkua:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\e2e\isolation\run.ps1 -Probe sdk-lpac -SdkRuntime local-patched -SkipBuild
+```
+
+`-SkipBuild` edellyttää tästä lähdeversiosta jo rakennettua natiivihostia.
+Käytetään aiemmin valmistettua, tarkisteella varmennettua Nodea ja SDK 3.22.2:n
+muuttamatonta CPU-binääriä. Uutta Nodea tai SDK:ta ei käännetä eikä hankita.
+`build: never`, `skipDownload`, `gpu: false` säilyvät. Julkinen CPU-alustus
+ja dispose tapahtuvat ennen erillistä instrumentoitua alkuperäistä helperiä.
+
+Uusi testiverbi `run-sdk-node-candidate` hyväksyy vain t09d-koeprofiilin,
+control/ac/lpac-tilat ja once/missing-binary/hold-elinkaaret. Kontrollin ja
+AC:n capabilityjoukko on tyhjä; LPAC saa täsmälleen registryRead-SID:n
+SE_GROUP_ENABLED-attribuutilla. Host tarkistaa tarkan joukon sekä keskeytetystä
+SDK-parentista että todellisesta helperistä ennen latauksen jatkamista.
+Alkuperäiset SDK-verbit eivät hyväksy LPAC:ia. Runtimevalinnan virhe tai
+vieras `policyProbe` pysäyttää kokeen, eikä oletus vaihdu huomaamatta.
+
+AAP-only-fixture on oma synteettinen tiedosto. Sen suojattu ACL korvaa
+paketin yleisen ACL:n readOnlyTree-vaiheen jälkeen: ei paketin oman SID:n
+lukuoikeutta. Sekä SDK-parentti että helper lukevat sen. Kontrollissa ja AC:ssa
+luku onnistuu, LPAC:ssa vaaditaan EACCES/EPERM. Tämä käyttäytymisnäyttö erotetaan
+pyydetystä LPAC-käynnistysasetuksesta ja tokenkyselystä. Mahdollinen null/87
+ei muutu vahvistetuksi LPAC-tokenlipuksi. Helperin aiemmat viisi tiedostokoetta
+säilyvät kuudentena lisätyn AAP-luvun rinnalla.
+
+Matriisi on kolme profiilia × normaali, puuttuva binääri ja owner-loss.
+Jatkoelinkaaret ajetaan vain saman profiilin normaalin läpäisyn jälkeen.
+Sama valmistettu runtime-, SDK- ja binääriaineisto sekä host ovat käytössä.
+Owner-loss tehdään hostin tarkistaman helperin odottaessa ready-vaiheessa.
+Täsmällinen ajuri-, omistaja-/host-, SDK-parentti-, helper- ja konsoliprosessien
+joukko tarkistetaan; omien lapsiprosessien on poistuttava ennen siivousapua.
+Omistajan tarkoituksellinen tappaminen ei korvaa tätä poistumisnäyttöä.
+Oikeus-, identiteetti-, instrumentointi- tai siivousvirhe pysäyttää matriisin.
+Tarkasti nimetty toistettava SDK-yhteensopivuuseste säilyy kielteisenä tuloksena.
+
+### Näytön rajat
+
+T09d:n tulos on erillisen korjatun Noden SDK-yhteensopivuuskoe.
+AAP-fixture ei yksin ole verkon, kaikkien tiedostojen tai rekisterin eristysnäyttö.
+RegistryRead on laajempi oikeus kuin yksittäisten Winsock-avainten luku;
+sen hyväksyttävyys tuotantoon jää erikseen arvioitavaksi.
+Jaettu piilotettu koekonsoli säilyy erillisenä avoimena tuotantorajana.
+#10:n ulkoisen verkon, FMI:n, todellisten mallipainojen, CPU/GPU-malliajon,
+MCP:n ja koko sovelluspaketin hyväksymisehtoja ei kuitata tällä osakokeella.
+Ajankohtainen tulos ja tokeniseuranta kirjataan issueen #27.
+
+### T09d:n mitattu tulos
+
+Nimetty matriisi läpäisi **9/9 tapausta**, koko ajurin exit 0.
+Runtime oli aiemmin valmistettu paikallisesti korjattu Node 24.22.2,
+SDK ja CPU-binääri 3.22.2. Kaikissa tapauksissa käytettiin samaa
+valmistettua runtime-/riippuvuusaineistoa ja hostia. Lähde- ja binääritarkisteet
+jäädytettiin ennen ajoa. Asennuksia tai uusia runtime-käännöksiä ei tehty.
+
+| Profiili | SDK-parentin ja helperin capabilityt | AAP-luku molemmissa | Elinkaaret |
+| --- | --- | --- | --- |
+| Tavallinen kontrolli | Tyhjä joukko, Medium IL | Onnistui | Normaali, puuttuva binääri ja owner-loss läpäisivät |
+| AppContainer | Tyhjä joukko, Low IL | Onnistui | Kaikki kolme läpäisivät |
+| Nimetty LPAC + registryRead | Vain täsmällinen registryRead-SID, enabled, Low IL | Estyi käyttöoikeusvirheeseen | Kaikki kolme läpäisivät |
+
+Kaikissa yhdeksässä tapauksessa julkinen CPU-alustus ja dispose valmistuivat
+ennen instrumentoituun helperiin siirtymistä. Normaaleissa kolmessa tapauksessa
+alkuperäinen apuri tuotti ready/loaded/done ja poistui onnistuneesti.
+Puuttuvan binäärin kolmessa tapauksessa helper päättyi exit 1:een ja
+SDK-parentti hallitusti exit 17:ään. Kolme owner-loss-tapausta tehtiin
+hostin tarkistaman oikean helperin odottaessa ready-vaiheessa.
+
+Paketin luku ja scratch-kirjoitus onnistuivat kaikissa helper-prosesseissa.
+AC- ja LPAC-helpereissä private-luvun/kirjoituksen sekä moduulitiedoston
+muuttamisen piti estyä, ja ne estyivät. Kontrollissa ne onnistuivat.
+Erillinen AAP-tiedosto erotti lisäksi AC:n ja LPAC:n sekä SDK-parentissa
+että helperissä. LPAC-lisäkysely palautti rajoitetuissa prosesseissa
+edelleen null/87; toteutunut AAP-käyttäytyminen ei muuta kyselyn tulosta.
+
+Kaikkien yhdeksän tapauksen tarkat omat prosessijoukot, mukaan lukien
+konsolit, poistuivat ennen siivousapua. Omat profiilit ja staged-puut
+poistettiin; hätäterminointeja ei tarvittu. Yksityinen tarkistekoonti
+kattaa yhdeksän raakatulosta, matriisiyhteenvedon ja riippuvuusmanifestin.
+Aikaisempia #24:n ja #26:n tuloksia ei kirjoitettu uudelleen.
+
+Paikallisen eristystestirungon **524 testiä** läpäisi.
+Todellinen uusi host hylkäsi 22 uutta kiellettyä SDK-yhdistelmää ja
+23 vanhempien koeverbien kiellettyä yhdistelmää ennen profiilinluontia.
+Natiivin hostin käännös valmistui varoitukset virheiksi käsittelevillä
+asetuksilla. Nämä ovat tämän nimetyn testijoukon tuloksia; sovelluksen
+E2E- tai malliajoja ei tehty. Riippumaton katselmus ja julkaisun tila
+raportoidaan issueen #27.
+
+Tulos avaa seuraavan rajatun GGUF-/mallilatauskokeen suunnittelun.
+Se ei valitse omaa Node-haaraa sovelluksen toimitusruntimeksi eikä täytä
+parentin #10 kaikkia hyväksymisehtoja.

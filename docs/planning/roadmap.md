@@ -116,6 +116,10 @@ verkkohavainnot säilyvät erillisinä. T09c (#26) selvittää
 ilman GGUF-painoja ennen mallin lataus-/generointikoetta.
 Korjatun erillisen Noden [rajattu CPU-/helper-koe](../experiments/runtime-comparison.md#mitattu-node-sdk-vertailu)
 on läpäissyt; sovelluksen runtime-valinta ja T09:n muut portit säilyvät avoimina.
+T09d (#27) vertaa saman korjatun Noden SDK-polun kontrollia, AC:ta ja
+nimettyä LPAC + registryRead -profiilia ennen varsinaista mallilatausta.
+[SDK-kokeen jatkosopimus](../experiments/sdk-isolation-probe.md#t09d-nimetty-lpac-sdk-koe)
+erottaa sen verkon, GGUF:n ja koko sovelluksen näytöstä.
 
 T15 rakentaa lopullisen asentimen, ja T16 toistaa oikeusrajojen
 hyväksymisnäytön lopullisella toimitettavalla kokoonpanolla.

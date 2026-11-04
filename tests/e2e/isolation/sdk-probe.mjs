@@ -9,6 +9,9 @@ const root = process.argv[2], life = process.argv[8];
 assert(root && ['once','hold','missing-binary'].includes(life));
 const emit = row => process.stdout.write(`${JSON.stringify(row)}\n`);
 const profile = JSON.parse(await fs.readFile(join(root, 'package/sdk-profile.json'), 'utf8'));
+const candidate = process.argv[10] === 'primary-sdk-candidate';
+assert.equal(profile.policyProbe, candidate ? 'lpac-registry-read' : undefined);
+assert(['primary', 'primary-sdk-candidate'].includes(process.argv[10]));
 assert.equal(profile.version, '3.22.2'); assert(/^[a-f0-9]{32}$/.test(profile.nonce));
 const sdkRoot = join(root, 'package/node_modules/node-llama-cpp');
 const helper = join(sdkRoot, 'dist/bindings/utils/testBindingBinary.js');
@@ -28,7 +31,16 @@ try {
     nodeOptions: process.env.NODE_OPTIONS, nodePath: process.env.NODE_PATH,
     resolved: runtime.kind === 'electron' ? import.meta.resolve('electron') : undefined
   });
-  emit({ type: 'sdk-phase', phase, passed: true, ...identity }); phase = 'import';
+  emit({ type: 'sdk-phase', phase, passed: true, ...identity });
+  if (candidate) {
+    let operation;
+    try {
+      assert.equal(await fs.readFile(join(root, 'package/legacy.fixture'), 'utf8'), 'SYNTHETIC AAP ONLY\n');
+      operation = { name: 'aap-read', ok: true };
+    } catch (error) { operation = { name: 'aap-read', ok: false, code: error.code }; }
+    emit({ type: 'sdk-parent-policy', pid: process.pid, operations: [operation] });
+  }
+  phase = 'import';
   const { getLlama, getModuleVersion } = await import('node-llama-cpp');
   phase = 'import-contract'; assert.equal(await getModuleVersion(), profile.version); emit({ type: 'sdk-phase', phase: 'import', passed: true });
   phase = 'public-cpu';

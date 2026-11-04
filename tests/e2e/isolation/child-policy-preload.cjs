@@ -9,5 +9,10 @@ run('scratch-write', () => fs.writeFileSync(path.join(root, 'scratch', `child-${
 run('outside-read', () => fs.readFileSync(path.join(root, 'private/secret.txt')));
 run('outside-write', () => fs.writeFileSync(path.join(root, 'private', `child-${process.pid}.txt`), 'SYNTHETIC OUTSIDE\n', { flag: 'wx' }));
 run('code-write', () => { const fd = fs.openSync(path.join(root, 'package/module.mjs'), 'r+'); try { fs.writeSync(fd, 'X'); } finally { fs.closeSync(fd); } });
+const policyProbe = JSON.parse(fs.readFileSync(path.join(root, 'package/sdk-profile.json'), 'utf8')).policyProbe;
+if (policyProbe !== undefined && policyProbe !== 'lpac-registry-read') throw new Error('Unknown SDK policy probe.');
+if (policyProbe === 'lpac-registry-read') run('aap-read', () => {
+  if (fs.readFileSync(path.join(root, 'package/legacy.fixture'), 'utf8') !== 'SYNTHETIC AAP ONLY\n') throw new Error('Fixture mismatch.');
+});
 if (typeof process.send !== 'function') throw new Error('SDK child policy probe requires its owning IPC channel.');
 process.send({ type: 'probe-policy', pid: process.pid, operations });
