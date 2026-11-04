@@ -21,7 +21,7 @@ vastuurajan, lue myös toisen osapuolen sopimus.
 | Osien oikeudet, malliprosessin ajotapa ja eristyksen vaiheistus sekä Windows-/kontti-/VM-vertailu | [architecture/security-and-permissions-plan.md](architecture/security-and-permissions-plan.md) |
 | Natiivin AppContainer/LPAC-kokeen rajaus, toistaminen, verkkodiagnostiikka ja vain lukeva WFP-tilaus | [experiments/windows-isolation-probe.md](experiments/windows-isolation-probe.md) |
 | LPAC:n lapsenluonnin ja Winsock-alustuksen erotettu diagnoosi | [experiments/lpac-startup-probe.md](experiments/lpac-startup-probe.md) |
-| Oma ETW-tapahtumaistunto, siivousvahti ja pudotusten automaattinen yhdistäminen verkkoyrityksiin | [experiments/etw-network-probe.md](experiments/etw-network-probe.md) |
+| ETW-keruu, AC:n pakettipudotukset, LPAC:n socket-käyttöestot ja natiivikokeen hyväksyntänäyttö | [experiments/etw-network-probe.md](experiments/etw-network-probe.md) |
 | Electronin Node-tilan eristyskäynnistyksen synteettinen yhteensopivuuskoe | [experiments/electron-isolation-probe.md](experiments/electron-isolation-probe.md) |
 | SDK:n CPU-alustus, riippuvuuksien kopiointi ja instrumentoidun binäärilapsen eristyskoe | [experiments/sdk-isolation-probe.md](experiments/sdk-isolation-probe.md) |
 | Putkidiagnoosi, mitattu korjattu Node-/SDK-vertailu ja näyttörajat | [experiments/runtime-comparison.md](experiments/runtime-comparison.md) |

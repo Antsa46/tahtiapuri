@@ -49,7 +49,7 @@ function socket(hex) {
   assert.equal(bytes.readUInt32LE(24), 0, 'Unexpected IPv6 scope.');
   return { family: 6, address: '::1', port };
 }
-function caseAttempts(result, mode, endpoints, selected) {
+function caseAttempts(result, mode, endpoints, selected, socketDenied = false) {
   assert(result && result.mode === mode && (['ac','lpac'].includes(mode) || result.kind === 'normal') && result.primaryOnly === false, 'Wrong case.');
   const isolated=['ac','lpac'].includes(mode), capabilityPolicy=isolated?selected.capabilityPolicy:'none';
   if(selected.candidate){
@@ -95,13 +95,21 @@ function caseAttempts(result, mode, endpoints, selected) {
       assert.equal(operation.attempted, true, 'Attempt not performed.');
       assert.equal(detail.pid, token.pid); assert.equal(detail.ok, !restricted); assert.equal(detail.code, operation.code);
       assert.equal(detail.protocol, name.startsWith('tcp') ? 6 : 17, 'Protocol/name mismatch.');
-      assert.equal(detail.localEndpointError, 0, 'Unknown source endpoint.');
       const address = name.endsWith('4') ? '127.0.0.1' : '::1';
-      assert.equal(detail.localAddress, address); assert.equal(detail.remoteAddress, address);
-      assert(integer(detail.localPort, 65535)); assert.equal(detail.remotePort, endpoints[name]);
+      assert.equal(detail.remoteAddress, address); assert.equal(detail.remotePort, endpoints[name]);
+      if (restricted && socketDenied) {
+        // The endpoint error is the probe's INVALID_SOCKET sentinel, not a second OS denial.
+        assert.equal(detail.localEndpointError, 10038); assert.equal(detail.localAddress, ''); assert.equal(detail.localPort, 0);
+      } else {
+        assert.equal(detail.localEndpointError, 0, 'Unknown source endpoint.');
+        assert.equal(detail.localAddress, address); assert(integer(detail.localPort, 65535));
+      }
       assert(integer(detail.startedAtMs) && integer(detail.finishedAtMs) && detail.startedAtMs <= detail.finishedAtMs, 'Invalid attempt window.');
       assert(detail.startedAtMs >= start && detail.finishedAtMs <= end, 'Attempt outside case window.');
-      if (restricted) {
+      if (restricted && socketDenied) {
+        assert.equal(detail.code, 10013, 'Socket creation must return WSAEACCES.');
+        assert.equal(detail.stage, 'socket', 'Only the reviewed socket-creation denial is accepted.');
+      } else if (restricted) {
         assert.equal(detail.code, 10060, 'Unreviewed failure shape.');
         assert.equal(detail.stage, name.startsWith('tcp') ? 'connect-deadline' : 'receive', 'No actual connect/send attempt.');
       } else { assert.equal(detail.code, 0); assert.equal(detail.stage, 'echo'); }
@@ -130,9 +138,10 @@ function validatePolicy(event, family) {
 }
 
 /** Trusted local probe artifacts only. No network, processes, filesystem writes or policy changes. */
-export function correlateEtwNetwork(cases, evidence,{profile='ac'}={}) {
+function validateObservedTriplet(cases, evidence,{profile='ac',socketDenied=false}={}) {
   assert(Array.isArray(cases) && cases.length === 3, 'Both controls and one isolated case are required.');
   const selected=etwProfile(profile,cases[1]?.kind);
+  if(socketDenied)assert.equal(profile,'lpac-registry-read','Socket-denial evidence is specific to the reviewed LPAC profile.');
   const endpoints = cases[0]?.endpoints;
   assert(endpoints && Object.keys(endpoints).length === 4 && names.every(name => integer(endpoints[name], 65535)), 'Invalid endpoint set.');
   assert.equal(new Set(Object.values(endpoints)).size, 4, 'Protocol-less events need distinct endpoint ports.');
@@ -142,12 +151,18 @@ export function correlateEtwNetwork(cases, evidence,{profile='ac'}={}) {
     assert(/^[0-9a-f]{64}$/.test(cases[0].hostSha256??''));
     assert(cases.every(c=>c.hostSha256===cases[0].hostSha256),'Host changed between cases.');
   }
-  const [before, isolated, after] = cases.map((c, i) => caseAttempts(c, ['control', selected.mode, 'control-inherit'][i], endpoints,selected));
+  const [before, isolated, after] = cases.map((c, i) => caseAttempts(c, ['control', selected.mode, 'control-inherit'][i], endpoints,selected,socketDenied));
   assert(before.end <= isolated.start && isolated.end <= after.start, 'Controls do not surround the isolated case.');
   assert.equal(cases[1].observerCleanupPassed, true, 'Observer cleanup unverified.');
   assert.deepEqual(evidence.exit, cases[1].observerExit, 'Collector exit mismatch.');
   validateEtwReceipt(evidence.exit, evidence.done, evidence.guard, evidence.records, isolated.appIdHex);
-  const ready = evidence.records[1], events = evidence.records.filter(row => row.kind === 'event');
+  return { selected, isolated, events: evidence.records.filter(row => row.kind === 'event') };
+}
+
+/** Packet-drop evidence only. API denials are never accepted as an automatic fallback. */
+export function correlateEtwNetwork(cases, evidence,{profile='ac'}={}) {
+  const {selected,isolated,events}=validateObservedTriplet(cases,evidence,{profile});
+  const ready = evidence.records[1];
   assert(events.length > 0, 'No drop evidence.');
   const endpointApp = pathText(ready.endpointAppIdHex);
   assert.notEqual(endpointApp, pathText(isolated.appIdHex), 'Server and probe identities overlap.');
@@ -180,5 +195,24 @@ export function correlateEtwNetwork(cases, evidence,{profile='ac'}={}) {
       evidence: 'etw-app-isolation-loopback-drop', eventCount: hits[i].length,
       protocolSource: 'probe', packageIdentitySource: 'probe-token-and-driver',
     })),
+  };
+}
+
+/** Explicit method selection is owned by the caller, never by raw result contents. */
+export function verifyObservedNetwork(cases,evidence,{profile='ac',method='etw-drop'}={}) {
+  assert(['etw-drop','socket-access-denied'].includes(method),'Unknown network evidence method.');
+  if(method==='etw-drop')return correlateEtwNetwork(cases,evidence,{profile});
+  const {isolated,events}=validateObservedTriplet(cases,evidence,{profile,socketDenied:true});
+  assert.equal(events.length,0,'Socket denial must not be mixed with unexplained packet events.');
+  assert(!cases[1].records.some(row=>row.type==='network-startup'),'Startup failure is not socket access denial.');
+  return {
+    scope:'native-lpac-registry-read-socket-access-denied', experimentProfile:profile,
+    verificationMethod:method, capabilityPolicy:'registryRead', networkCapabilityCount:0,
+    lifecycleKind:cases[1].kind, lifecycleVerified:true, networkVerified:true, fullIsolationVerified:false,
+    socketCreationBlocked:true, connectionAttempted:false, packetDropVerified:false, policyCauseVerified:false,
+    attemptCount:isolated.attempts.length, socketAttemptCount:isolated.attempts.length, eventCount:0,
+    attempts:isolated.attempts.map(a=>({phase:a.phase,name:a.name,code:a.code,stage:a.stage,
+      evidence:'winsock-socket-access-denied',connectionAttempted:false,protocolSource:'probe',
+      packageIdentitySource:'probe-token-and-driver'})),
   };
 }

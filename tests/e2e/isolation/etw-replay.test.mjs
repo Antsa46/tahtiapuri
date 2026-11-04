@@ -4,14 +4,15 @@ import { promises as fs } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { correlationFixture } from './etw-correlation.fixture.mjs';
+import { socketDenialFixture } from './etw-socket-denial.fixture.mjs';
 import { candidateFixture } from './etw-candidate.fixture.mjs';
 import { replayEtwRun } from './replay-etw.mjs';
-async function savedFixture(t, kind = 'normal', candidate=false) {
+async function savedFixture(t, kind = 'normal', candidate=false, socketDenied=false) {
   const parent = resolve(dirname(fileURLToPath(import.meta.url)), '../../../.artifacts/tests/etw-replay');
   await fs.mkdir(parent, { recursive: true });
   const root = await fs.mkdtemp(join(parent, 'synthetic-'));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
-  const { cases, evidence } = candidate?candidateFixture():correlationFixture(kind), contents = new Map();
+  const { cases, evidence } = socketDenied?socketDenialFixture():candidate?candidateFixture():correlationFixture(kind), contents = new Map();
   for (const c of cases) contents.set(`${c.caseLabel??`${c.mode}-${c.kind}`}/result.json`, JSON.stringify(c));
   contents.set('etw/done.json', JSON.stringify(evidence.done)); contents.set('etw/guard-done.json', JSON.stringify(evidence.guard));
   contents.set('etw/events.jsonl', evidence.records.map(r => JSON.stringify(r)).join('\n') + '\n');
@@ -53,4 +54,12 @@ test('candidate replay cannot substitute the original AC case', async t => {
 });
 test('replay rejects arbitrary profile paths before file access', async () => {
   await assert.rejects(replayEtwRun('unused','normal',{profile:'../elsewhere'}));
+});
+
+test('saved socket denial requires the explicit method and never rewrites the original result', async t => {
+ const {root,contents}=await savedFixture(t,'normal',true,true);
+ await assert.rejects(replayEtwRun(root,'normal',{profile:'lpac-registry-read'}));
+ const r=await replayEtwRun(root,'normal',{profile:'lpac-registry-read',method:'socket-access-denied'});
+ assert.equal(r.socketCreationBlocked,true);assert.equal(r.packetDropVerified,false);
+ for(const [name,text] of contents)assert.equal(await fs.readFile(join(root,name),'utf8'),text);
 });

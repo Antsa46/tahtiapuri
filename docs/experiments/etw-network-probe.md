@@ -1,6 +1,8 @@
 # Lyhyt ETW-verkkokoe
 
-Tila: toimiva rajattu tapahtumakeruu ja automaattinen vastaavuuden tarkistus.
+Tila: AC:n pakettipudotukset ja nimetyn LPAC + registryRead -profiilin
+socket-käyttöestot on varmennettu normaali-, virhe- ja pakkosulkukokeissa.
+Lopullinen näyttökartta ja sen rajat ovat dokumentin lopussa.
 Windowsin loopback-pudotukset saatiin näkyviin ilman pysyviä asetusmuutoksia.
 Automaation näyttö erotetaan alla alkuperäisestä manuaalisesta kokeesta.
 Tämä ei vielä hyväksy sovelluksen koko verkkorajaa.
@@ -358,10 +360,10 @@ kuittauksia tai johtopäätöksiä ei muuteta.
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\e2e\isolation\run.ps1 -Probe etw-lpac -EtwCase normal
 ```
 
-Ensimmäinen sallittu ajurikoe on normaalikolmikko: kontrolli,
+Ensimmäinen ajurikoe oli normaalikolmikko: kontrolli,
 `lpac-registry-read-normal` ja jälkikontrolli samoilla päätepisteillä.
-Muut candidate-elinkaaret hylätään ajurissa ja korrelaattorissa, kunnes
-normaalin näytön perusteella avataan seuraava rajattu vaihe.
+Normaalin socket-käyttöeston näytön ja erillisen katselmuksen jälkeen
+ajurissa avataan alla kuvatut kolme kiinteää elinkaarivariaatiota.
 `etw-profiles.mjs` omistaa suljetun profiilivalinnan, case-nimen,
 kerääjän skenaarion ja tuloksen scopen. Raportti ei valitse omaa profiiliaan.
 
@@ -369,8 +371,9 @@ Natiivin hostin uusi `run-lpac-candidate` sallii vain LPAC:n ja kolme
 nimettyä network-elinkaarta; nykyinen startup-verbi säilyy erikseen
 neljään diagnoosiin rajattuna. Host varmistaa ennen prosessin jatkamista
 saman yhden registryRead-SID:n ja attribuutin kuin startup-vertailussa.
-Hostin, primaryn ja descendantin täydet capability-joukot vaaditaan
-raportissa; kontrollien joukot ovat tyhjät. Verkkocapabilityjä ei lisätä.
+Hostin koepäätteestä lukema sekä primaryn ja descendantin itse
+raportoimat täydet capability-joukot vaaditaan raportissa; kontrollien
+joukot ovat tyhjät. Verkkocapabilityjä ei lisätä.
 Koe käyttää samoja host- ja probe-binäärejä kaikissa kolmessa tapauksessa.
 
 Kerääjä hyväksyy uuden kiinteän skenaarion vain täsmälliseen
@@ -417,3 +420,147 @@ Pysäytyspyyntö säilyy ajon omassa hakemistossa mahdollista viivästynyttä
 käynnistymistä varten. Tämä yritys säilyy epäonnistuneena; se ei anna
 LPAC:n verkkorajasta näyttöä. Seuraava koe tarvitsee uuden ajotunnisteen
 ja tapahtumalukijan Windows-vahvistuksen valmistumisen aikarajassa.
+
+
+### LPAC:n erillinen socket-käyttöeston näyttö
+
+Uudessa normaalikolmikossa molemmat kontrollit saivat kahdeksan echoa.
+LPAC:n pääprosessi ja jälkeläinen käynnistyivät ja säilyttivät nimetyt
+capability-, tiedosto- ja Job-rajat. Kaikki kahdeksan socketin luontia
+palauttivat `INVALID_SOCKET` / `WSAEACCES` (10013). Bind/connect-vaiheisiin
+asti ei päästy. Tarkka prosessijoukko poistui jokaisessa kolmessa
+tapauksessa ennen siivousta. Profiilin ja staged-aineiston poistot sekä
+kerääjän ja vahdin loppukuitit onnistuivat; asetukset säilyivät ja hävikki
+oli nolla. Kerättyjä tapahtumia oli nolla.
+
+Alkuperäinen ETW-menetelmä hylkäsi tuloksen oikein, koska käytettävää
+lähdepäätepistettä ja pakettipudotuksia ei syntynyt. Tämä alkuperäinen
+raportti säilyy epäonnistuneena. Uusintatarkistuksen erillinen
+`socket-access-denied`-menetelmä voidaan valita nimenomaisesti
+`replay-etw.mjs <paikallinen-ajotunniste> normal lpac-registry-read socket-access-denied`.
+Oletus on edelleen `etw-drop`; automaattista vaihtoehtoiseen tulkintaan
+siirtymistä ei ole. Uusintatarkistus ei kirjoita alkuperäisiä kuittauksia.
+
+Uusi menetelmä hyväksyy vain kaikki kahdeksan tarkkaa socket-vaiheen
+10013-tulosta tämän LPAC-profiilin alla, toimivat verrokit ja samat
+identiteetti-, tiedosto-, prosessi- sekä keruusiivousehdot. Alustusvirhe,
+timeout, bind/connect-vaiheen virhe, sekamuoto tai selittämätön kerätty
+pakettitapahtuma hylätään. `localEndpointError=10038` on koepäätteen
+muodostama puuttuvan socketin merkki, ei toinen mitattu käyttöesto.
+Kohdeosoite ja portti kuvaavat suunniteltua yhteyttä, eivät toteutunutta.
+
+[Alkuperäinen menetelmä](windows-isolation-probe.md) sallii suoran
+10013-käyttöestotuloksen. [Microsoftin virhekoodikuvaus](https://learn.microsoft.com/en-us/windows/win32/winsock/windows-sockets-error-codes-2)
+erottaa sen aikakatkaisusta. [Socketin paluusopimus](https://learn.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-socket)
+kuvaa virheen haun INVALID_SOCKET-tuloksen jälkeen. Tämän kokeen
+hyväksyntä perustuu API:n käyttöestoon toimivien verrokkien rinnalla;
+tapahtumien puuttuminen ei yksin ole näyttö estosta.
+
+Tuloksen scope on `native-lpac-registry-read-socket-access-denied`,
+`socketCreationBlocked=true`, `connectionAttempted=false`,
+`packetDropVerified=false` ja `policyCauseVerified=false`.
+Se ei nimeä estävää WFP-sääntöä tai resurssia eikä hyväksy yleistä
+verkkopolitiikkaa. `fullIsolationVerified=false` säilyy. Virhe- ja
+pakkosulkutapausten näyttö esitetään jäljempänä koontimatriisissa.
+
+
+### Nimetyn LPAC-profiilin elinkaarikokeet
+
+Normaalin socket-käyttöeston näytön jälkeen seuraava rajattu vaihe käyttää
+samaa LPAC + registryRead -profiilia kolmessa jo AC:lla mitatussa tilanteessa:
+`error`, `launcher-kill` ja `owner-kill`. Jokainen on oma kontrolli–LPAC–
+jälkikontrolli-kolmikkonsa uusine päätepisteineen ja ajotunnisteineen.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\e2e\isolation\run.ps1 -Probe etw-lpac-socket -EtwCase error
+```
+
+Vaihda EtwCase-valinnaksi `launcher-kill` tai `owner-kill` vastaavan
+kokeen ajamiseksi. `etw-lpac-socket` valitsee nimenomaisesti
+`socket-access-denied`-näytön; `etw-lpac` säilyttää ETW-pudotustavan.
+Valinta ei määräydy havaitusta tuloksesta eikä vaihdu automaattisesti.
+Kerääjässä on vain kolme uutta kiinteää skenaariota ja niitä vastaavat
+`lpac-registry-read-<elinkaari>/staged/package/probe.exe`-polut.
+Aika-, koko-, omistajuus-, käyttöoikeus- ja siivousrajat säilyvät.
+Hostin ja koepäätteen natiivikoodia tai oikeuksia ei muuteta tätä varten.
+
+Virhetapauksessa pääprosessin odotettu exit on 17, hostin 1, ja
+jälkeläisen valmius todetaan ennen virhettä. Pakkosulku tehdään vasta
+molempien koepäätteiden valmiuden ja kaikkien kahdeksan socket-kutsun
+valmistumisen jälkeen. Kohteen on oltava elossa ja sen roolin oikea;
+saman käynnistetyn lapsiolion SIGTERM-loppukuitti vaaditaan.
+Owner-kokeessa täsmälliseen poistuneeseen joukkoon kuuluu myös välissä
+oleva host. Hätäsiivous, puuttuva prosessi, virheellinen tappokohde,
+puuttuva valmius tai epäonnistunut profiilin poisto hylkää tapauksen.
+Kaikissa kolmikoissa myös kontrollien koko prosessijoukko tarkistetaan.
+
+Tuloksen `lifecycleKind` erottaa tapaukset. Samat socket-eston näyttörajat
+säilyvät: ei väitettä toteutuneesta connectista tai WFP-pudotuksesta.
+Pelkkä lähdekoodi tai yksikkötesti ei hyväksy näitä uusia livekokeita.
+
+
+## Synteettisen natiivikokeen hyväksyntänäyttö
+
+T09a / #24:n näyttö kattaa kaksi erikseen nimettyä koepolitiikkaa:
+AC ilman capabilityjä sekä LPAC ainoalla `registryRead`-capabilityllä.
+Molempien verkkocapabilityjen määrä on nolla. Tämä korvaava koematriisi
+käyttää toimivia etu- ja jälkikontrolleja sekä alla eriteltyjä näyttötapoja.
+Alkuperäistä nollacapability-LPAC:n epäonnistunutta matriisia ei nimetä
+onnistuneeksi eikä sen kuittauksia kirjoiteta uudelleen.
+
+| Elinkaari | AC: toteutuneet verkkoyritykset | LPAC + registryRead: socketin luonti |
+| --- | --- | --- |
+| Normaali sulku | 8 yritystä, 12 yksikäsitteisesti kohdistettua ETW-pudotusta | 8 suoraa 10013-käyttöestoa |
+| Koepäätteen tarkoituksellinen virhe | 8 yritystä, 12 ETW-pudotusta | 8 suoraa 10013-käyttöestoa |
+| Käynnistäjän pakkosulku | 8 yritystä, 12 ETW-pudotusta | 8 suoraa 10013-käyttöestoa |
+| Väliomistajan pakkosulku | 8 yritystä, 12 ETW-pudotusta | 8 suoraa 10013-käyttöestoa |
+
+Kukin taulukon kahdeksasta eristetystä tapauksesta kuuluu omaan
+kolmikkoonsa. Yhteensä 16 kontrollitapausta tuotti 128 echo-vastausta.
+Kaikilta 24 tapaukselta varmistettiin täsmällisen oman prosessijoukon
+poistuminen ennen korjaavaa siivousta. Oma profiili ja staged-aineisto
+poistuivat ilman hätäsiivousta. Myös AC:n normaalitapaus uusittiin tätä
+täsmällistä poistumisnäyttöä varten samoilla host- ja probe-binääreillä
+kuin LPAC-kokeet; aiemmat AC-elinkaaritallenteet tarkistettiin uudelleen.
+
+Hyväksymisehtojen näyttö on seuraava:
+
+- Hostin koepäätteestä lukema sekä koepäätteiden itse raportoima
+  AppContainer-identiteetti, integrity, Job ja capabilityt vastaavat
+  nimettyä politiikkaa. Host on eristyksen ulkopuolinen käynnistin. LPAC:n yksi capability
+  säilyy myös jälkeläisellä. Job liitetään käynnistyksen yhteydessä;
+  stdio-kahvojen sallittujen lista ja tarkoituksella periytyvän
+  sentinel-kahvan kontrolli erottavat tarkoitetun periytymisen.
+- Paketin ja synteettisten painojen luku sekä oman koetilan kirjoitus
+  onnistuvat. Ulkopuolinen synteettinen luku/kirjoitus, painojen ja
+  koodin muuttaminen sekä Jobista irtautuminen estyvät. LPAC estää myös
+  pelkän ALL_APPLICATION_PACKAGES-grantin varassa olevan koetiedoston luvun.
+- AC:n verkkonäyttö perustuu todellisiin AppIsolation/BLOCK-pudotuksiin,
+  ei aikakatkaisuun. LPAC:n näyttö perustuu socket-API:n välittömään
+  käyttöestoon; bind/connectia tai pakettipudotusta ei väitetä tapahtuneeksi.
+- Virhekokeen oikea exit, pakkosulun elossa oleva kohde, ready-kuittaukset
+  ja kaikki omat prosessit tarkistetaan ennen siivousta. Kerääjien ja
+  vahtien loppukuitit osoittavat istuntojen poistumisen, hävikin nollan
+  ja luettujen asetusten säilymisen.
+
+LPAC-virhekokeen kerääjä vastaanotti myös yhden toisen AppId:n tapahtuman,
+joka suodatettiin pois. Omia tallennettuja pudotustapahtumia oli kaikissa
+LPAC-kokeissa nolla; tämä tapahtumamäärä ei yksin ole käyttöeston todiste.
+Normaalin LPAC-ajon alkuperäinen ETW-yhteenveto säilyy `passed=false`:
+sen erillinen, vain lukeva socket-menetelmän varmennus antaa hyväksytyn
+normaalinäytön. Kolme myöhempää LPAC-elinkaarta valitsivat tämän menetelmän
+jo käynnistyksessä ja niiden kokonaisexit oli 0.
+
+Koodin 313 kohdistettua testiä, muuttuneiden ajurien syntaksit sekä
+kerääjän natiivikäännös läpäisivät. Hyväksyntä perustuu niiden lisäksi
+edellä kuvattuun todelliseen koenäyttöön ja raakatulosten riippumattomaan
+katselmukseen. Konekohtaiset kuittaukset ja tarkistekartat säilyvät vain
+Gitistä ohitetuissa paikallisissa artefakteissa.
+
+Näyttöraja säilyy synteettisessä natiivikokeessa. LPAC:n suora tokenlipun
+kysely jäi `null` / 87 -tulokseen; käynnistyspyyntö, AppContainer-token
+ja AAP-käyttäytymisverrokki raportoidaan erikseen. Niistä ei johdeta
+käyttöversion yleistä LPAC-takuuta. `originalMatrixRun=false` ja
+`fullIsolationVerified=false` säilyvät. Ulkoinen verkko, DNS, FMI-välitys,
+Electron-/SDK-kytkentä, todelliset mallipainot, CPU/GPU ja koko sovelluspaketti
+kuuluvat seuraaviin portteihin, eivät tämän taulukon hyväksyntään.

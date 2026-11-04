@@ -3,6 +3,11 @@
 T09 / #10 etenee rajatuilla porteilla. T09a / #24 on synteettinen
 AppContainer/LPAC-yhteensopivuuskoe, ei koko sovelluksen oikeusrajan hyväksyntä.
 Riippumaton Astra-katselmus on tehty ennen koetoteutusta.
+Tämä dokumentti säilyttää alkuperäisen nollacapability-kokeen menetelmän
+ja tulokset. Myöhemmän nimetyn AC-/LPAC-koematriisin
+[hyväksyntänäyttö](etw-network-probe.md#synteettisen-natiivikokeen-hyväksyntänäyttö)
+erottaa AC:n ETW-pudotukset ja LPAC + registryRead -profiilin suorat
+socket-käyttöestot. Alkuperäisiä epäonnistumisia ei muuteta hyväksytyiksi.
 
 ## Rajaus ennen koodia
 
@@ -12,7 +17,8 @@ MSVC/Windows SDK -työkaluketjulla ja staattisella CRT:llä. Ohjelma ei tarvitse
 kääntäjää havaintokäytössä. Uusia globaaleja asennuksia ei tehdä.
 
 Käynnistin luo vain kokeen oman satunnaisnimisen AppContainer-profiilin.
-Capabilityjä ei anneta. AppContainer ja LPAC mitataan erikseen. Paketin
+Alkuperäisessä matriisissa capabilityjä ei anneta. AppContainer ja LPAC
+mitataan erikseen. Paketin
 koodi/aineisto saa luku- ja suoritusoikeuden, oma scratch kirjoitusoikeuden.
 AppContainerin käyttöjärjestelmän luoma oma profiilitallennus huomioidaan;
 väitettä vain yhdestä kirjoituspolusta ei tehdä.

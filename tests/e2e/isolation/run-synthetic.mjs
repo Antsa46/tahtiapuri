@@ -13,7 +13,8 @@ import { finalizeEtwRun } from './etw-finalization.mjs';
 import { validateNativeCase } from './native-case-validation.mjs';
 import { collect, bounded, until, alive, cleanupOwnedRun } from './process-harness.mjs';
 
-const candidate=process.argv[2]==='observe-etw-lpac';
+const networkMethod=process.argv[2]==='observe-etw-lpac-socket'?'socket-access-denied':'etw-drop';
+const candidate=['observe-etw-lpac','observe-etw-lpac-socket'].includes(process.argv[2]);
 const observeEtw = candidate || process.argv[2] === 'observe-etw';
 const etwKind = process.argv[3] ?? 'normal';
 if (!['normal', 'error', 'launcher-kill', 'owner-kill'].includes(etwKind)) throw new Error('Unsupported ETW lifecycle.');
@@ -31,7 +32,7 @@ const host = join(output, 'native/bin/host.exe');
 const probe = join(output, 'native/bin/probe.exe');
 const runRoot = join(output, 'runs', randomUUID());
 await fs.mkdir(runRoot, { recursive: true });
-const summary = { schema: 2, scope: candidate ? 'synthetic-lpac-registry-read-bound-loopback-etw' : observeNetwork ? (observeEtw ? 'synthetic-native-bound-loopback-etw' : 'synthetic-native-bound-loopback-observation') : 'synthetic-native-loopback-only', cases: [], passed: false, corePassed: false, originalMatrixRun: !observeNetwork, unrunOriginalCases: observeNetwork ? ['original-matrix-not-run'] : ['lpac/error', 'lpac/launcher-kill', 'lpac/owner-kill'] };
+const summary = { schema: 2, requestedVerificationMethod:networkMethod, scope: networkMethod==='socket-access-denied'?'synthetic-lpac-registry-read-socket-denial':candidate ? 'synthetic-lpac-registry-read-bound-loopback-etw' : observeNetwork ? (observeEtw ? 'synthetic-native-bound-loopback-etw' : 'synthetic-native-bound-loopback-observation') : 'synthetic-native-loopback-only', cases: [], passed: false, corePassed: false, originalMatrixRun: !observeNetwork, unrunOriginalCases: observeNetwork ? ['original-matrix-not-run'] : ['lpac/error', 'lpac/launcher-kill', 'lpac/owner-kill'] };
 
 let sharedServers;
 const completedCases = [];
@@ -200,8 +201,8 @@ try {
       const isolated = completedCases[1];
       const evidence = await readEtwEvidence(runRoot, isolated.observerExit);
       Object.assign(summary, await finalizeEtwRun(completedCases, evidence, (updated,label) =>
-        fs.writeFile(join(runRoot, `${label}/result.json`), `${JSON.stringify(updated, null, 2)}\n`),{profile:selected.id}));
-      console.log(`ETW bound-loopback ${etwKind} variation: verified ${summary.networkEvidence.attemptCount} attempts; full isolation remains unverified.`);
+        fs.writeFile(join(runRoot, `${label}/result.json`), `${JSON.stringify(updated, null, 2)}\n`),{profile:selected.id,method:networkMethod}));
+      console.log(`${networkMethod} ${etwKind} variation: verified ${summary.networkEvidence.attemptCount} ${networkMethod==='socket-access-denied'?'socket API denials':'network attempts'}; full isolation remains unverified.`);
     } catch (error) {
       summary.networkEvidence = { networkVerified: false, error: error.message };
     }

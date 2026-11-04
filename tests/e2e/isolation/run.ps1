@@ -1,6 +1,6 @@
-param([switch]$SkipBuild, [ValidateSet("native", "electron", "sdk", "pipe", "network", "etw", "etw-lpac", "startup", "resources", "registry", "registry-read", "startup-registry-read")][string]$Probe = "native", [ValidateSet("electron", "official", "local-unpatched", "local-patched")][string]$SdkRuntime = "electron", [ValidateSet("normal", "error", "launcher-kill", "owner-kill")][string]$EtwCase = "normal")
+param([switch]$SkipBuild, [ValidateSet("native", "electron", "sdk", "pipe", "network", "etw", "etw-lpac", "etw-lpac-socket", "startup", "resources", "registry", "registry-read", "startup-registry-read")][string]$Probe = "native", [ValidateSet("electron", "official", "local-unpatched", "local-patched")][string]$SdkRuntime = "electron", [ValidateSet("normal", "error", "launcher-kill", "owner-kill")][string]$EtwCase = "normal")
 $ErrorActionPreference = 'Stop'
-if ($Probe -notin @('etw','etw-lpac') -and $EtwCase -ne 'normal') { throw 'EtwCase applies only to the ETW probe.' }
+if ($Probe -notin @('etw','etw-lpac','etw-lpac-socket') -and $EtwCase -ne 'normal') { throw 'EtwCase applies only to the ETW probe.' }
 if ($Probe -ne 'sdk' -and $SdkRuntime -ne 'electron') { throw 'SdkRuntime applies only to the SDK probe.' }
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '../../..')).Path
 if (!$SkipBuild) {
@@ -19,6 +19,7 @@ if ($Probe -eq 'sdk') { $nodeArguments += ' ' + $SdkRuntime }
 if ($Probe -eq 'network') { $nodeArguments += ' observe-network' }
 if ($Probe -eq 'etw') { $nodeArguments += ' observe-etw ' + $EtwCase }
 if ($Probe -eq 'etw-lpac') { $nodeArguments += ' observe-etw-lpac ' + $EtwCase }
+if ($Probe -eq 'etw-lpac-socket') { $nodeArguments += ' observe-etw-lpac-socket ' + $EtwCase }
 $run = Start-Process -FilePath $node -ArgumentList $nodeArguments -WorkingDirectory $projectRoot -NoNewWindow -PassThru
 $null=$run.Handle; $run.WaitForExit(); $run.Refresh()
 if ($run.ExitCode -ne 0) { throw 'Synthetic isolation probe failed. Read the ignored local artifacts.' }

@@ -17,7 +17,7 @@ test('candidate save uses its own fixed case path and retains profile',async()=>
 test('candidate persistence failure cannot report success',async()=>{const f=fixture();await assert.rejects(finalizeEtwRun(f.cases,f.evidence,async()=>{throw Error('disk failure');},options),/disk failure/);});
 test('AC raw evidence cannot stand in for candidate',()=>assert.throws(()=>evaluate(correlationFixture())));
 test('candidate cannot be accepted by the original AC profile',()=>{const f=fixture();assert.throws(()=>correlateEtwNetwork(f.cases,f.evidence));});
-for(const kind of ['error','launcher-kill','owner-kill'])test(`candidate ${kind} is not yet enabled`,()=>assert.throws(()=>etwProfile('lpac-registry-read',kind)));
+for(const kind of ['error','launcher-kill','owner-kill'])test(`candidate ${kind} has a fixed independent path`,()=>{const p=etwProfile('lpac-registry-read',kind);assert.equal(p.caseLabel,`lpac-registry-read-${kind}`);assert.equal(p.scenario,`observe-lpac-registry-read-${kind}`);});
 test('profile name cannot choose an arbitrary policy',()=>assert.throws(()=>etwProfile('custom')));
 for(const i of [0,1,2])for(const [name,mutate] of [
  ['missing process observation',c=>{delete c.processExitObservation;}],
