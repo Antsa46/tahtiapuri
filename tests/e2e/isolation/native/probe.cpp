@@ -33,7 +33,7 @@ static ULONGLONG utcMilliseconds() {
     ULARGE_INTEGER ticks = {}; ticks.LowPart = time.dwLowDateTime; ticks.HighPart = time.dwHighDateTime;
     return (ticks.QuadPart - 116444736000000000ULL) / 10000;
 }
-static void network(bool ipv6, bool datagram, unsigned short port, const char* name) {
+static void network(bool ipv6, bool datagram, unsigned short port, const char* name, bool bindLoopback) {
     const auto startedAt = utcMilliseconds();
     Socket socket(::socket(ipv6 ? AF_INET6 : AF_INET, datagram ? SOCK_DGRAM : SOCK_STREAM, datagram ? IPPROTO_UDP : IPPROTO_TCP));
     const auto finish = [&](bool ok, int code, const char* stage) {
@@ -66,6 +66,12 @@ static void network(bool ipv6, bool datagram, unsigned short port, const char* n
     sockaddr_in6 address6 = {}; address6.sin6_family = AF_INET6; address6.sin6_port = htons(port); address6.sin6_addr = in6addr_loopback;
     const sockaddr* address = ipv6 ? reinterpret_cast<sockaddr*>(&address6) : reinterpret_cast<sockaddr*>(&address4);
     const int length = ipv6 ? sizeof(address6) : sizeof(address4);
+    if (bindLoopback) {
+        auto local4 = address4; local4.sin_port = 0;
+        auto local6 = address6; local6.sin6_port = 0;
+        const sockaddr* local = ipv6 ? reinterpret_cast<sockaddr*>(&local6) : reinterpret_cast<sockaddr*>(&local4);
+        if (bind(socket.value, local, length) == SOCKET_ERROR) { const int error = WSAGetLastError(); finish(false, error, "bind"); return; }
+    }
     // Blocking connect is bounded with a nonblocking select, including on controls.
     u_long nonblocking = 1; if (ioctlsocket(socket.value, FIONBIO, &nonblocking) == SOCKET_ERROR) throw WinError("socket-nonblocking", WSAGetLastError());
     if (connect(socket.value, address, length) == SOCKET_ERROR) {
@@ -89,7 +95,8 @@ static void network(bool ipv6, bool datagram, unsigned short port, const char* n
 int wmain(int argc, wchar_t** argv) {
     try {
         if (argc != 10) throw WinError("probe-arguments", ERROR_INVALID_PARAMETER);
-        const std::wstring root(argv[1]), life(argv[7]); phase = ascii(argv[9]);
+        const std::wstring root(argv[1]); std::wstring life(argv[7]); phase = ascii(argv[9]);
+        const bool bindLoopback = life == L"network-once"; if (bindLoopback) life = L"once";
         const bool primaryOnly = phase == "primary-only"; if (primaryOnly) phase = "primary";
         if (phase != "primary" && phase != "descendant") throw WinError("probe-phase", ERROR_INVALID_PARAMETER);
         const auto view = inspectToken(GetCurrentProcess()); BOOL inJob = FALSE;
@@ -109,10 +116,10 @@ int wmain(int argc, wchar_t** argv) {
             emit("{\"type\":\"network-startup\",\"phase\":\"" + phase + "\",\"code\":" + std::to_string(startup) + "}");
             for (const auto name : { "tcp4", "tcp6", "udp4", "udp6" }) report(name, false, static_cast<DWORD>(startup), false);
         } else {
-        network(false, false, static_cast<unsigned short>(boundedNumber(argv[2], 65535)), "tcp4");
-        network(true, false, static_cast<unsigned short>(boundedNumber(argv[3], 65535)), "tcp6");
-        network(false, true, static_cast<unsigned short>(boundedNumber(argv[4], 65535)), "udp4");
-        network(true, true, static_cast<unsigned short>(boundedNumber(argv[5], 65535)), "udp6");
+        network(false, false, static_cast<unsigned short>(boundedNumber(argv[2], 65535)), "tcp4", bindLoopback);
+        network(true, false, static_cast<unsigned short>(boundedNumber(argv[3], 65535)), "tcp6", bindLoopback);
+        network(false, true, static_cast<unsigned short>(boundedNumber(argv[4], 65535)), "udp4", bindLoopback);
+        network(true, true, static_cast<unsigned short>(boundedNumber(argv[5], 65535)), "udp6", bindLoopback);
         // argv[6] is reserved for a separate DNS probe. No DNS policy is inferred.
         WSACleanup();
         }

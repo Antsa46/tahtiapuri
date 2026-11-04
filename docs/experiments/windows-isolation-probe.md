@@ -205,9 +205,9 @@ tuloksissa oli nolla tapahtumaa. Palomuuri-, loopback-, capability- tai
 lokikeruuasetuksia ei muutettu. Tyhjä rajattu hakutulos ei osoita sallimista
 eikä estoa; myöskään puuttuvan tapahtuman syytä ei tällä kokeella ratkaistu.
 
-Tämä lisädiagnostiikka ei muuta `networkVerified`-hyväksyntää. Seuraava
-verkkonäyttö tarvitsee erikseen suunnitellun ja hyväksytyn rajatun tapahtuma-
-tallennuksen sekä toimivan kontrollin. Tapahtuma pitää yhdistää täsmälliseen
+Tämä lisädiagnostiikka ei muuta `networkVerified`-hyväksyntää. Jatkon
+verkkonäyttö tarvitsee rajatun tapahtumahavainnoinnin sekä toimivan kontrollin.
+Alla kuvattu suora tilaus on toteutettu tämän ensimmäiseksi osaksi. Tapahtuma pitää yhdistää täsmälliseen
 ajoon, appId:hen, paketti-SID:hen, liikenteeseen ja aikaan. Puuttuvat kentät,
 TCP:n tuntematon lähdeosoite tai ristiriitainen echo-näyttö jäävät avoimiksi.
 WFP-pudotus ja nimenomaan AppContainer-säännön aiheuttama pudotus erotetaan:
@@ -216,3 +216,96 @@ jälkimmäinen vaatii myös pudottavan suodattimen alkuperän tarkistamisen.
 Menetelmän tausta: [Microsoftin WFP-vianrajaus](https://learn.microsoft.com/en-us/windows/security/operating-system-security/network-security/windows-firewall/troubleshooting-uwp-firewall),
 [netsh wfp](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/netsh-wfp)
 ja [ohjelmatunnisteen haku](https://learn.microsoft.com/en-us/windows/win32/api/fwpmu/nf-fwpmu-fwpmgetappidfromfilename0).
+
+
+## Suora WFP-tapahtumatilaus
+
+`run.ps1 -Probe network` käynnistää erillisen lyhyen kehityskokeen.
+Se käyttää samoja neljää paikallista TCP-/UDP-päätepistettä IPv4:llä ja
+IPv6:lla järjestyksessä tavallinen kontrolli, AC:n normaali ajo ja
+jälkikontrolli. `network-once` sitoo lähdeosoitteen nimenomaisesti loopbackiin
+ennen yhteysyritystä sekä pääprosessissa että jälkeläisessä. Kyse on erillisestä
+variaatiosta; vanhat wildcard-havainnot tai alkuperäinen matriisi eivät muutu.
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\e2e\isolation\run.ps1 -Probe network
+```
+
+Vain kiinteä `wfp-observer.exe` pyytää Windowsin korotusvahvistuksen.
+Koepäätteiden kontrollit varmistetaan tavalliselle Medium Integrity -tasolle.
+Lukija ei käynnistä koepäätteitä tai muita ohjelmia, muuta keruuasetuksia,
+lisää palomuurisääntöjä tai myönnä capabilityjä. Jos tapahtumakeruu on pois
+päältä, AC-koe ei käynnisty; sitä edeltävä tavallinen kontrolli ehtii ajaa.
+Havaintokäytön sovellus ei tarvitse tätä kehityslukijaa tai korotusoikeutta.
+
+Lukija avaa oman dynaamisen WFP-session ja `FwpmNetEventSubscribe1`-tilauksen.
+Tilaus rajataan tarkkaan staged-koebinäärin appId:hen ja aikaikkunaan;
+callback tarkistaa appId:n vielä uudelleen. Verkkoyritykset alkavat vasta
+valmiuskuittauksen jälkeen. Callback kopioi rajatut tapahtumat jonoon;
+mahdollinen `CLASSIFY_DROP`-suodatin luetaan ajon aikana erikseen
+`FwpmFilterGetById0`-kutsulla. Osoitteiden ja muun metatiedon olemassaololiput
+säilyvät. WFP:n HEADER2 ei anna PID:tä, joten PID kuuluu vain koepäätteen
+omaan tulokseen. Kaikkia suodatinehtojen arvotyyppejä ei ole vielä tulkittu;
+tuntematon tyyppi merkitään puuttuvaksi näytöksi.
+
+Lukijan rajat ovat 256 tapahtumaa, 8 MiB tapahtumatiedosto, 45 sekunnin
+havaintoikkuna ja 60 sekunnin oma prosessivahti. Seuraavaan vaiheeseen ei
+siirrytä keskeytyneen keruun perusteella. Normaali sulku peruu vain oman
+tilauksen ja sulkee oman engine-session. Omistajaprosessin päättyminen
+lopettaa odotuksen. Prosessivahti voi lopettaa oman lukijan, jolloin Windows
+sulkee sen WFP-session; tämä poikkeus ei tuota hyväksyttyä loppukuittia.
+Kaatumissiivouksen API-perusta ei korvaa erikseen mitattua kaatumiskoetta.
+
+Tapahtumatiedosto ja kuitit syntyvät uuteen paikalliseen `wfp/`-hakemistoon,
+jonka suojattu DACL antaa pääsyn nykyiselle käyttäjälle ja SYSTEMille.
+Reparse-polut torjutaan. Koe on luotetun kehitysajurin käyttöön; run-tunniste,
+merkkitiedosto tai CLI eivät ole epäluotetun kutsujan valtuutusrajapinta.
+Raakadata, SID:t, polut ja paikalliset ajotunnisteet eivät kuulu julkaisuun.
+
+Ajuri hyväksyy keruun valmistumisen vasta, kun prosessin exit-koodi,
+`done.json`, järjestyksessä olevat baseline/ready/finished-tietueet,
+appId:n vastaavuus, tapahtumamäärä, tilauksen sulku sekä todelliset alku- ja
+loppuasetukset täsmäävät. Pelkkä nollapoistumiskoodi ei riitä.
+`observation.complete` ei koskaan yksin muuta `networkVerified`-arvoa.
+Myös ennen connectia tapahtuva bind-esto raportoidaan erikseen.
+
+### Mitattu rajattu tulos
+
+- Natiivikäännös läpäisi `/W4 /WX`-tarkistukset olemassa olevalla työkaluketjulla.
+  Tavallisilla oikeuksilla tehty lukijan virhekoe palautti lukuoikeusvirheen,
+  ei ready-kuittia ja epäonnistuneen loppukuitin; prosessi poistui.
+- Loppukuittauksen 14 kohdistettua testiä läpäisivät. Ne torjuvat muun muassa
+  puuttuvan tai kahdentuneen kuitin, väärän ohjelmatunnisteen, ilmoitetun tapahtumamäärän
+  ristiriidan sekä muuttuneet asetukset, vaikka raportti väittäisi niitä samoiksi.
+- Alkuperäisen 11 tapauksen uusinnassa kaikki omat siivoukset onnistuivat;
+  aikaisemmat verkkonäytön ja LPAC-yhteensopivuuden puutteet säilyivät.
+- Lyhyen havaintokokeen kolmessa tapauksessa kaikki koepääteprosessit,
+  omat profiilit ja staged-aineisto siivoutuivat. Kontrollit saivat yhteensä
+  16 echo-vastausta samoilta päätepisteiltä ennen AC-ajoa ja sen jälkeen.
+- AC:n kahdeksan yritystä päätyivät edelleen aikarajaan. Tässä variaatiossa
+  kaikille saatiin todellinen loopback-lähdeosoite ja portti.
+- Korotettu tilaus avautui ja sulkeutui onnistuneesti. Yleinen tapahtumakeruu
+  oli päällä; alku- ja loppuasetukset täsmäsivät. Tapahtumia saatiin **nolla**.
+  Todellisen pudotustapahtuman toimitus, suodattimen lukupolku ja tapahtuman
+  yhdistäminen liikenteeseen eivät siksi vielä saaneet ajonaikaista näyttöä.
+
+Koko verkkonäyttö pysyy avoimena. Windows SDK erottaa muun muassa
+`CAPABILITY_DROP`-, `CAPABILITY_ALLOW`- ja `CLASSIFY_ALLOW`-keruubitit;
+niitä ei ollut valittu tässä kokeessa. Tarvittavan tapahtumalajin puuttuminen
+on jatkohypoteesi, ei osoitettu selitys tyhjälle tulokselle tai aikakatkaisulle.
+WFP-tilaus ei tarjoa omaa tapahtumalajien generointimaskia. Engine-asetuksen
+muutos olisi globaali ja säilyisi uudelleenkäynnistyksen yli, joten sitä ei
+sisällytetä automaattisesti tähän vain lukevaan kokeeseen. Mahdollinen jatko
+vaatii erikseen rajatun muutoksen, palautus- ja keskeytyssuunnitelman sekä
+käyttäjän hyväksynnän. Mitään näistä globaaleista asetuksista ei tässä muutettu.
+
+Mahdollinen `CAPABILITY_DROP`-jatkokoe tarvitsee myös oman payloadin
+tulkinnan: nykyinen lukija poimii suodatintunnisteen vain `CLASSIFY_DROP`-
+tapahtumasta. Oman ETW-session tarjoama tapahtumavalinta on vaihtoehtoinen
+selvityshaara. Sen provider-kohtaisia maskeja ei voi päätellä WFP:n biteistä,
+eikä capability-tapahtumien toimitusta tätä kautta ole vielä osoitettu.
+
+API-perusta: [Subscribe1](https://learn.microsoft.com/en-us/windows/win32/api/fwpmu/nf-fwpmu-fwpmneteventsubscribe1),
+[HEADER2](https://learn.microsoft.com/en-us/windows/win32/api/fwpmtypes/ns-fwpmtypes-fwpm_net_event_header2),
+[tilauksen peruminen](https://learn.microsoft.com/en-us/windows/win32/api/fwpmu/nf-fwpmu-fwpmneteventunsubscribe0)
+ja [engine-asetusten pysyvyys](https://learn.microsoft.com/en-us/windows/win32/api/fwpmu/nf-fwpmu-fwpmenginesetoption0).

@@ -1,9 +1,10 @@
-param([switch]$SkipBuild, [ValidateSet("native", "electron", "sdk", "pipe")][string]$Probe = "native", [ValidateSet("electron", "official", "local-unpatched", "local-patched")][string]$SdkRuntime = "electron")
+param([switch]$SkipBuild, [ValidateSet("native", "electron", "sdk", "pipe", "network")][string]$Probe = "native", [ValidateSet("electron", "official", "local-unpatched", "local-patched")][string]$SdkRuntime = "electron")
 $ErrorActionPreference = 'Stop'
 if ($Probe -ne 'sdk' -and $SdkRuntime -ne 'electron') { throw 'SdkRuntime applies only to the SDK probe.' }
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '../../..')).Path
 if (!$SkipBuild) {
-  $build = Start-Process -FilePath (Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe') -ArgumentList ('-NoProfile -ExecutionPolicy Bypass -File "' + (Join-Path $PSScriptRoot 'build.ps1') + '"') -NoNewWindow -Wait -PassThru
+  $build = Start-Process -FilePath (Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe') -ArgumentList ('-NoProfile -ExecutionPolicy Bypass -File "' + (Join-Path $PSScriptRoot 'build.ps1') + '"') -NoNewWindow -PassThru
+  $null=$build.Handle; $build.WaitForExit(); $build.Refresh()
   if ($build.ExitCode -ne 0) { throw 'Synthetic native probe build failed.' }
 }
 $tools = Get-Content -LiteralPath (Join-Path $projectRoot 'scripts/dev/toolchain.json') -Raw | ConvertFrom-Json
@@ -12,5 +13,7 @@ if (!(Test-Path -LiteralPath $node)) { throw 'The existing pinned project Node r
 $entry = if ($Probe -eq 'pipe') { 'run-pipe.mjs' } elseif ($Probe -eq 'sdk') { 'run-sdk.mjs' } elseif ($Probe -eq 'electron') { 'run-electron.mjs' } else { 'run-synthetic.mjs' }
 $nodeArguments = '"' + (Join-Path $PSScriptRoot $entry) + '"'
 if ($Probe -eq 'sdk') { $nodeArguments += ' ' + $SdkRuntime }
-$run = Start-Process -FilePath $node -ArgumentList $nodeArguments -WorkingDirectory $projectRoot -NoNewWindow -Wait -PassThru
+if ($Probe -eq 'network') { $nodeArguments += ' observe-network' }
+$run = Start-Process -FilePath $node -ArgumentList $nodeArguments -WorkingDirectory $projectRoot -NoNewWindow -PassThru
+$null=$run.Handle; $run.WaitForExit(); $run.Refresh()
 if ($run.ExitCode -ne 0) { throw 'Synthetic isolation probe failed. Read the ignored local artifacts.' }

@@ -6,8 +6,11 @@ import { createHash, randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readObservationReceipt } from './wfp-observation.mjs';
 import { collect, bounded, until, alive, cleanupOwnedRun } from './process-harness.mjs';
 
+const observeNetwork = process.argv[2] === 'observe-network';
+if (process.argv.length > (observeNetwork ? 3 : 2)) throw new Error('Unsupported probe arguments.');
 if (process.platform !== 'win32') throw new Error('This probe must run with native Windows Node.');
 const directory = dirname(fileURLToPath(import.meta.url));
 const root = resolve(directory, '../../..');
@@ -16,7 +19,9 @@ const host = join(output, 'native/bin/host.exe');
 const probe = join(output, 'native/bin/probe.exe');
 const runRoot = join(output, 'runs', randomUUID());
 await fs.mkdir(runRoot, { recursive: true });
-const summary = { schema: 2, scope: 'synthetic-native-loopback-only', cases: [], passed: false, corePassed: false, unrunOriginalCases: ['lpac/error', 'lpac/launcher-kill', 'lpac/owner-kill'] };
+const summary = { schema: 2, scope: observeNetwork ? 'synthetic-native-bound-loopback-observation' : 'synthetic-native-loopback-only', cases: [], passed: false, corePassed: false, originalMatrixRun: !observeNetwork, unrunOriginalCases: observeNetwork ? ['original-matrix-not-run'] : ['lpac/error', 'lpac/launcher-kill', 'lpac/owner-kill'] };
+
+let sharedServers;
 
 async function endpoints() {
   const resources = [];
@@ -55,6 +60,7 @@ function validate(report, mode, counts, accepted, primaryOnly = false) {
     const token = report.find(row => row.type === 'token' && row.phase === phase); assert(token?.job, `${phase} Job membership`);
     assert.equal(token.appContainer, ['ac', 'lpac'].includes(mode)); if (token.lpac === null) assert.equal(token.lpacQueryError, 87, 'Unknown LPAC query must retain observed error.');
     else { assert.equal(token.lpac, mode === 'lpac'); if (token.appContainer) assert.equal(token.lpacQueryBytes, 4); } assert.equal(token.capabilities, 0);
+    if (observeNetwork && mode.startsWith('control')) assert.equal(token.integrity, 8192, 'Observation controls must run at ordinary medium integrity.');
     if (['ac', 'lpac'].includes(mode)) { assert.equal(token.integrity, 4096); assert.equal(token.sid, profile.sid); }
     const operation = name => { const row = report.find(row => row.type === 'operation' && row.phase === phase && row.name === name); assert(row, `${phase}/${name}`); return row; };
     for (const name of ['package-read', 'weights-read', 'scratch-write']) assert.equal(operation(name).ok, true, `${phase}/${name}`);
@@ -74,7 +80,8 @@ function validate(report, mode, counts, accepted, primaryOnly = false) {
         }
         assert.equal(row.attempted, true);
         assert([10013, 10060].includes(row.code), `${phase}/${name}: unexpected network failure`);
-        network.push({ phase, name, code: row.code, evidence: row.code === 10013 ? 'os-access-denied' : 'timeout-unresolved' });
+        const detail = report.find(item => item.type === 'network-detail' && item.phase === phase && item.name === name);
+        network.push({ phase, name, code: row.code, evidence: detail?.stage === 'bind' ? 'bind-failed-before-connect' : row.code === 10013 ? 'os-access-denied' : 'timeout-unresolved' });
       }
     }
   }
@@ -82,7 +89,7 @@ function validate(report, mode, counts, accepted, primaryOnly = false) {
   else assert(!report.some(row => row.type === 'descendant'));
   for (const name of Object.keys(counts)) assert.equal(counts[name], !['ac', 'lpac'].includes(mode) ? 2 : 0, `${name} observed requests`);
   for (const name of Object.keys(accepted)) assert.equal(accepted[name], !['ac', 'lpac'].includes(mode) ? 2 : 0, `${name} accepted sockets`);
-  return { network, networkVerified: network.every(row => row.evidence === 'os-access-denied') };
+  return { network, networkVerified: !observeNetwork && network.every(row => row.evidence === 'os-access-denied') };
 }
 async function runCase(mode, kind, primaryOnly = false) {
   const id = randomUUID().replaceAll('-', ''); const profile = `tahtiapuri.t09a.${id}`;
@@ -99,10 +106,36 @@ async function runCase(mode, kind, primaryOnly = false) {
   await fs.writeFile(join(staged, 'package/module.mjs'), 'export const synthetic = true;\n');
   await fs.writeFile(join(staged, 'private/secret.txt'), 'SYNTHETIC PRIVATE\n');
   for (const name of ['package/probe.exe', 'package/allowed.txt', 'package/weights.fixture', 'package/legacy.fixture', 'package/module.mjs', 'private/secret.txt']) assert.equal((await fs.stat(join(staged, name))).nlink, 1);
-  const servers = await endpoints();
-  const args = ['run', mode, profile, staged, ...servers.ports.map(String), `${primaryOnly ? 'primary-' : ''}${kind === 'normal' ? 'once' : kind === 'error' ? 'fail' : 'hold'}`];
+  const servers = sharedServers ?? await endpoints();
+  for (const key of Object.keys(servers.counts)) servers.counts[key] = 0;
+  for (const key of Object.keys(servers.accepted)) servers.accepted[key] = 0;
+  const args = ['run', mode, profile, staged, ...servers.ports.map(String), `${primaryOnly ? 'primary-' : ''}${kind === 'normal' ? (observeNetwork ? 'network-once' : 'once') : kind === 'error' ? 'fail' : 'hold'}`];
   const ownerCase = kind === 'owner-kill';
   const probeSha256 = createHash('sha256').update(await fs.readFile(join(staged, 'package/probe.exe'))).digest('hex');
+  let observer;
+  if (observeNetwork && mode === 'ac') {
+    const powershell = join(process.env.SystemRoot, 'System32/WindowsPowerShell/v1.0/powershell.exe');
+    observer = spawn(powershell, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', join(directory, 'start-wfp-observer.ps1'), '-RunId', runRoot.split(/[\\/]/).at(-1), '-OwnerPid', String(process.pid)], { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+    const observation = collect(observer); observer.observation = observation;
+    observation.exited.then(value => { observer.exitResult = value; });
+    try {
+      await waitForObserver(async () => {
+        observation.check();
+        if (observer.exitResult) throw new Error('Observer process exited before readiness.');
+        if (await fs.stat(join(runRoot, 'wfp/done.json')).then(() => true, () => false)) throw new Error('Observer stopped before readiness; inspect its local evidence.');
+        return fs.stat(join(runRoot, 'wfp/ready.json')).then(() => true, () => false);
+      }, 60000);
+    } catch (error) {
+      await fs.writeFile(join(runRoot, 'stop-wfp.request'), 'STOP\n', { flag: 'wx' }).catch(() => {});
+      let observerExit;
+      try { observerExit = await bounded(observation.exited, 65000, 'Observer wrapper did not finish.'); }
+      catch { observer.kill(); observerExit = { incomplete: true }; }
+      // No native process/profile exists yet. Remove only this run's own staged files.
+      await fs.rm(staged, { recursive: true, force: true });
+      await fs.writeFile(join(caseRoot, 'observer-failure.json'), JSON.stringify({ error: error.message, observerExit, stderr: observation.stderr, stagedRemoved: true }, null, 2));
+      throw error;
+    }
+  }
   const startedAt = new Date().toISOString();
   const child = spawn(ownerCase ? process.execPath : caseHost, ownerCase ? [join(directory, 'owner.mjs'), caseHost, ...args] : args, { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
   const report = collect(child);
@@ -141,22 +174,45 @@ async function runCase(mode, kind, primaryOnly = false) {
     result.cleanup = await cleanupOwnedRun({ child, report, host, staged, profile, restricted: ['ac', 'lpac'].includes(mode) });
     result.cleanupPassed = result.cleanup.passed;
     if (!result.cleanupPassed) { result.corePassed = false; result.passed = false; result.primaryDiagnosticPassed = false; result.cleanupError = result.cleanup.errors.join('; '); }
-    await servers.close();
+    if (observer) {
+      await fs.writeFile(join(runRoot, 'stop-wfp.request'), 'STOP\n', { flag: 'wx' }).catch(() => {});
+      try { result.observerExit = await bounded(observer.observation.exited, 65000, 'Read-only observer did not finish.'); }
+      catch (error) { observer.kill(); result.observerExit = { incomplete: true, error: error.message }; }
+      try {
+        const identity = report.records.find(row => row.type === 'network-identity');
+        assert.equal(identity?.code, 0);
+        result.observation = await readObservationReceipt(runRoot, result.observerExit, identity.appIdHex);
+        result.observerCleanupPassed = true;
+      } catch (error) { result.observerCleanupPassed = false; result.observerError = error.message; }
+      if (!result.observerCleanupPassed) { result.corePassed = false; result.passed = false; result.error = 'Read-only observer did not finish successfully.'; }
+    }
+    if (!sharedServers) await servers.close();
     result.exit = exit; result.stderr = report.stderr; result.finishedAt = new Date().toISOString();
     await fs.writeFile(join(caseRoot, 'result.json'), `${JSON.stringify(result, null, 2)}\n`);
-    summary.cases.push({ mode, kind, primaryOnly, primaryDiagnosticPassed: result.primaryDiagnosticPassed, cleanupPassed: result.cleanupPassed, expectedCompatibilityFailure: result.expectedCompatibilityFailure, passed: result.passed, corePassed: result.corePassed, networkVerified: result.validation?.networkVerified ?? false, error: result.error, cleanupError: result.cleanupError });
+    summary.cases.push({ mode, kind, primaryOnly, primaryDiagnosticPassed: result.primaryDiagnosticPassed, cleanupPassed: result.cleanupPassed, observerCleanupPassed: result.observerCleanupPassed, expectedCompatibilityFailure: result.expectedCompatibilityFailure, passed: result.passed, corePassed: result.corePassed, networkVerified: result.validation?.networkVerified ?? false, error: result.error, cleanupError: result.cleanupError });
   }
   console.log(`${mode}/${primaryOnly ? 'primary-' : ''}${kind}: ${result.passed ? 'PASS' : result.corePassed ? 'core PASS; network unresolved' : result.primaryDiagnosticPassed ? 'primary diagnostic PASS; original acceptance unchanged' : 'FAIL (details in ignored artifacts)'}`);
   assert(result.cleanupPassed && (result.corePassed || result.primaryDiagnosticPassed || result.expectedCompatibilityFailure), 'Unexpected isolation or cleanup failure; matrix stopped.');
 }
+async function waitForObserver(check, timeout) {
+  const deadline = performance.now() + timeout;
+  while (performance.now() < deadline) { if (await check()) return; await new Promise(done => setTimeout(done, 50)); }
+  throw new Error('Observer readiness deadline reached.');
+}
 try {
+  if (observeNetwork) {
+    sharedServers = await endpoints();
+    for (const mode of ['control', 'ac', 'control-inherit']) await runCase(mode, 'normal');
+  } else {
   for (const mode of ['control', 'control-inherit', 'ac', 'lpac']) await runCase(mode, 'normal');
   for (const kind of ['error', 'launcher-kill', 'owner-kill']) await runCase('ac', kind);
   for (const kind of ['normal', 'error', 'launcher-kill', 'owner-kill']) await runCase('lpac', kind, true);
+  }
   summary.corePassed = summary.cases.every(row => row.corePassed);
   summary.passed = summary.cases.every(row => row.passed);
   if (!summary.passed) process.exitCode = 1;
 } finally {
+  if (sharedServers) await sharedServers.close();
   console.log(`Local evidence: ${runRoot}`);
   await fs.writeFile(join(runRoot, 'summary.json'), `${JSON.stringify(summary, null, 2)}\n`);
 }
