@@ -7,11 +7,14 @@ import { promises as fs } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readObservationReceipt } from './wfp-observation.mjs';
-import { readEtwReceipt } from './etw-observation.mjs';
+import { readEtwReceipt, readEtwEvidence } from './etw-observation.mjs';
+import { finalizeEtwRun } from './etw-finalization.mjs';
+import { validateNativeCase } from './native-case-validation.mjs';
 import { collect, bounded, until, alive, cleanupOwnedRun } from './process-harness.mjs';
 
 const observeEtw = process.argv[2] === 'observe-etw';
 const observeNetwork = observeEtw || process.argv[2] === 'observe-network';
+const validate = (...args) => validateNativeCase(...args, observeNetwork);
 const observationDirectory = observeEtw ? 'etw' : 'wfp';
 const stopRequest = observeEtw ? 'stop-etw.request' : 'stop-wfp.request';
 if (process.argv.length > (observeNetwork ? 3 : 2)) throw new Error('Unsupported probe arguments.');
@@ -26,6 +29,7 @@ await fs.mkdir(runRoot, { recursive: true });
 const summary = { schema: 2, scope: observeNetwork ? (observeEtw ? 'synthetic-native-bound-loopback-etw' : 'synthetic-native-bound-loopback-observation') : 'synthetic-native-loopback-only', cases: [], passed: false, corePassed: false, originalMatrixRun: !observeNetwork, unrunOriginalCases: observeNetwork ? ['original-matrix-not-run'] : ['lpac/error', 'lpac/launcher-kill', 'lpac/owner-kill'] };
 
 let sharedServers;
+const completedCases = [];
 
 async function endpoints() {
   const resources = [];
@@ -55,46 +59,7 @@ async function endpoints() {
     return { ports, counts, accepted, close: async () => { for (const close of resources.reverse()) await close(); } };
   } catch (error) { for (const close of resources.reverse()) await close().catch(() => {}); throw error; }
 }
-function validate(report, mode, counts, accepted, primaryOnly = false) {
-  const network = [];
-  assert(!report.some(row => row.type === 'error' || row.type === 'probe-error'), 'Native error record.');
-  const launched = report.find(row => row.type === 'launched'); assert(launched?.job); assert.equal(launched.requestedPolicy, mode); assert.equal(launched.aclsVerified, true); assert.equal(launched.sentinelInherited, mode === 'control-inherit');
-  const profile = report.find(row => row.type === 'profile');
-  for (const phase of primaryOnly ? ['primary'] : ['primary', 'descendant']) {
-    const token = report.find(row => row.type === 'token' && row.phase === phase); assert(token?.job, `${phase} Job membership`);
-    assert.equal(token.appContainer, ['ac', 'lpac'].includes(mode)); if (token.lpac === null) assert.equal(token.lpacQueryError, 87, 'Unknown LPAC query must retain observed error.');
-    else { assert.equal(token.lpac, mode === 'lpac'); if (token.appContainer) assert.equal(token.lpacQueryBytes, 4); } assert.equal(token.capabilities, 0);
-    if (observeNetwork && mode.startsWith('control')) assert.equal(token.integrity, 8192, 'Observation controls must run at ordinary medium integrity.');
-    if (['ac', 'lpac'].includes(mode)) { assert.equal(token.integrity, 4096); assert.equal(token.sid, profile.sid); }
-    const operation = name => { const row = report.find(row => row.type === 'operation' && row.phase === phase && row.name === name); assert(row, `${phase}/${name}`); return row; };
-    for (const name of ['package-read', 'weights-read', 'scratch-write']) assert.equal(operation(name).ok, true, `${phase}/${name}`);
-    assert.equal(operation('aap-read').ok, mode !== 'lpac');
-    if (mode === 'lpac') assert.equal(operation('aap-read').code, 5);
-    for (const name of ['outside-read', 'outside-write', 'resource-write', 'code-write']) {
-      const row = operation(name); assert.equal(row.ok, !['ac', 'lpac'].includes(mode), `${phase}/${name}`);
-      if (['ac', 'lpac'].includes(mode)) assert.equal(row.code, 5, `${phase}/${name}: require ERROR_ACCESS_DENIED`);
-    }
-    for (const name of ['tcp4', 'tcp6', 'udp4', 'udp6']) {
-      const row = operation(name); assert.equal(row.ok, !['ac', 'lpac'].includes(mode), `${phase}/${name}`);
-      if (['ac', 'lpac'].includes(mode)) {
-        if (row.attempted === false) {
-          const failure = report.find(item => item.type === 'network-startup' && item.phase === phase);
-          assert(failure && failure.code !== 0 && failure.code === row.code, 'Unattempted networking must retain startup failure.');
-          network.push({ phase, name, code: row.code, evidence: 'startup-unavailable' }); continue;
-        }
-        assert.equal(row.attempted, true);
-        assert([10013, 10060].includes(row.code), `${phase}/${name}: unexpected network failure`);
-        const detail = report.find(item => item.type === 'network-detail' && item.phase === phase && item.name === name);
-        network.push({ phase, name, code: row.code, evidence: detail?.stage === 'bind' ? 'bind-failed-before-connect' : row.code === 10013 ? 'os-access-denied' : 'timeout-unresolved' });
-      }
-    }
-  }
-  if (!primaryOnly) { const breakaway = report.find(row => row.name === 'breakaway'); assert.equal(breakaway?.ok, false); assert.equal(breakaway?.code, 5); }
-  else assert(!report.some(row => row.type === 'descendant'));
-  for (const name of Object.keys(counts)) assert.equal(counts[name], !['ac', 'lpac'].includes(mode) ? 2 : 0, `${name} observed requests`);
-  for (const name of Object.keys(accepted)) assert.equal(accepted[name], !['ac', 'lpac'].includes(mode) ? 2 : 0, `${name} accepted sockets`);
-  return { network, networkVerified: !observeNetwork && network.every(row => row.evidence === 'os-access-denied') };
-}
+
 async function runCase(mode, kind, primaryOnly = false) {
   const id = randomUUID().replaceAll('-', ''); const profile = `tahtiapuri.t09a.${id}`;
   const caseRoot = join(runRoot, `${mode}-${primaryOnly ? 'primary-' : ''}${kind}`);
@@ -191,8 +156,10 @@ async function runCase(mode, kind, primaryOnly = false) {
       if (!result.observerCleanupPassed) { result.corePassed = false; result.passed = false; result.error = 'Read-only observer did not finish successfully.'; }
     }
     if (!sharedServers) await servers.close();
+    result.counts = { ...servers.counts }; result.accepted = { ...servers.accepted };
     result.exit = exit; result.stderr = report.stderr; result.finishedAt = new Date().toISOString();
     await fs.writeFile(join(caseRoot, 'result.json'), `${JSON.stringify(result, null, 2)}\n`);
+    completedCases.push(result);
     summary.cases.push({ mode, kind, primaryOnly, primaryDiagnosticPassed: result.primaryDiagnosticPassed, cleanupPassed: result.cleanupPassed, observerCleanupPassed: result.observerCleanupPassed, expectedCompatibilityFailure: result.expectedCompatibilityFailure, passed: result.passed, corePassed: result.corePassed, networkVerified: result.validation?.networkVerified ?? false, error: result.error, cleanupError: result.cleanupError });
   }
   console.log(`${mode}/${primaryOnly ? 'primary-' : ''}${kind}: ${result.passed ? 'PASS' : result.corePassed ? 'core PASS; network unresolved' : result.primaryDiagnosticPassed ? 'primary diagnostic PASS; original acceptance unchanged' : 'FAIL (details in ignored artifacts)'}`);
@@ -211,6 +178,17 @@ try {
   for (const mode of ['control', 'control-inherit', 'ac', 'lpac']) await runCase(mode, 'normal');
   for (const kind of ['error', 'launcher-kill', 'owner-kill']) await runCase('ac', kind);
   for (const kind of ['normal', 'error', 'launcher-kill', 'owner-kill']) await runCase('lpac', kind, true);
+  }
+  if (observeEtw) {
+    try {
+      const isolated = completedCases[1];
+      const evidence = await readEtwEvidence(runRoot, isolated.observerExit);
+      Object.assign(summary, await finalizeEtwRun(completedCases, evidence, updated =>
+        fs.writeFile(join(runRoot, 'ac-normal/result.json'), `${JSON.stringify(updated, null, 2)}\n`)));
+      console.log(`ETW bound-loopback variation: verified ${summary.networkEvidence.attemptCount} attempts; full isolation remains unverified.`);
+    } catch (error) {
+      summary.networkEvidence = { networkVerified: false, error: error.message };
+    }
   }
   summary.corePassed = summary.cases.every(row => row.corePassed);
   summary.passed = summary.cases.every(row => row.passed);

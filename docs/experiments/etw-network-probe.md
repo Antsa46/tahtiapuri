@@ -1,8 +1,9 @@
 # Lyhyt ETW-verkkokoe
 
-Tila: toimiva rajattu tapahtumakeruu. Tässä variaatiossa saatiin Windowsin
-loopback-pudotukset näkyviin ilman pysyviä asetusmuutoksia. Tämä ei vielä
-hyväksy sovelluksen koko verkkorajaa.
+Tila: toimiva rajattu tapahtumakeruu ja automaattinen vastaavuuden tarkistus.
+Windowsin loopback-pudotukset saatiin näkyviin ilman pysyviä asetusmuutoksia.
+Automaation näyttö erotetaan alla alkuperäisestä manuaalisesta kokeesta.
+Tämä ei vielä hyväksy sovelluksen koko verkkorajaa.
 Edeltävän [WFP-tilauksen](windows-isolation-probe.md#suora-wfp-tapahtumatilaus)
 tyhjä tulos jätti eston syyn avoimeksi. Tässä kokeillaan erillistä Windowsin
 ETW-tapahtumareittiä muuttamatta pysyviä keruu- tai palomuuriasetuksia.
@@ -112,7 +113,7 @@ Yksi pudotustapahtuma ei todista kaikkia verkkotapauksia. Pelkkä tapahtuman
 vastaanotto ei muuta `networkVerified`-arvoa. Tapahtumien vastaavuus omiin
 yrityksiin ja pudottavan suodattimen alkuperä arvioidaan erikseen.
 
-## Paikallinen tarkistus
+## Ensimmäisen keruun paikallinen tarkistus
 
 Ennen AC-koetta suoritetaan tyhjän istunnon normaali sulku ja kontrollin
 pakotetun päättymisen koe. Molemmista vaaditaan oman istunnon poissaolon
@@ -157,9 +158,10 @@ ACE:n käyttöoikeuslaskentaa ei toistettu. Koko sovelluksen ulkoista verkkoa,
 DNS:ää, LPAC-yhteensopivuutta tai mallin CPU/GPU-kokoonpanoa ei hyväksytä
 näillä tapahtumilla.
 
-Ajurin automaattinen `networkVerified` säilyy epätotena ja kokonaisajon exit
-on edelleen 1: automaattista aika-/portti-/suodatintulkinnan hyväksyntää ei
-vielä lisätty. Alkuperäistä 11 tapauksen matriisia ei ajettu tässä vaiheessa
+Ensimmäisessä tallennetussa ajossa automaattinen `networkVerified` jäi
+epätodeksi ja kokonaisajon exit oli 1: automaattista aika-/portti-/
+suodatintulkinnan hyväksyntää ei tuolloin ollut. Näitä alkuperäisiä tuloksia
+ei kirjoiteta jälkikäteen uudelleen. Alkuperäistä 11 tapauksen matriisia ei ajettu tässä vaiheessa
 uudelleen. Alkuperäiset WFP-apufunktiot vain siirrettiin yhteiseen otsakkeeseen;
 niiden sisällön muuttumattomuus tarkistettiin lähdevertailulla.
 
@@ -170,8 +172,84 @@ jälkikontrollia ei ajettu, mutta omien koepäätteiden ja ETW-istunnon siivous
 onnistui. Niitä ei merkitä jälkikäteen läpäisseiksi. Oma virheotos toistettiin
 paikallisesti; korjattu tulkinta validoitiin lopuksi uudella oikealla keruulla.
 
+## Automaattinen tapahtumien yhdistäminen
+
+`etw-correlation.mjs` tarkistaa luotetun paikallisen koeajurin tuottaman
+aineiston ilman prosessien käynnistämistä, verkkoa tai asetusten muutoksia.
+Se ei ole ulkopuolisen aineiston aitoustodistus. Muokattuja paikallisia
+raportteja ei voida tällä tavalla todentaa Windowsin allekirjoittamiksi.
+
+Hyväksyntä tehdään vasta kontrollin, AC-tapauksen ja jälkikontrollin jälkeen:
+
+- Kaikissa on sama koebinäärin tiiviste ja neljä erillistä päätepisteporttia.
+  Kontrollien echo-vastaukset ja AC:n tyhjät palvelinlaskurit tarkistetaan.
+  Jokaisen tapauksen oma elinkaari ja siivous sekä hävikitön ETW-loppukuitti
+  vaaditaan. Päätepisteiden muuttuvista laskureista otetaan tapauskohtaiset kopiot.
+- Jokaiselle pääprosessin ja jälkeläisen TCP/UDP- ja IPv4/IPv6-yhdistelmälle
+  vaaditaan yksi yritys ja vastaava operation-/token-tieto. PID sidotaan
+  vaiheen mitattuun tokeniin. Alustus-, bind- tai puuttuva yritys ei riitä.
+- Tapahtuman molemmat osoitteet ja portit vastaavat vastaanottavan palvelimen
+  ja yrittävän asiakkaan pareja. Otsakeaika osuu yrityksen suljetulle aikavälille
+  ilman lisätoleranssia. Jokainen tapahtuma vastaa täsmälleen yhtä yritystä ja
+  jokainen kahdeksasta yrityksestä saa vähintään yhden tapahtuman. TCP:n
+  uusintapudotukset sallitaan; juuri 12 tapahtumaa ei ole hyväksymisehto.
+- Ensimmäinen hyväksytty profiili on tapahtumaversio 2, vastaanottavan
+  palvelimen NT-tunniste ja osoiteperheen mukainen ALE receive -kerros.
+  Alkuperäinen AppId tarkistetaan, eikä pelkkä johdettu tunniste riitä.
+  Suodattimen ID, onnistunut haku, WF-provider, AppIsolation-alikerros,
+  BLOCK-toiminto ja täsmällinen loopback-/käyttäjäehtojen rakenne vaaditaan.
+  Muu tapahtumaversio, DOS-esitys tai politiikkaprofiili jää selvittämättömäksi.
+- Käyttäjäehdon suojauskuvaajan self-relative-rakenne, rajat, SID:t, ACL ja
+  tavalliset allow-ACEt tarkistetaan rajatulla dekooderilla. Tuntematon muoto
+  hylätään. Käyttöoikeuslaskentaa ei toisteta eikä tietyn ACE:n ratkaisevaa
+  vaikutusta väitetä. Allow-ACE tässä ehdossa ei itsessään ole verkkolupa.
+
+Hyväksynnän `scope` on `native-ac-bound-loopback-receive-v2` ja
+`fullIsolationVerified` säilyy epätotena. Liveajurin AC-tuloksen
+`networkVerified` ja tämän erillisen variaation `passed` voivat muuttua
+tosiksi vasta onnistuneen koko ajon korrelaation ja tuloksen tallennuksen
+jälkeen. Epäonnistuminen säilyttää verkkotuloksen avoimena. Alkuperäisen
+matriisin, LPAC:n, ulkoisen verkon ja koko sovelluksen hyväksyntää ei muuteta.
+
+Aiemman koeaineiston voi tulkita uudelleen projektin Node-runtimella:
+
+```text
+node tests/e2e/isolation/replay-etw.mjs <paikallisen-ajon-UUID>
+```
+
+Komento lukee vain nimetyt, kooltaan rajatut paikalliset tiedostot ja tulostaa
+uuden tulkinnan. Se ei korvaa alkuperäisiä raportteja, käynnistä keruuta eikä
+pyydä ylläpito-oikeuksia. Raakatallenteita ja ajotunnisteita ei julkaista.
+
+Automaation paikallinen näyttö:
+
+- 100 testiä läpäisi: aiemmat 32 kuittaustestiä ja 68 uutta korrelaation,
+  suojauskuvaajan, lopputilan tallennuksen sekä levyltä tehtävän toiston testiä.
+- Kielteiset testit kattavat puuttuvat ja päällekkäiset yritykset,
+  epäselvän aika-/socket-osuman, väärän AppId:n tai politiikan, puuttuvan
+  jälkikontrollin, hävikin ja siivousvirheet. Myönteisissä tapauksissa ovat
+  TCP-uusinnat, aikavälin rajat ja nollallinen payload-aikaleima.
+- Aiemman onnistuneen tallenteen toisto yhdisti kaikki 12 tapahtumaa
+  kahdeksaan yritykseen automaattisesti. Seitsemän alkuperäisen raportin
+  SHA-256-tiivisteet säilyivät samoina ennen toistoa ja sen jälkeen.
+- Erotetun koetarkistusfunktion tuloksia verrattiin myös alkuperäisen
+  matriisin 11 vanhaan tallenteeseen; tulokset säilyivät samoina.
+- Tämä toisto testaa uuden tulkinnan vanhalla raakanäytöllä. Se ei ole uusi
+  liveajo eikä alkuperäisen 11 tapauksen matriisin uusinta.
+- Uusi liveyritys pysähtyi kerääjän valmiuden aikarajaan. Windows palautti
+  korotetun lukijan käynnistykselle peruutuksen; ensimmäinen kontrolli oli
+  onnistunut, mutta AC-ajo ja jälkikontrolli jäivät tekemättä. Kerääjän
+  tuloshakemistoa ei syntynyt, omat staged-tiedostot poistuivat eikä
+  tähän yritykseen kuuluvaa kerääjäprosessia jäänyt. Tätä yritystä ei hyväksytä
+  uutena tapahtuma- tai korrelaationäyttönä.
+
 ## Lähteet
 
+- [WFP:n sovelluseristyksen alikerros](https://learn.microsoft.com/en-us/windows/win32/fwp/management-filtering-sublayer-identifiers)
+- [ALE-vastaanottokerrokset](https://learn.microsoft.com/en-us/windows/win32/fwp/ale-layers)
+- [Käyttäjäehdon suojauskuvaajan merkitys](https://learn.microsoft.com/en-us/windows/win32/fwp/permitting-and-blocking-applications-and-users)
+- [ACL-rakenne](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-acl)
+- [Allow-ACE-rakenne](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-access_allowed_ace)
 - [ETW-istunnon käynnistys ja sulkeminen](https://learn.microsoft.com/en-us/windows/win32/etw/configuring-and-starting-an-event-tracing-session)
 - [EnableTraceEx2 ja istunnon suodattimet](https://learn.microsoft.com/en-us/windows/win32/api/evntrace/nf-evntrace-enabletraceex2)
 - [Puskurit ja toteutuneet ominaisuudet](https://learn.microsoft.com/en-us/windows/win32/api/evntrace/ns-evntrace-event_trace_properties)

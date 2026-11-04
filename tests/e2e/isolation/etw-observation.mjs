@@ -27,12 +27,16 @@ export function validateEtwReceipt(exit, done, guard, records, appIdHex) {
   // An ETW drop alone does not establish protocol, package SID or policy origin.
   return { complete: true, eventCount: events.length, networkVerified: false };
 }
-export async function readEtwReceipt(runRoot, exit, appIdHex) {
+export async function readEtwEvidence(runRoot, exit) {
   const read = async (name, maximum) => {
     const path = join(runRoot, 'etw', name); const stat = await fs.stat(path); assert(stat.isFile() && stat.size <= maximum);
     const text = await fs.readFile(path, 'utf8'); assert(Buffer.byteLength(text) <= maximum); return text;
   };
   const done = JSON.parse(await read('done.json', 1024)), guard = JSON.parse(await read('guard-done.json', 1024));
   const text = await read('events.jsonl', 8 * 1024 * 1024); assert(text.endsWith('\n'));
-  return validateEtwReceipt(exit, done, guard, text.trimEnd().split('\n').map(line => JSON.parse(line)), appIdHex);
+  return { exit, done, guard, records: text.trimEnd().split('\n').map(line => JSON.parse(line)) };
+}
+export async function readEtwReceipt(runRoot, exit, appIdHex) {
+  const evidence = await readEtwEvidence(runRoot, exit);
+  return validateEtwReceipt(exit, evidence.done, evidence.guard, evidence.records, appIdHex);
 }
