@@ -28,7 +28,7 @@ export function nativeText(bytes: Uint8Array): string {
     return result;
   } catch { return reject(); }
 }
-function inputBody(prompt: string): Buffer {
+export function nativePromptBody(prompt: string): Buffer {
   // Buffer.from would silently replace an unpaired UTF-16 surrogate.
   if (prompt.length === 0 || prompt.length > 2000 || prompt.includes("\0") || !prompt.trim()) return reject();
   const body = Buffer.from(prompt, "utf8");
@@ -47,7 +47,7 @@ export class NativeOwnerFrames {
     let body: Buffer = Buffer.alloc(0);
     if (op === NATIVE_MODEL_OP.begin) {
       if (typeof prompt !== "string") return reject();
-      body = inputBody(prompt);
+      body = nativePromptBody(prompt);
     } else if (!(op === NATIVE_MODEL_OP.hello || op === NATIVE_MODEL_OP.load || op === NATIVE_MODEL_OP.shutdown) || prompt !== undefined) return reject();
     const size = NATIVE_MODEL_LIMITS.headerBytes + body.length;
     if (this.count + 1 > NATIVE_MODEL_LIMITS.ownerFrames || this.bytes + size > NATIVE_MODEL_LIMITS.ownerBytes) return reject();

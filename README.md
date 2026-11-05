@@ -7,14 +7,16 @@ näkyy nyt tai myöhemmin illalla.
 Tähtiapuri on harjoitus- ja referenssiprojekti paikallisten kielimallien,
 rajattujen agenttiroolien ja AI-avusteisen ohjelmistokehityksen tutkimiseen.
 
-**Nykytila:** Electron-sovelluksessa voi keskustella paikallisen Qwen3-4B-mallin
-kanssa CPU:lla tai CUDA:lla. Malli toimii erillisessä UtilityProcessissa;
-käyttöliittymä käyttää rajattua IPC:tä. Asetuksista avattava stdio-MCP-kehitysyhteys
-mahdollistaa erilliset mallikokeet. Paikallinen tähtikartta näyttää
-valitun ajan ja paikan kohteet sekä niiden laskentakortit, mukana 5 070 tähteä.
-Havaintopaikat tallentuvat paikallisesti, ja viimeksi käytetty paikka palautuu
-käynnistyksessä. Karttaa voi tutkia myös ilman mallia. Sää ja kartan yhdistäminen keskusteluun
-ovat seuraavia vaiheita.
+**Nykytila:** kehityssovellus käyttää paikallista Qwen3-4B-mallia omassa
+natiivissa CPU-prosessissa. Electron omistaa elinkaaren ja käyttöliittymä
+käyttää rajattua IPC:tä. Asetuksista avattava stdio-MCP-kehitysyhteys
+mahdollistaa erilliset mallikokeet. Vanha SDK:n CPU-/CUDA-kontrollipolku
+säilyy kokeissa; ajotapojen asetusvalinta on jatkotyötä.
+Paikallinen tähtikartta näyttää valitun ajan ja paikan kohteet sekä
+laskentakortit, mukana 5 070 tähteä. Havaintopaikat ja viimeksi käytetty
+paikka tallentuvat paikallisesti. Karttaa voi tutkia myös ilman mallia.
+Sää, kartan yhdistäminen keskusteluun ja koko sovelluksen oikeusrajojen
+varmentaminen ovat kesken.
 
 ## Tavoitellut ominaisuudet
 
@@ -35,14 +37,15 @@ haetaan erikseen rajatun API-yhteyden kautta.
 | Työpöytäsovellus | Electron ja TypeScript |
 | Käyttöliittymä | React, Vite ja CSS Modules |
 | Paikallinen backend | Node.js / TypeScript ja rajattu IPC-viestintä |
-| Mallimoottori | node-llama-cpp / llama.cpp erillisessä UtilityProcessissa |
+| Mallimoottori | llama.cpp omassa natiivissa CPU-prosessissa; node-llama-cpp vertailuissa |
 | Tähtikartta ja laskenta | Canvas 2D, Astronomy Engine 2.1.19 ja HYG 4.1 |
 | Sää | Ilmatieteen laitoksen avoin data |
 
 Ensimmäiset mallikokeet tehdään 4B- ja 8B-kokoluokissa. GGUF-painot
 säilytetään sovelluksen ulkopuolisessa paikallisessa mallikansiossa,
-ja muistissa pidetään yhtä mallia kerrallaan. 4B:n CPU-/CUDA-ajot on
-todennettu kehityskokeessa. Ensimmäinen
+ja muistissa pidetään yhtä mallia kerrallaan. 4B:n natiivi CPU-vastaus ja peruutus on
+todennettu rajatussa sovitinkokeessa. Aiemmat SDK:n CPU-/CUDA-ajot ovat
+erillistä kehitysnäyttöä. Ensimmäinen
 [4B/8B-laatuvertailu](docs/experiments/model-comparison.md) on tehty;
 asetusten mallinvaihto tulee myöhemmin.
 
@@ -89,6 +92,10 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev.ps1 models
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev.ps1 build
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev.ps1 start
 ```
+
+Nykyinen CPU-kehityspolku tarvitsee lisäksi erikseen rakennetun
+[natiivin runtimen](docs/development/local-development.md#natiivin-cpu-sovittimen-kehitysvaihe).
+Yllä oleva build ei rakenna sitä.
 
 [Paikallinen kehitys ja testaus](docs/development/local-development.md) sisältää
 myös 4B-mallin erillisen valmistelun ja valinnaiset CUDA-kirjastot. Se kuvaa

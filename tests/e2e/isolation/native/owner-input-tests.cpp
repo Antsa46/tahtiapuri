@@ -47,6 +47,13 @@ int wmain() {
         }
         {
             Pipe pipe;OwnerInput owner(pipe.input.value,session);
+            require(!owner.closingRequested());send(pipe.output.value,{Op::shutdown,1,session,{}});
+            until([&]{return owner.closingRequested();});
+            Frame frame{};require(owner.take(frame)&&frame.op==Op::shutdown&&!owner.closingRequested());
+            owner.stop();passed("queued-shutdown-visible-during-prepare");
+        }
+        {
+            Pipe pipe;OwnerInput owner(pipe.input.value,session);
             auto data=encode({Op::hello,1,session,{}});
             writeAll(pipe.output.value,data.data(),3);Sleep(20);
             const auto start=GetTickCount64();owner.stop();

@@ -9,7 +9,7 @@ startDesktop({
   preload: join(root, "apps/desktop/dist/preload/index.cjs"),
   renderer: join(root, "apps/web/dist"),
   data: join(root, ".local/data/desktop"),
-  model: { entry: join(root, "apps/backend/dist/runtime/model-worker.js"),
-    profile: { file: join(root, ".local/models", profile.file), bytes: profile.bytes, sha256: profile.sha256, templateSha256: profile.expectedChatTemplateSha256 },
-    cudaPaths: [join(root, ".local/toolchain/cuda/libcublas-windows-x86_64-13.2.0.9-archive/bin/x64"), join(root, ".local/toolchain/cuda/cuda_cudart-windows-x86_64-13.1.80-archive/bin/x64")] },
+  model: { kind: "native-cpu", runtimeRoot: join(root, ".local/native/tahtiapuri-model"),
+    workRoot: join(root, ".local/data/desktop/native-model"),
+    profile: { file: join(root, ".local/models", profile.file), bytes: profile.bytes, sha256: profile.sha256, templateSha256: profile.expectedChatTemplateSha256 } },
 });

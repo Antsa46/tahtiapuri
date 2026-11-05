@@ -41,7 +41,7 @@ async function runOwnerInput() {
     const exit=await bounded(report.exited,10000,'Owner input test deadline exceeded.');
     report.checkComplete();assert.deepEqual(exit,{code:0,signal:null});assert.equal(report.stderr,'');
     assert.deepEqual(report.records,['frame-and-owner-eof','partial-frame-deadline','wrong-session','unknown-owner-operation',
-      'bounded-owner-queue','stop-partial-reader','watchdog-independent-of-owner-read'].map(name=>({type:'owner-input',passed:true,case:name})));
+      'bounded-owner-queue','queued-shutdown-visible-during-prepare','stop-partial-reader','watchdog-independent-of-owner-read'].map(name=>({type:'owner-input',passed:true,case:name})));
     summary.ownerInput={passed:true,exit,records:report.records};
   } catch(error) {
     summary.ownerInput={passed:false,records:report.records,stderr:report.stderr,rejectedOutput:report.rejectedOutput,failure:error.message};throw error;

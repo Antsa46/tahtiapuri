@@ -2,6 +2,7 @@ import { OBSERVING_CHANNELS, isObservingInput, type ObservingOperation } from "@
 import { SKY_CHANNELS, isObservationRequest, isSkySelectionRequest } from "@tahtiapuri/validation/sky";
 import { DevelopmentHost } from "./development-host.js";
 import { DEVELOPMENT_CHANNELS } from "@tahtiapuri/validation/development";
+import { createNativeModelHost } from "./native-model-host.js";
 import { ModelHost } from "./model-host.js";
 import { ASSISTANT_CHANNELS, isModelInput, isJobId } from "@tahtiapuri/validation/assistant";
 import type { ApprovedModel } from "@tahtiapuri/validation/model-wire";
@@ -16,7 +17,9 @@ import { childEnvironment } from "./child-environment.js";
 import { isTrustedSender } from "./sender-policy.js";
 import { PAGE_URL, localPageResponse } from "./local-page.js";
 
-export type DesktopPaths = { backendEntry: string; preload: string; renderer: string; data: string; model?: { entry: string; profile: ApprovedModel; cudaPaths: string[] } };
+type DesktopModel = { kind?: "sdk"; entry: string; profile: ApprovedModel; cudaPaths: string[] }
+  | { kind: "native-cpu"; runtimeRoot: string; workRoot: string; profile: ApprovedModel };
+export type DesktopPaths = { backendEntry: string; preload: string; renderer: string; data: string; model?: DesktopModel };
 export function startDesktop(paths: DesktopPaths) {
   protocol.registerSchemesAsPrivileged([{ scheme: "tahtiapuri", privileges: { standard: true, secure: true } }]);
   try { paths = { ...paths, data: prepareOwnedDataRoot(paths.data) }; }
@@ -30,10 +33,13 @@ export function startDesktop(paths: DesktopPaths) {
   let observingPending = false;
   let rendererTimer: NodeJS.Timeout | undefined;
   let shutdownPromise: Promise<void> | undefined;
-  const model = paths.model ? new ModelHost(() => utilityProcess.fork(paths.model!.entry, [], {
+  const modelPaths = paths.model;
+  const model = modelPaths?.kind === "native-cpu" ? createNativeModelHost({
+    runtimeRoot: modelPaths.runtimeRoot, workRoot: modelPaths.workRoot, model: modelPaths.profile,
+  }) : modelPaths ? new ModelHost(() => utilityProcess.fork(modelPaths.entry, [], {
     serviceName: "Tahtiapuri Model", execArgv: [], cwd: paths.data, stdio: "ignore",
-    env: { ...childEnvironment(process.env), PATH: [...paths.model!.cudaPaths, join(process.env.SystemRoot ?? "C:\\Windows", "System32")].join(";") },
-  }), paths.model.profile) : undefined;
+    env: { ...childEnvironment(process.env), PATH: [...modelPaths.cudaPaths, join(process.env.SystemRoot ?? "C:\\Windows", "System32")].join(";") },
+  }), modelPaths.profile) : undefined;
   const backend = new BackendController(
     () => utilityProcess.fork(paths.backendEntry, [], {
       serviceName: "Tahtiapuri Backend",

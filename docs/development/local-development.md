@@ -15,6 +15,10 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev.ps1 build
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev.ps1 start
 ```
 
+Nykyinen main-entrypoint tarvitsee lisäksi erikseen rakennetun natiivin CPU-runtimen.
+Sen edellytykset ja komento ovat [natiivin kehitysvaiheessa](#natiivin-cpu-sovittimen-kehitysvaihe).
+Yllä oleva build ei rakenna sitä.
+
 ExecutionPolicy-valinta koskee vain käynnistettyä PowerShell-prosessia.
 Skripti hankkii tarkistettuun julkaisuun sidotun Node-työkalun, pnpm:n
 sekä Electron-runtimen projektin .local/toolchain/-puuhun.
@@ -31,9 +35,12 @@ build ja start eivät lataa mallia, binäärejä tai käännä natiivimoottoria.
 8B:n valmistelu kuuluu alla kuvattuun erilliseen vertailuun.
 Asetusten mallikansiovalitsin ei vielä kuulu runkoon.
 
-Käyttöliittymässä valitaan CPU tai CUDA ja lähetetään kysymys.
-Ensimmäinen kysymys tarkistaa ja lataa mallin; taustan vaihtaminen pysäyttää
-vanhan mallityöntekijän ennen uuden käynnistystä. CUDA-virhe ei vaihda CPU:lle.
+Kehityksen natiivi main-entrypoint tukee nyt CPU:ta; CUDA-pyyntö hylätään.
+Ensimmäinen kysymys tarkistaa ja lataa mallin. Jokainen natiivin sovittimen
+työ saa tuoreen prosessin, joka sulkeutuu työn jälkeen. Asetusten ajotapavalinta
+on vielä jatkotyötä. Vanha SDK:n CPU-/CUDA-polku säilyy erillisissä
+koefixtuureissa; sen taustan vaihto sulkee vanhan työntekijän ennen uuden
+käynnistystä. CUDA- tai eristysvirhe ei aktivoi varareittiä.
 Jokainen kysymys on vielä itsenäinen, ilman keskusteluhistoriaa.
 Malli ei vielä saa todellista säätä tai tähtilaskennan tietoja.
 
@@ -46,7 +53,7 @@ asiakkaan erillinen määritys ja uudelleenkäynnistys on kuvattu
 
 ## Valinnainen CUDA-valmistelu
 
-CUDA-taustan käyttö tarvitsee yhteensopivan NVIDIA-ajurin lisäksi paikalliset cuBLAS- ja
+SDK-kontrollifixtuurin CUDA-ajo tarvitsee yhteensopivan NVIDIA-ajurin lisäksi paikalliset cuBLAS- ja
 cudart-kirjastot:
 
 ```powershell
@@ -56,7 +63,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev.ps1 cuda:p
 Skripti tarkistaa NVIDIA-arkistojen SHA-256:t ja purkaa ne vain
 .local/toolchain/cuda/-puuhun. Se ei asenna ajuria, koko CUDA Toolkitia tai
 muuta järjestelmän asetuksia. Main välittää tunnetut bin/x64-hakemistot
-vain mallityöntekijän PATHiin. CPU-ajo ei tarvitse tätä valmistelua.
+vain SDK-mallityöntekijän PATHiin. CPU-ajo ei tarvitse tätä valmistelua.
+CUDA-valmistelu ei ota CUDA:a käyttöön natiivissa CPU-sovittimessa.
 Tarkat CUDA-versiot ja toimituksen avoin fuse-ehto ovat
 [moottorikokeen raportissa](../experiments/model-runtime-probe.md).
 
@@ -145,6 +153,22 @@ käsinarvioinnin merkityksen.
 node_modules/, dist/, .local/, .tahtiapuri-local/ ja .artifacts/ on rajattu Gitistä.
 Älä julkaise generoituja raportteja tai datajuuria sellaisenaan.
 Rungon käynnistysvirhe päättää prosessin virhekoodiin 1 ja main siivoaa
-omistamansa prosessit. Mallivirhe näkyy UI:ssa ja sallii uuden yrityksen.
-Sovelluksen sulkeminen sulkee backendin ja mallityöntekijän.
-Paketoitu asennin ja OS-eristys testataan myöhemmissä työpaketeissa.
+omistamansa prosessit. Mallivirhe näkyy UI:ssa. Uusi yritys sallitaan vain
+varmistetusti siistiytyneen työn jälkeen. Natiivin sovittimen protokollavirhe
+tai epävarma sulku sulkee ajotavan pysyvästi; jäljelle jäänyt työtila estää
+uuden ajon myös seuraavassa käynnistyksessä.
+[Natiivin sovittimen sopimus](../architecture/native-model-runtime.md#aikakatkaisu-peruutus-ja-sulku)
+omistaa tämän sulkuportin. Sovelluksen sulkeminen sulkee backendin ja mallityöntekijän.
+Paketoitu asennin ja koko sovelluksen OS-oikeusrajat testataan myöhemmissä työpaketeissa.
+
+
+## Natiivin CPU-sovittimen kehitysvaihe
+
+Kehityksen main-entrypoint käyttää natiivia CPU-hostia. Malliruntime
+rakennetaan erikseen `scripts/native/build-model-runtime.ps1`-komennolla
+olemassa olevan, hyväksytyn lähdekäännöksen päälle. Se ei käännä koko
+llama.cpp:tä uudelleen tai lataa mallia.
+[Natiivin sovittimen sopimus ja rajatut koekomennot](../architecture/native-model-runtime.md)
+kuvaavat valmistelun, normaalin vastauksen, peruutuksen ja Electron-/MCP-kokeet.
+Puuttuva runtime ei aktivoi SDK-/CUDA-varareittiä automaattisesti.
+Mallitiedosto pysyy erillisessä paikallisessa mallikansiossa.

@@ -118,9 +118,11 @@ test("unavailable canvas reports a drawing error while the keyboard catalogue re
     const page = await app.firstWindow();
     await page.waitForLoadState("load");
     await expect(page.getByRole("status", { name: "Yhteyden tila", exact: true })).toHaveText("Yhteys toimii");
+    await expect(page.getByRole("status", { name: "Paikkojen tila", exact: true })).toHaveText("Valitse havaintopaikka tai tallenna uusi.");
     await page.addInitScript(() => { HTMLCanvasElement.prototype.getContext = (() => null) as typeof HTMLCanvasElement.prototype.getContext; });
     await page.reload();
-    await expect(page.getByRole("alert")).toContainText("Karttaa ei voitu piirtää");
+    await expect(page.getByRole("status", { name: "Paikkojen tila", exact: true })).toHaveText("Valitse havaintopaikka tai tallenna uusi.");
+    await expect(page.getByRole("alert").filter({ hasText: "Karttaa ei voitu piirtää" })).toContainText("Karttaa ei voitu piirtää");
     await fillObservation(page);
     await page.getByRole("combobox", { name: "Kartan kohde", exact: true }).selectOption("Jupiter");
     await expect(page.getByRole("region", { name: "Kohdetiedot", exact: true })).toHaveAttribute("data-object-id", "Jupiter");

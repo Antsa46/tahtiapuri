@@ -44,6 +44,10 @@ public:
     }
     OwnerInput(const OwnerInput&)=delete;
     OwnerInput& operator=(const OwnerInput&)=delete;
+    bool closingRequested() {
+        std::lock_guard<std::mutex> lock(mutex);
+        return std::any_of(queue.begin(),queue.end(),[](const auto& frame){return frame.op==transport::Op::shutdown;});
+    }
     bool take(transport::Frame& frame) {
         std::lock_guard<std::mutex> lock(mutex);
         if(queue.empty())return false;

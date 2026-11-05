@@ -110,8 +110,10 @@ Se ei vielä vaihda sovelluksen ajotapaa tai hyväksy koko oikeusrajaa.
 
 [Natiivin sovittimen sopimus](native-model-runtime.md) kuvaa T09j:n jaetut
 Windows-käynnistysosat, tavurajat ja backendin aikakatkaisun sulkuportin.
-Toteutettu parseri ja jonosuoja valmistavat sovellusliitosta; nykyinen
-SDK-/UtilityProcess-käynnistys ei vielä vaihdu natiiviseen CPU-polkuun.
+T09k liittää natiivin CPU-hostin kehityksen main-entrypointiin.
+Backendin jono ja run/cancel-portti säilyvät; vanha SDK-/UtilityProcess-polku
+on erillinen kontrolli. Asetuksista valittavat ajotavat ja koko paketin
+oikeusnäyttö ovat vielä avoimia.
 
 ## Toteutusjärjestys ja näyttö
 

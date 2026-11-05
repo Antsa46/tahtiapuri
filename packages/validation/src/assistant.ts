@@ -5,7 +5,8 @@ export const ERROR_CODES = ["BUSY", "CANCELLED", "OUT_OF_MEMORY", "MODEL_INVALID
 export type ModelErrorCode = typeof ERROR_CODES[number];
 export type ComputeBackend = "cpu" | "cuda";
 export type ModelInput = { prompt: string; backend: ComputeBackend };
-export type EngineInfo = { backend: ComputeBackend; gpuLayers: number; loadMs: number; generationMs: number; contextSize: number; engineVersion: "3.22.2"; modelId: typeof MODEL_ID };
+export const NATIVE_ENGINE_VERSION = "llama.cpp-v0.9.0-cpu";
+export type EngineInfo = { backend: ComputeBackend; gpuLayers: number; loadMs: number; generationMs: number; contextSize: number; engineVersion: "3.22.2" | typeof NATIVE_ENGINE_VERSION; modelId: typeof MODEL_ID };
 export type EngineReply = { text: string; error: ModelErrorCode | null; info: EngineInfo | null };
 export type JobView = { id: string; state: "queued" | "loading" | "running" | "completed" | "cancelled" | "error"; text: string; error: ModelErrorCode | null; info: EngineInfo | null };
 export type AssistantResult = { ok: true; job: JobView } | { ok: false; code: ModelErrorCode };
@@ -23,7 +24,7 @@ export function isModelInput(value: unknown): value is ModelInput {
 }
 export function isEngineInfo(value: unknown): value is EngineInfo {
   return isRecord(value) && exactKeys(value, ["backend", "gpuLayers", "loadMs", "generationMs", "contextSize", "engineVersion", "modelId"])
-    && isBackend(value.backend) && value.engineVersion === "3.22.2" && value.modelId === MODEL_ID
+    && isBackend(value.backend) && (value.engineVersion === "3.22.2" || value.engineVersion === NATIVE_ENGINE_VERSION && value.backend === "cpu") && value.modelId === MODEL_ID
     && ["gpuLayers", "loadMs", "generationMs", "contextSize"].every(key => typeof value[key] === "number" && Number.isFinite(value[key]) && value[key] >= 0)
     && typeof value.gpuLayers === "number" && Number.isInteger(value.gpuLayers) && value.gpuLayers <= 200 && value.contextSize === 4096
     && (value.backend === "cuda" ? value.gpuLayers > 0 : value.gpuLayers === 0);

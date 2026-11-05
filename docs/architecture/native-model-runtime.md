@@ -1,92 +1,165 @@
 # Natiivin mallisovittimen viesti- ja sulkusopimus
 
-Tämä dokumentti omistaa Electronin tulevan natiivimallisovittimen rajatun
-viestirajapinnan. [Ajotapasuunnitelma](model-execution-profiles.md) omistaa
-valinnat ja [turvallisuussuunnitelma](security-and-permissions-plan.md)
-oikeusrajat. T09j toteuttaa perustan; sovelluksen käynnistys käyttää edelleen
-aiempaa SDK-/UtilityProcess-polkuansa. Natiivi parseri ei vielä käynnistä mallia.
+Tämä dokumentti omistaa Electronin natiivin CPU-mallisovittimen toteutuksen.
+[Ajotapasuunnitelma](model-execution-profiles.md) omistaa valinnat,
+[turvallisuussuunnitelma](security-and-permissions-plan.md) oikeusrajat ja
+[CPU-moottorikoe](../experiments/native-cpu-model-probe.md) moottorin alkuperän.
+T09k liittää natiivin polun kehityssovellukseen. Koko #10:n verkko-, backend-,
+MCP-, GPU- ja koepakettinäyttö on edelleen erillinen hyväksymisportti.
 
-## Toteutettu perusta
+## Omistajuus ja lähteet
 
-`packages/windows-runtime/native/` omistaa Windowsin yhteiset käynnistys-,
-resurssi- ja kehystysosat. Testien vanhat headerit vain sisällyttävät nämä.
-Synteettiset virhekomennot ja koetyöntekijät pysyvät tests/-puussa.
-Sovelluskoodi ei sisällytä testejä. Käynnistin käyttää kutsujan määrittelemää
-suljettua `LaunchSpec`-kuvausta; se ei ole rendererin tai mallin valittava API.
+- `apps/desktop/src/main/native-model-host.ts` omistaa yhden työn run/cancel/stop-portin.
+  Backend käyttää samaa porttia ja jonoa kuin aiemmin.
+- `native-model-exchange.ts` tarkistaa pyynnöt, viestijärjestyksen ja loppukuitit.
+  `native-model-protocol.ts` omistaa tavurajat, UTF-8:n ja suljetut tietuemuodot.
+- `native-model-resources.ts` valmistelee ja tarkistaa oman kopion hyväksytyistä
+  resursseista. `private-directory.ts` rajaa työjuuren käyttäjälle ja SYSTEMille.
+- `apps/model-runtime/native/` sisältää sovelluksen C++-brokerin, työntekijän,
+  suoran llama.cpp-C-rajapinnan ja mallikohtaisen promptin muotoilun.
+- `packages/windows-runtime/native/` omistaa Windows-käynnistyksen, ACL:t,
+  Jobin ja kehystyksen. Testien vanhat headerit ovat välittäviä includeja.
 
-`OwnerInput` lukee omistajaputkea yhdessä säikeessä. Se tarkistaa istunnon,
-järjestysnumeron, sallitut operaatiot sekä 32 kehyksen / 32 KiB:n kokonaisrajan.
-Jonoon mahtuu enintään kahdeksan kehystä. Vahdin omistajatarkistus käyttää
-tässä polussa atomista katoamislippua eikä lue samaa synkronista putkea.
-Lukijasäikeen sululla on myös erillinen aikaraja vahdin elinkaaren jälkeen.
-Havaitun omistajan katoamisen tai vahdin katkaisun tarkistus tehdään ennen
-valmistelua, sen jälkeen sekä ennen prosessin luontia ja jatkamista.
+Sovelluskoodi ei sisällytä tests/-puuta tai testikomentoja. Vanha
+node-llama-cpp-/UtilityProcess-sovitin säilyy erillisten kontrollifixtureiden
+käytössä. Kehityksen main-entrypoint valitsee natiivin CPU-polun luotetusta
+konfiguraatiosta. Renderer, backendin mallityö ja MCP eivät valitse
+prosessin oikeusprofiilia. CUDA-pyyntö ei aktivoi tavallista ajotapaa.
 
-`apps/desktop/src/main/native-model-protocol.ts` tarkistaa binäärisen
-omistajakehyksen ja brokerin rivimuotoiset tulokset. Se ei vielä tarkista
-koko käyttötapauksen viestijärjestystä, käynnistä prosesseja tai anna
-sulkemisen hyväksyntää. Sovellusliitoksessa nämä vastuut kuuluvat
-`run/cancel/stop`-portin toteuttavalle mainin omistajasovittimelle.
+## Yksi työ ja tuore konteksti
 
-## Sisältö ja rajat
+Yksi natiiviprosessi palvelee yhtä mallityötä, jonka jälkeen se suljetaan.
+UI ja MCP käyttävät backendin yhteistä jonoa; niiden KV-konteksteja tai
+malliprosesseja ei kierrätetä toisilleen. Main muodostaa oman satunnaisen
+32 tavun istunnon ja kasvavat pyyntönumerot. Pyyntö ei sisällä komentoa,
+polkua, verkkokohdetta tai eristysvalintaa.
 
-Main muodostaa TAIP-otsakkeen, oman 32 tavun istunnon ja kasvavat
-pyyntönumerot. Yksi sovitininstanssi kuuluu yhteen prosessiin ja työhön.
-Mallilta tai MCP:ltä ei oteta komentoa, tiedostopolkua tai eristysvalintaa.
-Tavusovitin muodostaa vain hello-, load-, begin- ja shutdown-pyyntöjä.
-Peruutus voidaan toteuttaa tämän yhden työn prosessin hallittuna sulkuna.
+Qwen3:n tarkisteella lukittu template renderöidään kahtena viestinä ilman
+thinking-tuottoa. Luotetut roolirakenteet ja käyttäjäteksti tokenisoidaan
+erikseen: käyttäjätekstillä special=false, rakenteella special=true, ja
+mallin automaattiset erikoistokenit sallitaan vain ensimmäisessä kutsussa.
+Koko valmis syöte lasketaan tokenirajaan ennen dekoodausta.
+Sisäinen järjestelmäohje on tiivis englanninkielinen ohje suomenkieliseen
+vastaukseen. Se ei anna työkalujen, levyjen tai verkon oikeuksia.
 
 | Raja | Sopimus |
 | --- | --- |
-| Käyttäjäsyöte | Enintään 2 000 UTF-16-yksikköä ja 8 000 UTF-8-tavua, ei NULia tai virheellisiä surrogaatteja |
-| Vastausteksti | Enintään 8 192 UTF-8-tavua, kelvollinen UTF-8, ei NULia |
-| Konteksti | 4 096 tokenia; koko renderöity syöte enintään 3 072, tuotto enintään 512 |
-| CPU-laskenta | Yksi säie, batch ja microbatch 32, ei GPU-kerroksia |
+| Käyttäjäsyöte | Enintään 2 000 UTF-16-yksikköä ja 8 000 UTF-8-tavua; ei NULia tai virheellisiä surrogaatteja |
+| Vastausteksti | Enintään 8 192 UTF-8-tavua; kelvollinen UTF-8, ei NULia |
+| Konteksti | 4 096 tokenia; koko syöte enintään 3 072, tuotto enintään 512 |
+| CPU | Yksi laskentasäie, batch ja microbatch 32, ei GPU-kerroksia |
 | Brokerin tuloste | Enintään 32 tietuetta, 16 896 tavua rivillä ja 65 536 tavua yhteensä |
-| Virhevaihe | Suljettu vaiheavain, ei natiivin poikkeuksen tekstiä tai paikallista polkua |
+| Omistajakanava | Enintään 32 kehystä / 32 KiB, jono enintään kahdeksan kehystä |
+| Worker-Job | Yksi prosessi, yksi suoritin, BelowNormal ja 6 GiB commit-raja |
 
-Käynnistimen omat `launched` ja `result` ovat eri tietuetyypit kuin
-mallityöntekijän `frame`. Työntekijän vastaus kulkee heksakoodatussa rungossa;
-sen teksti ei muutu käynnistimen metatiedoksi. Koko tarkistetaan ennen
-heksadekoodausta. Virhe sulkee parserin pysyvästi, eikä poikkeus toista
-hylättyä sisältöä. Osittainen viimeinen rivi hylätään.
+Myös broker rajaa itsensä yhteen suorittimeen ja BelowNormal-prioriteettiin.
+Valmistelu tarkistaa vähintään 6 GiB vapaata muistia. Rajat eivät takaa
+lämpötilaa, vasteaikaa tai muiden sovellusten muistinkulutusta.
 
-Latauskuitti sisältää lukitut laskentarajat ja template-tarkisteen. Virheiden
-vaiheavaimet ovat `runtime-load`, `model-load`, `template-identity`,
-`model-context`, `input-invalid`, `input-tokens`, `generation-failed`,
-`cancelled` ja `internal`. Natiivisovitin mapittaa omat poikkeuksensa näihin;
-DLL-nimiä tai vapaata WinError-tekstiä ei lähetetä vaiheavaimena.
+## Luottamus- ja tiedostorajat
 
-## Aikakatkaisu ja hyväksynnän portti
+Brokerin omat launched/result-tietueet erotetaan työntekijän frame-rungosta.
+Mallin vastausteksti pysyy heksakoodattuna sisältönä; siitä ei muodostu
+elinkaarikuittia. Koko tarkistetaan ennen heksadekoodausta ja UTF-8-tulkintaa.
+Parseri sulkeutuu virheestä, ja host sulkee virheellisen ajotavan pysyvästi.
+Virheilmoitus ei toista hylättyä tekstiä. Natiivin poikkeukset mapitetaan
+suljettuihin vaiheavaimiin, eivätkä polut tai DLL-nimet kulje niiden mukana.
 
-Jaettu `MODEL_TIME_BUDGET` malliviestisopimuksessa määrittää omistajalle
-180 sekunnin kokonaistyön: myös valmistelu ja siivous kuuluvat siihen.
-Backend odottaa tulosta 185 sekuntia ja pyytää sen jälkeen peruutusta.
-Peruutuskuittausta odotetaan vielä enintään 10 sekuntia. Nämä ovat
-virhetilan ylärajat, eivät vasteaikatavoitteita.
+Työjuuri on mainin valitsema paikallinen hakemisto. UNC, reparse-pisteet,
+kovat linkit, väärät koot ja muuttuneet tarkisteet hylätään. Jokainen työ
+saa uuden merkityn hakemiston. Suljettu toimitusmanifesti sallii vain kaksi
+omaa ohjelmaa ja neljä hyväksyttyä CPU-DLL:ää. GGUF kopioidaan erikseen.
+Broker pitää mallin ja DLL:t kirjoitus-/poistojakoa estävissä lukituksissa
+ja tarkistaa niiden tiivisteet ennen työntekijän käynnistystä.
 
-Backend ei vapauta mallijonoa ensimmäisessä aikakatkaisussa. Jos omistaja
-kuittaa lopputuloksen, aikakatkaistu työ palautuu TIMEOUTina. Jos kuittausta
-ei tule tai kanava katkeaa, sovitin suljetaan pysyvästi; jonosta ei käynnisty
-uutta mallityötä epävarman vanhan rinnalle. Uusi initialize ei elvytä sitä.
-Uusi backend-istunto tarvitsee uuden sovittimen.
+`OwnerInput` lukee omistajaputkea yksin. Watchdog käyttää atomista
+katoamislippua eikä lue samaa synkronista putkea. Lukijasäikeen sululla
+on myös vahdista riippumaton aikaraja. Havaittu omistajan katoaminen
+estää jatkamisen ennen valmistelua, sen jälkeen sekä ennen prosessin
+luontia ja jatkamista. Valmistelu huomaa myös jonoon tulleen shutdownin.
+Työntekijä saa vain nimetyt putkikahvat ja NULin; omistajakanava ja Job
+sekä yksityinen sentinel-kahva eivät periydy sille.
 
-Seuraavan main-sovittimen lopputulos saa hyväksyä uuden työn vasta, kun
-malli on päättynyt, Job on tyhjä, profiili poistunut, brokerin poistuminen
-varmistettu ja omistettu valmisteluhakemisto siivottu. Parserin hyväksymä
-`done` tai `result` ei yksin riitä. Puuttuva kuitti tai epävarma pakkosulku
-sulkee ajotavan; automaattista tavalliseen ajoon vaihtoa ei tehdä.
+LPAC-asetus pyydetään ilman capabilityjä ja token/Job/ACL tarkistetaan.
+Suoran LPAC-lippukyselyn null/87/0-raja säilyy epävarmana. Oikean mallin
+vastaus ei itsessään todista koko tiedosto- tai verkkorajaa.
 
-## Näyttö ja jäljellä oleva työ
+## Aikakatkaisu, peruutus ja sulku
 
-T09j:n kevyet testit kattavat väärän istunnon, kehys-/tavu-/jonorajat,
-osittaisen viestin, sulkuvahdin riippumattomuuden, UTF-8:n ja surrogaatit,
-väärennetyn elinkaaritekstin, suljetut virheavaimet sekä jonon odotuksen ja
-sovittimen pysyvän sulun. Windowsin transport-koe sisältää myös omistajan
-katoamisen valmistelun aikana. Tarkat osatulokset ovat #10:ssä ja raakadata
-paikallisessa `.artifacts/tests/`-puussa.
+Jaettu MODEL_TIME_BUDGET määrittää mainin kokonaisajaksi 180 sekuntia,
+myös valmistelu ja siivous mukaan lukien. Hallittu peruutus alkaa 170
+sekunnissa, brokerin kova raja on viimeistään 175 sekunnissa ja viimeinen
+mainin raja 180 sekunnissa. Valmistelun aika vähennetään brokerin budjetista.
+Käyttäjän peruutukselle annetaan enintään viisi sekuntia ennen pakkosulkua.
+Nämä ovat virhetilan ylärajat, eivät suorituskykytavoitteita.
 
-Natiivin dynaaminen syöte ja template-renderöinti, 4 096 kontekstin oikea
-malliajo, myöhäisen peruutuksen kilpailutilanteet, mainin varsinainen
-prosessisovitin, UI/MCP-yhteistoiminta ja siivouskuittien hyväksyntä ovat
-vielä toteutettavia tai kokeella varmennettavia. Tämä perusta ei sulje #10:tä.
+Backend odottaa tulosta 185 sekuntia ja pyytää sitten peruutusta.
+Kuittausta odotetaan vielä enintään 10 sekuntia. Jono ei vapaudu
+ensimmäisessä aikakatkaisussa. Puuttuva kuittaus tai katkennut kanava
+sulkee sovittimen pysyvästi; initialize ei elvytä sitä.
+
+Peruutus käyttää tämän yhden työn prosessin shutdown-pyyntöä. Se kelpaa
+ennen latausta, latauksessa, laskennassa ja valmiin vastauksen jälkeen.
+Main sivuuttaa peruutuksen kanssa kilpailevan tekstin. Laskentasäie
+liitetään ennen mallin vapautusta. Valmistelu odottaa myös oman apurinsa
+todellista close-tapahtumaa; aikainen AbortError ei todista poistumista.
+
+Normaali lopputulos hyväksytään vasta työntekijän bye-kuittauksen ja
+poistumisen, tyhjän Jobin, poistetun profiilin, brokerin poistumisen sekä
+valmisteluhakemiston poiston jälkeen. Osittainen tulosterivi, putken
+lukuvirhe, väärä järjestys tai puuttuva kuitti estää hyväksynnän.
+Siivous ei seuraa reparse-pisteitä; tarkistuspuulla on koko- ja syvyysraja.
+
+Epävarma sulku säilyttää työtilan ja sulkee ajotavan. Myöhempi stop
+ilmoittaa epävarmuudesta myös aktiivisen työn poistumisen jälkeen.
+Uusi sovellusinstanssi ei aloita malliajoa, jos työjuuressa on vanha työtila.
+Ohjelma ei poista sitä automaattisesti tai vaihda tavalliseen ajotapaan.
+Mahdollinen palautus tarvitsee erillisen omistus- ja siivousvarmennuksen.
+Kartta ja laskenta voivat toimia, vaikka malli ei olisi käytettävissä.
+
+## Rakentaminen ja kokeet
+
+Olemassa oleva lähteestä rakennettu CPU-runtime ja lukitut työkalut tarvitaan.
+`build-model-runtime.ps1` kääntää vain pienet sovittimet yhdellä suorittimella,
+tarkistaa lähteet ja DLL-kokonaisuuden sekä kirjoittaa toimitusmanifestin.
+GGUF ei kuulu toimitusmanifestin mukana kopioitaviin binääreihin.
+Lisenssi säilyy runtime-paketin licenses/-hakemistossa.
+
+~~~powershell
+powershell -NoProfile -File scripts/native/build-model-runtime.ps1
+powershell -NoProfile -File tests/e2e/isolation/build-application-prompt.ps1
+powershell -NoProfile -File tests/e2e/isolation/run-application-prompt-limited.ps1
+powershell -NoProfile -File tests/e2e/isolation/run-native-application-limited.ps1
+powershell -NoProfile -File tests/e2e/isolation/run-native-application-limited.ps1 -CancelOnComputing
+powershell -NoProfile -File tests/e2e/isolation/run-native-desktop-limited.ps1
+~~~
+
+Promptikoe vertaa kahdeksan synteettisen syötteen C++-muotoilua GGUF:n omaan
+Jinja-templateen ilman mallin lataamista. Varsinaiset malliajot käynnistetään
+erikseen. Tavallinen nopea Playwright-kokoonpano ei aja niitä. Desktop-ajuri
+luo uuden raporttijuuren; natiivin työdata pysyy Playwrightin automaattisesti
+siivoaman output-hakemiston ulkopuolella. Epäonnistunutta vaihetta ei poisteta
+uusinta-ajolla. Kaikki raakadata pysyy paikallisessa `.artifacts/tests/`-puussa.
+
+## Näyttörajat
+
+Suora NativeModelHost-koe on todentanut oikean 4B-vastauksen 4096-kontekstilla
+sekä erillisen natiivin dekoodauksen peruutuksen. Normaali vapautus, Job-/
+profiilisiivous, brokerin poistuminen, työtilan poisto ja alkuperäisen mallin
+muuttumattomuus kuuluvat näihin onnistuneisiin kokeisiin. UI-/MCP-kokeet
+kohdistetaan samaan sovittimeen erillisillä synteettisillä käyttäjätiedoilla.
+Tarkat tulokset ja katselmukset ovat #10:ssä.
+
+Aiempi ajurin virhe muutti havaittavan putken tekstiksi; havainnointi on nyt
+erillisessä tavukopiossa. Alkuperäinen pitkä järjestelmäohje jäi yhdessä
+normaalikokeessa aikarajaan ja työtila osittain jäljelle. Aikakatkaisun ja
+siivousvirheen tarkkaa syytä ei eroteltu. Toinen toimiva vastaus jäi
+fixturen liian tiukkaan pistevaatimukseen; sanavertailu sallii nyt vain
+saman sanan valinnaisen loppupisteen. Vanhat epäonnistumiset säilyvät
+sellaisinaan, eivätkä myöhemmät läpäisyt muuta niitä onnistuneiksi.
+
+Koko sovelluksen OS-eristetty backend/MCP, FMI:n täsmällinen ulospääsy,
+GPU-profiilit, lopullinen runtime-riippuvuuksien toimitus ja paketoitu
+käynnistys tarvitsevat oman näyttönsä. Kehityksen DLL:t käyttävät vielä
+olemassa olevaa MSVC-ajoympäristöä; erillisasennuksetonta toimitusta ei
+väitetä valmiiksi. Tämä osuus ei sulje #10:tä.

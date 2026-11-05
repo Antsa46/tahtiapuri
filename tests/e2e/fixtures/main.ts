@@ -12,7 +12,10 @@ const backendEntry = scenario === "observing-save-fail" ? join(root, ".artifacts
   : scenario === "unready-ui" ? join(root, ".artifacts/tests/e2e-build/recording-backend.js")
   : join(root, "apps/backend/dist/runtime/backend.js");
 const approved = JSON.parse(readFileSync(join(root, "resources/models/qwen3-4b.json"), "utf8"));
-const model = scenario?.startsWith("model") ? {
+const model = scenario === "native-model" ? {
+  kind: "native-cpu" as const, runtimeRoot: join(root, ".local/native/tahtiapuri-model"), workRoot: join(data, "native-model"),
+  profile: { file: join(root, ".local/models", approved.file), bytes: approved.bytes, sha256: approved.sha256, templateSha256: approved.expectedChatTemplateSha256 },
+} : scenario?.startsWith("model") ? {
   entry: scenario === "model-lifecycle" ? join(root, ".artifacts/tests/e2e-build/model-lifecycle.js") : scenario === "model-echo" ? join(root, ".artifacts/tests/e2e-build/model-echo.js") : scenario === "model-helper-hold" ? join(root, ".artifacts/tests/e2e-build/helper-hold-model.js") : scenario === "model-oom" ? join(root, ".artifacts/tests/e2e-build/model-fault.js") : join(root, "apps/backend/dist/runtime/model-worker.js"),
   profile: { file: join(root, ".local/models", approved.file), bytes: approved.bytes,
     sha256: scenario === "model-invalid" ? "0".repeat(64) : approved.sha256, templateSha256: approved.expectedChatTemplateSha256 },

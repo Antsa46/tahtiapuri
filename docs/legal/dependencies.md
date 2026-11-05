@@ -14,8 +14,8 @@ asennuspaketin lisenssiliite. Se viimeistellään T17:ssä toimitetun sisällön
 | Vitest 5.1.0 | Paikalliset yksikkö- ja integraatiotestit. | MIT |
 | @playwright/test 1.64.1 | Oikean Electronin E2E-testit. | Apache-2.0 |
 | @types/node 24.10.0, @types/react ja @types/react-dom 19.3.0 | Käännösaikaiset tyypit. | MIT |
-| node-llama-cpp 3.22.2 ja sen Windows CPU-/CUDA-binäärit | Erillisen mallityöntekijän llama.cpp-sovitin. | MIT; binäärien mukana tulevat llama.cpp- ja muut ilmoitukset säilytetään. |
-| llama.cpp v0.9.0 lähdekäännös, CPU | Erillinen natiivin mallin koe; tarkka revisio, lähde ja rakennusprofiili resources/runtimes-puussa. | MIT; upstream LICENSE säilytetään. |
+| node-llama-cpp 3.22.2 ja sen Windows CPU-/CUDA-binäärit | SDK-kontrollit ja paikallismallien vertailut. | MIT; binäärien mukana tulevat llama.cpp- ja muut ilmoitukset säilytetään. |
+| llama.cpp v0.9.0 lähdekäännös, CPU | Natiivin CPU-mallisovittimen moottori; tarkka revisio, lähde ja rakennusprofiili resources/runtimes-puussa. | MIT; upstream LICENSE säilytetään. |
 | llama.cpp b12110 CPU ja LLVM OpenMP | Alkuperäinen binääriverrokki latausdiagnoosissa. | MIT sekä mukana säilytettävä LICENSE-LLVM-OpenMP ilmoituksineen. |
 | CMake 4.4.5 | Projektikohtainen natiivin CPU-moottorin rakennustyökalu. | BSD-3-Clause; doc/cmake/LICENSE.rst ja komponenttien ilmoitukset säilytetään. Ei sovelluksen runtime-riippuvuus. |
 | Astronomy Engine 2.1.19 | Offline-efemeridit ja koordinaattimuunnokset sky-sovittimessa. | MIT |
@@ -63,3 +63,11 @@ otettu käyttöön. Kartan aineistomerkinnät kuvataan [tähtikarttasopimuksessa
 
 Natiivin CPU-kokeen alkuperä, DLL-rajaus ja avoin MSVC-toimitusriippuvuus
 kuvataan [koedokumentissa](../experiments/native-cpu-model-probe.md).
+
+
+T09k:n natiivin sovittimen rakennus kopioi hyväksytyt neljä CPU-DLL:ää,
+omat broker-/worker-binäärit ja llama.cpp:n LICENSE-tiedoston paikalliseen
+runtime-toimitukseen. Mallipainot säilyvät erillisinä. Testien Jinja-vertailu
+käyttää olemassa olevan SDK:n transitiivista @huggingface/jinja-riippuvuutta;
+sitä ei lisätä natiivityöntekijään. MSVC-ajoympäristön toimitus ja sen ehdot
+sekä lopullisen asennuspaketin lisenssiliite ovat edelleen avoimia.

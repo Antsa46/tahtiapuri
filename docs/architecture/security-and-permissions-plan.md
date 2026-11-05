@@ -6,8 +6,11 @@ Ohjelma ja moottori suunnitellaan samaan asennukseen; Tähtiapurin
 vertailupainot ovat erillisessä paikallisessa mallikansiossa.
 Vain säätyöntekijän ulkoinen verkkolupa on tavoite. Muut alla esitetyt
 oikeustarkennukset ja toteutusmekanismit ovat ehdotuksia, ellei niitä merkitä
-sovituiksi. T02:n statusrunko ja sen IPC-rajat on toteutettu;
-Sovelluksen OS-eristystä ei ole vielä toteutettu.
+sovituiksi. T02:n statusrunko ja sen IPC-rajat on toteutettu.
+Natiivi CPU-mallisovitin on liitetty kehityssovellukseen; sen toteutuksen ja
+rajatun näytön omistaa [natiivin sovittimen sopimus](native-model-runtime.md).
+Koko sovelluksen OS-oikeusrajat ja vain säätyöntekijän verkkoyhteys
+ovat vielä todentamatta.
 Erillinen [natiivikoe](../experiments/windows-isolation-probe.md)
 rajaa T09a:n synteettisen koepaketin ja sen näyttöportit.
 [SDK-koe](../experiments/sdk-isolation-probe.md) erottaa julkisen CPU-alustuksen
