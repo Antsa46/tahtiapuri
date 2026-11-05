@@ -10,11 +10,12 @@ LPAC-ehdokkaassa: yhteensä kymmenen. Batch A on toteutettu ja sen rajattu lähd
 
 Ensimmäinen backend tallentaa synteettisen havaintopaikan ja aktiivisen
 valinnan. Se suljetaan normaalisti. Ennen seuraavaa käynnistystä vaaditaan
-lapsen ja brokerin poistuminen, tyhjä Job, säilyvän datajuuren DACL-palautus,
-LPAC-profiilin poisto sekä vanhan worker-juuren poistuminen.
+lapsen ja brokerin poistuminen, tyhjä Job, säilyvän datajuuren DACL-palautus
+sekä vanhan worker-juuren poistuminen. LPAC-haarassa myös profiilin poisto
+vahvistetaan.
 
-Toinen worker saa uuden työjuuren, profiilinimen, viestikanavan noncet ja
-sovellusistunnon. Se lukee saman datahakemiston; tallennettua tiedostoa ei
+Toinen worker saa uuden työjuuren, viestikanavan noncet ja sovellusistunnon.
+LPAC-haarassa myös oikeusprofiili ja sen nimi ovat uudet. Se lukee saman datahakemiston; tallennettua tiedostoa ei
 kopioida uuteen paikkaan. Revision, kohdetunnisteen ja aktiivisen paikan
 pitää täsmätä. Seuraava muutos varmistaa myös uuden profiilin kirjoitusoikeuden.
 Case-juuri poistetaan vasta molempien vahvistettujen elinkaarien jälkeen.
@@ -96,3 +97,6 @@ ja ulostulon vastapaine sekä raportoivan watchdog-sulun näyttö käsitellään
 erikseen. Verkkoyritykset,
 MCP, FMI, oikea malli ja GPU kuuluvat seuraaviin portteihin. Issue #10:n
 alkuperäiset hyväksymisehdot pysyvät avoimina.
+
+Seuraavan Batch B:n rajauksen omistaa
+[backendin kesken työn katkaisu ja otsakerajat](backend-adverse-probe.md).
