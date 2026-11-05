@@ -19,6 +19,7 @@ vastuurajan, lue myös toisen osapuolen sopimus.
 | Nykyhetken kartta, katsaus, keskustelun karttaohjaus, sääasetukset ja poikkeukset | [product/observing-session-use-cases.md](product/observing-session-use-cases.md) |
 | Valittu kansiorakenne A, moduulit, kerrokset ja prosessien kulkureitit | [architecture/base-architecture.md](architecture/base-architecture.md) |
 | Osien oikeudet, malliprosessin ajotapa ja eristyksen vaiheistus sekä Windows-/kontti-/VM-vertailu | [architecture/security-and-permissions-plan.md](architecture/security-and-permissions-plan.md) |
+| Backendin ja MCP:n eristyksen vaiheistus sekä ensimmäisen Node-stdio-kokeen rajaus | [architecture/backend-mcp-isolation.md](architecture/backend-mcp-isolation.md) |
 | Natiivin CPU-sovittimen toteutus, rakentaminen, viestirajat ja sulkuportti | [architecture/native-model-runtime.md](architecture/native-model-runtime.md) |
 | Natiivin CPU-runtimen rajattu viestiyhteys ilman mallia | [experiments/native-transport-probe.md](experiments/native-transport-probe.md) |
 | Oikea 4B-malli natiivissa CPU-työntekijässä: alkuperä, lukot ja elinkaari | [experiments/native-cpu-model-probe.md](experiments/native-cpu-model-probe.md) |

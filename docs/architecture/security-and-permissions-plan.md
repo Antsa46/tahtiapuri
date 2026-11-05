@@ -11,6 +11,8 @@ Natiivi CPU-mallisovitin on liitetty kehityssovellukseen; sen toteutuksen ja
 rajatun näytön omistaa [natiivin sovittimen sopimus](native-model-runtime.md).
 Koko sovelluksen OS-oikeusrajat ja vain säätyöntekijän verkkoyhteys
 ovat vielä todentamatta.
+Backendin ja MCP:n seuraavan kokeen rajaa
+[eristyksen toteutuspolku](backend-mcp-isolation.md).
 Erillinen [natiivikoe](../experiments/windows-isolation-probe.md)
 rajaa T09a:n synteettisen koepaketin ja sen näyttöportit.
 [SDK-koe](../experiments/sdk-isolation-probe.md) erottaa julkisen CPU-alustuksen
