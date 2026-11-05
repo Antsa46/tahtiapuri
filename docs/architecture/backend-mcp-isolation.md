@@ -204,3 +204,9 @@ issueen kirjataan menetelmä, koontitulokset, avoimet rajat ja mitatut tokenit.
 
 - [Windowsin konsolin luonti](https://learn.microsoft.com/en-us/windows/console/creation-of-a-console)
 - [Microsoftin konsoli- ja ikkunakäynnistyksen suunnittelukuvaus](https://github.com/microsoft/terminal/blob/main/doc/specs/%23492%20-%20Default%20Terminal/spec.md)
+
+
+Nykyisen backendin ensimmäisen synteettisen koetoteutuksen, resurssipaketin,
+TBIP-viestirajojen ja sulun omistaa
+[backendin eristyskoe](../experiments/backend-isolation-probe.md).
+Tavallisen sovelluksen oletusajotapa ei muutu tämän osakokeen perusteella.
