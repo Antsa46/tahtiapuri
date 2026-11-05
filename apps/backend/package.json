@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {},
   "dependencies": {
+    "@tahtiapuri/backend-transport": "workspace:*",
     "@tahtiapuri/validation": "workspace:*",
     "node-llama-cpp": "3.22.2",
     "@tahtiapuri/domain": "workspace:*",

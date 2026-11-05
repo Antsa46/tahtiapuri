@@ -36,6 +36,8 @@ export class ParentModelEngine implements ModelEngine {
     try { this.send({ type: "model.cancel", session: this.session, id }); }
     catch { this.retire(); }
   }
+  /** Retire the owning transport and release all model-result timers. */
+  dispose(): void { this.retire(); }
   private retire() {
     this.unavailable = true;
     for (const pending of this.pending.values()) {

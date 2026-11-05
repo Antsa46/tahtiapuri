@@ -32,6 +32,8 @@ Lue tehtävän mukaan:
   [natiivin CPU-mallin koe](docs/experiments/native-cpu-model-probe.md)
 - Backendin ja MCP:n OS-eristys tai konsoliton Node-stdio-koe:
   [backendin ja MCP:n eristyspolku](docs/architecture/backend-mcp-isolation.md) sekä
+  [pitkäikäisen natiivibackendin sopimus](docs/architecture/native-backend-runtime.md) sekä
+  [natiivibackendin ensimmäinen toiminnallinen koe](docs/experiments/native-backend-runtime.md) sekä
   [virallisen Noden stdio-koe](docs/experiments/node-stdio-probe.md) ja
   [nykyisen backendin synteettinen koe](docs/experiments/backend-isolation-probe.md) ja
   [backendin uudelleenkäynnistys ja virhetilanteet](docs/experiments/backend-lifecycle-probe.md) sekä

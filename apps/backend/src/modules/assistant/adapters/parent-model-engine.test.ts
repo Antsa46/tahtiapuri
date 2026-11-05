@@ -3,6 +3,13 @@ import { ParentModelEngine } from "./parent-model-engine.js";
 const id = "00000000-0000-4000-8000-000000000001";
 const input = { prompt: "Synthetic", backend: "cpu" as const };
 afterEach(() => vi.useRealTimers());
+it("idempotently disposes pending result timers and cannot be reinitialized", async () => {
+  vi.useFakeTimers(); const send = vi.fn(), engine = new ParentModelEngine(send);
+  engine.initialize("a".repeat(64)); const result = engine.run(id, input, () => {});
+  engine.dispose(); engine.dispose(); engine.initialize("b".repeat(64));
+  expect((await result).error).toBe("ENGINE_UNAVAILABLE"); expect(vi.getTimerCount()).toBe(0);
+  expect((await engine.run(id, input, () => {})).error).toBe("ENGINE_UNAVAILABLE"); expect(send).toHaveBeenCalledTimes(1);
+});
 for (const phase of ["model.run", "model.cancel"] as const) {
   it("settles a job and removes its timer after channel loss during " + phase, async () => {
     vi.useFakeTimers();

@@ -10,11 +10,23 @@ import { isRuntimeStatus, type RuntimeStatus } from "@tahtiapuri/validation/publ
 
 export interface ChildPort extends EventEmitter {
   readonly pid: number | undefined;
+  /** Trusted adapter budget, including native preparation; at most forty seconds. */
+  readonly startupTimeoutMs?: number;
+  /** Actual process close, or a bounded rejection that leaves ownership unverified. */
+  readonly closure?: Promise<void>;
   postMessage(message: unknown): void;
   kill(): boolean;
+  closeChildInput?(): Promise<void>;
+  confirmCleanup?(): Promise<void>;
 }
 type Pending = { operation: Operation; resolve(value: Response): void; reject(error: Error): void; timer: NodeJS.Timeout };
+type OwnedModelRun = { active: boolean };
 const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+async function bounded<T>(work: Promise<T>, ms: number, message: string): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  try { return await Promise.race([work, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(message)), ms); })]); }
+  finally { clearTimeout(timer); }
+}
 
 export class BackendController {
   private readonly session = randomBytes(32).toString("hex");
@@ -22,42 +34,43 @@ export class BackendController {
   private ready = false;
   private closing = false;
   private exited = false;
+  private failed = false;
+  private unexpectedExitNotified = false;
   private heartbeatPending = false;
   private heartbeat: NodeJS.Timeout | undefined;
   private startTimer: NodeJS.Timeout | undefined;
   private rejectStart: ((error: Error) => void) | undefined;
   private readonly pending = new Map<string, Pending>();
+  private readonly ownedModelRuns = new Map<string, OwnedModelRun>();
   private stopPromise: Promise<void> | undefined;
 
   constructor(private readonly fork: () => ChildPort, private readonly onUnexpectedExit: () => void, private readonly model?: { run(id: string, input: ModelInput, progress: () => void): Promise<EngineReply>; cancel(id: string): void }) {}
 
   start(): Promise<void> {
-    if (this.child || this.closing) return Promise.reject(new Error("Backend already started or closed."));
+    if (this.child || this.closing || this.failed) return Promise.reject(new Error("Backend already started or closed."));
     return new Promise((resolve, reject) => {
       this.rejectStart = reject;
-      this.startTimer = setTimeout(() => reject(new Error("Backend startup timed out.")), 5000);
       try {
         const child = this.fork();
         this.child = child;
+        child.on("error", () => this.failOwnedProcess(new Error("Backend channel failed.")));
+        // Observe a terminal rejection even if the caller has not started stopping yet.
+        void child.closure?.catch(() => undefined);
         child.on("spawn", () => {
+          if (this.closing || this.failed || this.exited) return;
           try { child.postMessage({ type: "initialize", protocol: 1, session: this.session }); }
-          catch { this.rejectStart?.(new Error("Backend channel closed during startup.")); }
+          catch { this.failOwnedProcess(new Error("Backend channel closed during startup.")); }
         });
         child.on("message", (message: unknown) => {
-          if (isModelCancel(message, this.session)) { this.model?.cancel(message.id); return; }
-          if (this.ready && !this.closing && isModelRun(message, this.session)) {
-            const unavailable: EngineReply = { text: "", error: "ENGINE_UNAVAILABLE", info: null };
-            void (this.model?.run(message.id, message.input, () => {
-              if (!this.closing) { try { child.postMessage({ type: "model.progress", session: this.session, id: message.id }); } catch { this.onUnexpectedExit(); } }
-            }) ?? Promise.resolve(unavailable)).catch(() => ({ ...unavailable, error: "ENGINE_CRASHED" as const })).then(reply => {
-              if (!this.closing && !this.exited && isEngineReply(reply)) {
-                try { child.postMessage({ type: "model.result", session: this.session, id: message.id, reply }); }
-                catch { this.onUnexpectedExit(); }
-              }
-            });
+          if (this.closing || this.failed || this.exited) {
+            if (!isResponse(message, this.session) || message.operation !== "runtime.shutdown") return;
+          }
+          if (isModelCancel(message, this.session)) { this.cancelModelRun(message.id); return; }
+          if (this.ready && !this.closing && !this.failed && !this.exited && isModelRun(message, this.session)) {
+            this.runModel(child, message.id, message.input);
             return;
           }
-          if (!this.ready && !this.closing && isReady(message, this.session)) {
+          if (!this.ready && !this.closing && !this.failed && !this.exited && isReady(message, this.session)) {
             this.ready = true;
             clearTimeout(this.startTimer);
             this.rejectStart = undefined;
@@ -65,7 +78,7 @@ export class BackendController {
               if (this.heartbeatPending || this.closing) return;
               this.heartbeatPending = true;
               void this.request("runtime.ping").catch(() => {
-                if (!this.closing) this.onUnexpectedExit();
+                if (!this.closing) this.failOwnedProcess(new Error("Backend heartbeat failed."));
               }).finally(() => { this.heartbeatPending = false; });
             }, 2000);
             resolve();
@@ -79,17 +92,79 @@ export class BackendController {
         });
         child.once("exit", () => {
           this.exited = true;
-          this.ready = false;
-          clearTimeout(this.startTimer);
-          clearInterval(this.heartbeat);
-          this.rejectStart?.(new Error("Backend exited before ready."));
-          this.rejectPending();
-          if (!this.closing) this.onUnexpectedExit();
+          this.unavailable(new Error("Backend exited before ready."), !this.closing);
         });
+        const budget = child.startupTimeoutMs ?? 5000;
+        if (!Number.isSafeInteger(budget) || budget < 1 || budget > 40_000) throw new Error("Invalid backend startup budget.");
+        this.startTimer = setTimeout(() => this.unavailable(new Error("Backend startup timed out."), false), budget);
       } catch (error) {
-        clearTimeout(this.startTimer);
-        reject(error);
+        this.unavailable(error instanceof Error ? error : new Error("Backend startup failed."), false);
       }
+    });
+  }
+
+  private unavailable(error: Error, notify: boolean): void {
+    this.failed = true;
+    this.ready = false;
+    clearTimeout(this.startTimer);
+    clearInterval(this.heartbeat);
+    this.rejectStart?.(error);
+    this.rejectStart = undefined;
+    this.rejectPending();
+    this.cancelOwnedModelRuns();
+    if (notify && !this.unexpectedExitNotified) {
+      this.unexpectedExitNotified = true;
+      this.onUnexpectedExit();
+    }
+  }
+
+  private signalKill(): void {
+    try { this.child?.kill(); } catch { /* Closure must still be independently confirmed. */ }
+  }
+
+  private failOwnedProcess(error: Error): void {
+    this.unavailable(error, !this.closing);
+    this.signalKill();
+  }
+
+  private cancelModelRun(id: string): void {
+    const owned = this.ownedModelRuns.get(id);
+    if (!owned?.active) return;
+    owned.active = false;
+    try { this.model?.cancel(id); } catch { /* Cancellation is only a command, never cleanup proof. */ }
+  }
+
+  private cancelOwnedModelRuns(): void {
+    for (const id of this.ownedModelRuns.keys()) this.cancelModelRun(id);
+    this.ownedModelRuns.clear();
+  }
+
+  private runModel(child: ChildPort, id: string, input: ModelInput): void {
+    // Canceled but unsettled runs still consume capacity; cancel floods cannot grow it.
+    if (this.ownedModelRuns.has(id) || this.ownedModelRuns.size >= 16) {
+      this.failOwnedProcess(new Error("Backend model run limit or duplicate rejected."));
+      return;
+    }
+    const owned: OwnedModelRun = { active: true };
+    this.ownedModelRuns.set(id, owned);
+    // A live cancellation revokes launch/progress, but settlement still acknowledges
+    // this same pending token so the backend can release its application queue.
+    const owns = () => this.ownedModelRuns.get(id) === owned && !this.closing && !this.failed && !this.exited && this.child === child;
+    const unavailable: EngineReply = { text: "", error: "ENGINE_UNAVAILABLE", info: null };
+    void Promise.resolve().then(() => {
+      if (!owns()) return unavailable;
+      if (!owned.active) return { text: "", error: "CANCELLED" as const, info: null };
+      return this.model?.run(id, input, () => {
+        if (!owns() || !owned.active) return;
+        try { child.postMessage({ type: "model.progress", session: this.session, id }); }
+        catch { this.failOwnedProcess(new Error("Backend model progress channel closed.")); }
+      }) ?? unavailable;
+    }).catch(() => ({ ...unavailable, error: "ENGINE_CRASHED" as const })).then(reply => {
+      if (!owns() || !isEngineReply(reply)) return;
+      try { child.postMessage({ type: "model.result", session: this.session, id, reply }); }
+      catch { this.failOwnedProcess(new Error("Backend model result channel closed.")); }
+    }).finally(() => {
+      if (this.ownedModelRuns.get(id) === owned) this.ownedModelRuns.delete(id);
     });
   }
 
@@ -160,7 +235,13 @@ export class BackendController {
   }
 
   stop(): Promise<void> {
-    this.stopPromise ??= this.stopOwnedProcess();
+    if (!this.stopPromise) {
+      let resolve!: () => void;
+      let reject!: (error: unknown) => void;
+      this.stopPromise = new Promise<void>((yes, no) => { resolve = yes; reject = no; });
+      // Publish ownership before cancellation can synchronously reenter stop().
+      void this.stopOwnedProcess().then(resolve, reject);
+    }
     return this.stopPromise;
   }
 
@@ -169,14 +250,40 @@ export class BackendController {
     clearInterval(this.heartbeat);
     clearTimeout(this.startTimer);
     this.rejectStart?.(new Error("Backend stopping."));
+    this.rejectStart = undefined;
     this.rejectPending();
-    if (!this.child || this.exited) return;
+    this.cancelOwnedModelRuns();
+    const child = this.child;
+    if (!child) return;
+    const nativeLifecycle = child.closure !== undefined || child.closeChildInput !== undefined || child.confirmCleanup !== undefined;
+    if (nativeLifecycle) {
+      if (!this.exited) {
+        let inputClosed = false;
+        if (this.ready) {
+          try {
+            await this.request("runtime.shutdown");
+            if (!child.closeChildInput) throw new Error("Native backend input close unavailable.");
+            await bounded(Promise.resolve().then(() => child.closeChildInput!()), 2500, "Native backend input close timed out.");
+            inputClosed = true;
+          } catch { /* Never close input without a matching valid shutdown response. */ }
+        }
+        if (!inputClosed) this.signalKill();
+      }
+      if (!child.closure) throw new Error("Native backend physical closure unverified; recovery required.");
+      // Session/completion failure can precede physical close and cannot release ownership.
+      try { await bounded(child.closure, 25_000, "Native backend physical closure unverified; recovery required."); }
+      catch (error) { this.signalKill(); throw error; }
+      if (!child.confirmCleanup) throw new Error("Native backend cleanup unverified; recovery required.");
+      await bounded(Promise.resolve().then(() => child.confirmCleanup!()), 2500, "Native backend cleanup unverified; recovery required.");
+      return;
+    }
+    if (this.exited) return;
     if (this.ready) {
-      await Promise.race([this.request("runtime.shutdown").catch(() => undefined), delay(1000)]);
+      await bounded(this.request("runtime.shutdown"), 1000, "Backend shutdown timed out.").catch(() => undefined);
     }
     for (let n = 0; n < 10 && !this.exited; n++) await delay(50);
     if (!this.exited) {
-      this.child.kill();
+      this.signalKill();
       for (let n = 0; n < 40 && !this.exited; n++) await delay(50);
     }
     this.rejectPending();

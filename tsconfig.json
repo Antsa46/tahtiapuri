@@ -11,6 +11,9 @@
       "path": "packages/api-client"
     },
     {
+      "path": "packages/backend-transport"
+    },
+    {
       "path": "apps/backend"
     },
     {

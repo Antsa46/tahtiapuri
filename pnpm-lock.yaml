@@ -217,6 +217,9 @@ importers:
 
   apps/backend:
     dependencies:
+      '@tahtiapuri/backend-transport':
+        specifier: workspace:*
+        version: link:../../packages/backend-transport
       '@tahtiapuri/domain':
         specifier: workspace:*
         version: link:../../packages/domain
@@ -232,6 +235,9 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@tahtiapuri/backend-transport':
+        specifier: workspace:*
+        version: link:../../packages/backend-transport
       '@tahtiapuri/validation':
         specifier: workspace:*
         version: link:../../packages/validation
@@ -271,6 +277,8 @@ importers:
       '@tahtiapuri/validation':
         specifier: workspace:*
         version: link:../validation
+
+  packages/backend-transport: {}
 
   packages/domain: {}
 

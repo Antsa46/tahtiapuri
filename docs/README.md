@@ -20,6 +20,8 @@ vastuurajan, lue myös toisen osapuolen sopimus.
 | Valittu kansiorakenne A, moduulit, kerrokset ja prosessien kulkureitit | [architecture/base-architecture.md](architecture/base-architecture.md) |
 | Osien oikeudet, malliprosessin ajotapa ja eristyksen vaiheistus sekä Windows-/kontti-/VM-vertailu | [architecture/security-and-permissions-plan.md](architecture/security-and-permissions-plan.md) |
 | Backendin ja MCP:n eristyksen vaiheistus sekä ensimmäisen Node-stdio-kokeen rajaus | [architecture/backend-mcp-isolation.md](architecture/backend-mcp-isolation.md) |
+| Pitkäikäinen natiivibackend, suojattu journal, Global Job ja kaatumispalautus | [architecture/native-backend-runtime.md](architecture/native-backend-runtime.md) |
+| Tuotantokandidaatin natiivibackend: taivas, observingin säilyminen, puhdas sulku ja näytön rajat | [experiments/native-backend-runtime.md](experiments/native-backend-runtime.md) |
 | Virallisen Noden stdio-, tiedosto- ja sulkukoe ilman mallia: 15 tapauksen matriisi | [experiments/node-stdio-probe.md](experiments/node-stdio-probe.md) |
 | Nykyisen backendin synteettinen LPAC-koe, suuret taivasviestit ja pysyvä datajuuri | [experiments/backend-isolation-probe.md](experiments/backend-isolation-probe.md) |
 | Saman backend-datan uudelleenkäynnistys sekä täsmälliset EOF-/UTF-8-virheet | [experiments/backend-lifecycle-probe.md](experiments/backend-lifecycle-probe.md) |
