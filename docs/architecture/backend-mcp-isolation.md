@@ -46,8 +46,10 @@ nykyistä käynnistystä ei vaihdeta tämän kokeen valmistelussa.
 - Jokainen tapaus saa oman merkityn juuren ja profiilin. Paketti on luettava,
   scratch kirjoitettava ja synteettinen private-aineisto oikeuksien ulkopuolella.
   Linkit, muuttuneet tarkisteet ja ylimääräiset tiedostot hylätään ennen grantteja.
-- Käynnistys käyttää CREATE_NO_WINDOWia ilman DETACHED_PROCESSia tai
-  CREATE_NEW_CONSOLEa. Vain nimetyt stdin/stdout/stderr-kahvat periytyvät.
+- Käynnistyslipun ehdokas ja sen näyttöraja ovat
+  [konsolihavainnon jatkossa](#ensimmäisen-toteutuksen-konsolihavainto-ja-rajattu-diagnoosi).
+  Lippuja ei yhdistetä tai vaihdeta automaattisesti. Vain nimetyt
+  stdin/stdout/stderr-kahvat periytyvät.
   Konsolin puuttuminen ja Jobin ainoa jäsen tarkistetaan myös ajossa.
   Ympäristö rajataan käynnistäjässä ennen Noden ensimmäistä käskyä; esimerkiksi
   NODE_OPTIONS, NODE_PATH ja inspector-asetukset eivät periydy.
@@ -89,6 +91,69 @@ sitä ei siirretä uuden Node-prosessin näytöksi. Tässä kokeessa ei tehdä
 verkkoyrityksiä. networkVerified pysyy false-arvossa.
 Tuloksena on vain konsolittoman käynnistyksen, stdion, tiedostojen ja
 elinkaaren näyttö; #10:n verkko- tai kokonaispakettiruutuja ei merkitä valmiiksi.
+
+## Ensimmäisen toteutuksen konsolihavainto ja rajattu diagnoosi
+
+Käynnistimen ja tavuprotokollan ensimmäinen toteutus on paikallisessa kokeessa.
+CREATE_NO_WINDOW-kontrolli pysähtyi ensin brokerin perittyyn konsoliin.
+Broker irrotettiin vain omasta konsoliyhteydestään säilyttäen kolme
+standardiputkea. Ensimmäisen ajon lapsi oli jo luotu suspendattuna;
+käynnistyskuitin puuttuminen ei tarkoita lapsiprosessin puuttumista.
+
+Uusinta todensi konsolin puuttumisen ennen lapsen jatkamista, Node-version,
+ready-viestin ja kuusi kontrollin tiedostohavaintoa. Ready-vaiheen jälkeen
+konsoliin pystyi kuitenkin liittymään. Koe hylättiin ja Job siivottiin;
+AC- ja LPAC-tapauksia ei ajettu. Node-koodin omaa AllocConsole-kutsua ei
+osoitettu. Konsoli-istunnon puuttuminen ja ikkunan puuttuminen erotetaan.
+
+Astran katselmus rajasi seuraavaksi yhden erillisen DETACHED_PROCESS-
+kontrollidiagnoosin. Se ei ole automaattinen varareitti tai matriisin jatko:
+
+- Erillinen `-DetachedControlDiagnostic`-rakennus ja koetarkisteet; ainoa
+  lapsen käynnistyslipun muutos on CREATE_NO_WINDOW → DETACHED_PROCESS.
+- Binääri ja ajuri sallivat vain control/normal-tapauksen. AC/LPAC-ajo
+  vaatii uuden hyväksytyn päätelmän tuloksesta ja oman näyttönsä.
+- Virallinen Node, koodi, kolme standardiputkea, ympäristö, Job, kuorma-
+  ja viestirajat sekä synteettinen aineisto säilyvät samoina.
+- Konsolitarkistus tehdään ennen resumea ja ready-viestin jälkeen.
+  Onnistuva AttachConsole hylkää yhä kokeen; piilotettu ikkuna ei riitä.
+- Ping/pong, enimmäiskehys, EOF-sulku, prosessien poistuminen ja oma
+  siivous vaaditaan. Aiemmat epäonnistuneet raportit ja työtilat säilyvät.
+
+Yksi DETACHED-kontrolli läpäisi: pieni ja enimmäiskokoinen viesti,
+EOF-sulku, kuusi kontrollin tiedostohavaintoa sekä konsolin puuttuminen
+ennen resumea ja ready-viestin jälkeen varmennettiin. Lapsi ja broker
+poistuivat, Job tyhjeni ja oma työtila poistui. Riippumaton Astra-katselmus
+varmisti lähde-/binäärisnapshotin, virallisen Node-arkiston ja raakanäytön.
+Tämä yksittäinen kontrolli ei hyväksy AC/LPAC- tai verkkorajaa.
+
+Astran tarkentama seuraava portti on erikseen tunnistettu
+`-DetachedCandidate`-rakennus. Binääri ja ajuri sallivat vain kolme
+normaalitapausta: control/normal, ac/normal ja lpac/normal. Muut oikeus-,
+kahva-, kuorma-, konsoli- ja siivousehdot säilyvät. Ensimmäinen epäonnistuminen
+pysäyttää sarjan; diagnoosirakennusta tai CREATE_NO_WINDOW-polun tulosta ei
+käytetä automaattisena varareittinä. Virhe- ja sulkuvariaatiot lisätään vasta
+näiden normaalitapausten näyttökatselmuksen jälkeen omana tarkennuksena.
+
+Kolme DETACHED-normaalitapausta läpäisivät erillisessä sarjassa. Kontrollissa
+kaikki kuusi tiedostotoimintoa onnistuivat; AC:ssa private-luku/-kirjoitus ja
+koodikirjoitus estyivät, LPAC-ehdokkaassa myös AAP-luku. Molempien rajoitettujen
+tapausten suora LPAC-lippukysely säilyy null/87/0-havaintona. Riippumaton
+Astra-katselmus varmisti lähteet, binäärit, raakanäytön ja omat siivoukset.
+
+Seuraava erillinen `-DetachedMatrix`-rakennus rajataan täsmälleen 15
+suunniteltuun yhdistelmään: AC vain normal, kontrolli ja LPAC kukin seitsemän
+nimettyä tapausta. Se ei avaa 21 yleistä yhdistelmää. Ajuri pysähtyy edelleen
+ensimmäiseen odottamattomaan virheeseen. Owner-loss tarkoittaa tässä
+omistajakanavan stdin-yhteyden katkaisua, ei omistajaprosessin pakkotappoa.
+15 tapauksen sarja on läpäissyt; menetelmän ja näyttörajan omistaa
+[Node-stdio-koe](../experiments/node-stdio-probe.md). Lopullinen riippumaton
+raakanäyttökatselmus ja osavaiheen hyväksyntä kirjataan issueen #10.
+Verkko ei kuulu tähän kokeeseen.
+
+Tavallinen sovellus ja natiivin mallin ajotapa eivät vaihdu koevaiheen
+perusteella. Ajantasainen tulos ja alkuperäisten hyväksymisehtojen tila
+kirjataan issueen #10; raakadata jää paikalliseksi.
 
 ## Jaetun käynnistimen muutosraja
 
@@ -136,3 +201,6 @@ issueen kirjataan menetelmä, koontitulokset, avoimet rajat ja mitatut tokenit.
 - [Windowsin prosessinluontiliput](https://learn.microsoft.com/en-us/windows/win32/procthread/process-creation-flags)
 - [Projektin aiempi runtimevertailu](../experiments/runtime-comparison.md)
 - [Projektin aiempi Electron Node -koe](../experiments/electron-isolation-probe.md)
+
+- [Windowsin konsolin luonti](https://learn.microsoft.com/en-us/windows/console/creation-of-a-console)
+- [Microsoftin konsoli- ja ikkunakäynnistyksen suunnittelukuvaus](https://github.com/microsoft/terminal/blob/main/doc/specs/%23492%20-%20Default%20Terminal/spec.md)

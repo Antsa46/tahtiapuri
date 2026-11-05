@@ -1,0 +1,12 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {Reader,encode,utf8,MAX_PAYLOAD} from './node-stdio-wire.mjs';
+const session=Buffer.alloc(32,7),frame=(id=1,body=Buffer.from('tähti'))=>encode(2,id,session,body);
+test('fragmented and coalesced frames preserve Unicode bytes',()=>{const r=new Reader(session),a=frame(),b=frame(2);const rows=[];for(const v of a)rows.push(...r.push(Buffer.from([v])));rows.push(...r.push(Buffer.concat([b,frame(3)])));assert.equal(rows.length,3);assert.equal(utf8(rows[0].body),'tähti');r.finish();});
+for(const [name,mutate] of [['magic',b=>b[0]=0],['high-bit-magic',b=>{for(let i=0;i<4;i++)b[i]|=128;}],['version',b=>b[5]=1],['session',b=>b[16]^=1],['zero-id',b=>b.writeUInt32LE(0,8)],['oversize',b=>b.writeUInt32LE(MAX_PAYLOAD+1,12)]])test('reject '+name,()=>{const r=new Reader(session),b=frame();mutate(b);assert.throws(()=>r.push(b));assert.throws(()=>r.push(frame(2)));});
+test('duplicate or decreasing IDs rejected',()=>{for(const id of [1,2]){const r=new Reader(session);r.push(frame(2));assert.throws(()=>r.push(frame(id)));}});
+for(const size of [1,47,48,50])test('EOF rejects partial '+size,()=>{const r=new Reader(session);r.push(frame().subarray(0,size));assert.throws(()=>r.finish());});
+test('exact payload bound and frame budget',()=>{const r=new Reader(session);assert.equal(r.push(frame(1,Buffer.alloc(MAX_PAYLOAD,65)))[0].body.length,MAX_PAYLOAD);for(let id=2;id<=20;id++)r.push(frame(id,Buffer.alloc(0)));assert.throws(()=>r.push(frame(21)));});
+test('cumulative byte budget before parse',()=>assert.throws(()=>new Reader(session).push(Buffer.alloc(65537))));
+test('strict UTF8 and NUL, surrogate-like bytes rejected',()=>{for(const b of [[255],[0],[0xed,0xa0,0x80],[0xc0,0xaf],[0xe2,0x82]])assert.throws(()=>utf8(Buffer.from(b)));assert.equal(utf8(Buffer.from('kuu')),'kuu');});
+test('nonbyte input rejected',()=>assert.throws(()=>new Reader(session).push('x')));
