@@ -210,3 +210,15 @@ Nykyisen backendin ensimmäisen synteettisen koetoteutuksen, resurssipaketin,
 TBIP-viestirajojen ja sulun omistaa
 [backendin eristyskoe](../experiments/backend-isolation-probe.md).
 Tavallisen sovelluksen oletusajotapa ei muutu tämän osakokeen perusteella.
+
+
+## MCP:n stream-koostamisen perusta
+
+[Injektoitavien viestiyhteyksien osavaihe](../experiments/mcp-stream-composition.md)
+erottaa nykyisestä yhteyskuvauksesta ja socketista jo autentikoidun
+kehityskanavan sekä MCP:n oman stream-koostamisen. 49 yksikkötestiä ja kuusi
+nykyisen ajotavan työpöytäregressiota läpäisivät; erillinen katselmus hyväksyi
+rajatun lähdemuutoksen korjatun myöhäisen lukuvirheen jälkeen. Ehdokkaan
+ulostulojono ja odotus on rajattu, mutta SDK:n parsittujen tuloviestien
+kokonaisjono jää avoimeksi sisäänottorajaksi. Natiivia muxia, mainin
+bootstrapia, LPAC-ajoa tai verkko-/tiedostorajaa ei tällä hyväksytä.

@@ -24,6 +24,7 @@ vastuurajan, lue myös toisen osapuolen sopimus.
 | Nykyisen backendin synteettinen LPAC-koe, suuret taivasviestit ja pysyvä datajuuri | [experiments/backend-isolation-probe.md](experiments/backend-isolation-probe.md) |
 | Saman backend-datan uudelleenkäynnistys sekä täsmälliset EOF-/UTF-8-virheet | [experiments/backend-lifecycle-probe.md](experiments/backend-lifecycle-probe.md) |
 | Backendin kesken työn katkaisu, virheelliset natiiviotsakkeet ja vastaanoton tauko | [experiments/backend-adverse-probe.md](experiments/backend-adverse-probe.md) |
+| MCP:n autentikoidut injektoitavat streamit, lähtörajat ja avoin tuloviestijono | [experiments/mcp-stream-composition.md](experiments/mcp-stream-composition.md) |
 | Natiivin CPU-sovittimen toteutus, rakentaminen, viestirajat ja sulkuportti | [architecture/native-model-runtime.md](architecture/native-model-runtime.md) |
 | Natiivin CPU-runtimen rajattu viestiyhteys ilman mallia | [experiments/native-transport-probe.md](experiments/native-transport-probe.md) |
 | Oikea 4B-malli natiivissa CPU-työntekijässä: alkuperä, lukot ja elinkaari | [experiments/native-cpu-model-probe.md](experiments/native-cpu-model-probe.md) |

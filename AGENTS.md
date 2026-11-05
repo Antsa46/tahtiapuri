@@ -65,7 +65,8 @@ Lue tehtävän mukaan:
 - mallikoe, asetusten mallivalinta tai paikallinen mallikansio, Codexin stdio-MCP-kehitysyhteys, moottorin turvatiedot, lisenssi tai mallien toimittaminen:
   [paikallisen mallin suunnitelma](docs/architecture/local-model-plan.md)
 - stdio-MCP:n käynnistys tai Codex-isännän erillinen käyttöönotto:
-  [MCP-kehitysyhteyden käyttö](docs/development/mcp.md)
+  [MCP-kehitysyhteyden käyttö](docs/development/mcp.md) sekä
+  [MCP:n stream-koostaminen ja rajat](docs/experiments/mcp-stream-composition.md)
 - toiminnallinen muutos, testit, testien sijainti tai paketointi:
   [testausohje](docs/ai/testing-rules.md)
 
