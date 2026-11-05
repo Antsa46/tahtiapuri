@@ -165,3 +165,6 @@ Verkkoyrityksiä, FMI-hakua, MCP:tä, oikeaa mallia, GPU:ta tai lopullista
 asennuspakettia ei testata tässä portissa. networkVerified pysyy false-arvossa.
 Normaalitapaus ei korvaa backendin erillisiä EOF-, virhe-, vastapaine- ja
 uudelleenkäynnistyskokeita eikä koko issue #10:n hyväksyntää.
+
+Uudelleenkäynnistyksen ja kielteisten elinkaaritulosten jatkon omistaa
+[backendin elinkaarikoe](backend-lifecycle-probe.md).

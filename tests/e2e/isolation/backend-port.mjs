@@ -52,8 +52,9 @@ export function validateBoundaries(value,mode,session){
 
 /** Test-only ChildPort: trusted outer receipts never become backend messages. */
 export class BackendProbePort extends EventEmitter {
-  constructor(child,{mode,ownerNonce}){
+  constructor(child,{mode,ownerNonce,captureSky}){
     super();assert(['control','lpac'].includes(mode));assert(/^[a-f0-9]{64}$/.test(ownerNonce));
+    assert(captureSky===undefined||typeof captureSky==='function');this._captureSky=captureSky;this._skyCaptured=false;
     this.child=child;this.mode=mode;this.ownerNonce=ownerNonce;this.pid=undefined;
     this.records=[];this.nativeEnvelopes=[];this.applicationFrames=[];this.stderr=Buffer.alloc(0);this.brokerStderr=Buffer.alloc(0);this.error=undefined;this._receiptBytes=0;this._outerChunks=0;this._ownerMessages=0;
     this._prepared=deferred();this.prepared=this._prepared.promise;this._completion=deferred();this.completion=this._completion.promise;
@@ -98,6 +99,12 @@ export class BackendProbePort extends EventEmitter {
           assert(exact(message,['type','session','operations'])&&message.session===this.session);assert.equal(inner.sequence,2);
           assert.equal(this.boundaryReceipt,undefined);this.boundaryReceipt=message;this._boundaries.resolve(message);continue;
         }
+        if(this._captureSky&&this._skyCaptureRequestId&&exact(message,['type','protocol','session','id','operation','result'])&&message.type==='response'&&message.protocol===1&&message.session===this.session&&message.id===this._skyCaptureRequestId&&message.operation==='sky.snapshot'){
+          assert(!this._skyCaptured&&inner.body.length<=16*MiB,'Raw sky capture budget exceeded');this._skyCaptured=true;
+          const returned=this._captureSky(Object.freeze({body:Buffer.from(inner.body),sequence:inner.sequence,session:this.session,requestId:message.id,bytes:inner.body.length,sha256:sha256(inner.body)}));
+          if(returned&&typeof returned.then==='function'){void Promise.resolve(returned).catch(error=>this._fail(error));throw new Error('Raw sky observer must be synchronous and return void');}
+          assert.equal(returned,undefined,'Raw sky observer must return void');
+        }
         this.emit('message',message);
         if(this._shutdown&&exact(message,['type','protocol','session','id','operation','result'])&&message.type==='response'&&message.protocol===1&&message.session===this.session&&message.id===this._shutdown&&message.operation==='runtime.shutdown'&&message.result===null){
           assert(!this._closeSent);this._closeSent=true;
@@ -127,6 +134,7 @@ export class BackendProbePort extends EventEmitter {
     assert.equal(this._state,'started','Backend channel is not started');if(this.error)throw this.error;assert(!this._closeSent,'Backend input is closed');
     if(message?.type==='initialize'){assert.equal(this.session,undefined);assert(/^[a-f0-9]{64}$/.test(message.session));this.session=message.session;}
     if(message?.type==='request'&&message.operation==='runtime.shutdown'){assert.equal(this._shutdown,undefined);this._shutdown=message.id;}
+    if(this._captureSky&&!this._skyCaptureRequestId&&message?.type==='request'&&message.operation==='sky.snapshot'){assert.equal(message.session,this.session);assert.equal(typeof message.id,'string');this._skyCaptureRequestId=message.id;}
     assert(this._ownerMessages<256,'Owner APP frame budget exceeded');const encoded=encodeJson(message,65536);this._ownerMessages++;
     void this._writer.send(KINDS.APP,encoded).catch(error=>this._fail(error));
   }

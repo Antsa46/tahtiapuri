@@ -33,7 +33,8 @@ Lue tehtävän mukaan:
 - Backendin ja MCP:n OS-eristys tai konsoliton Node-stdio-koe:
   [backendin ja MCP:n eristyspolku](docs/architecture/backend-mcp-isolation.md) sekä
   [virallisen Noden stdio-koe](docs/experiments/node-stdio-probe.md) ja
-  [nykyisen backendin synteettinen koe](docs/experiments/backend-isolation-probe.md)
+  [nykyisen backendin synteettinen koe](docs/experiments/backend-isolation-probe.md) ja
+  [backendin uudelleenkäynnistys ja virhetilanteet](docs/experiments/backend-lifecycle-probe.md)
 - Natiivin mallisovittimen toteutus, rakentaminen, tavurajat, jaettu Windows-käynnistin tai jonon sulkuportti:
   [natiivin sovittimen sopimus](docs/architecture/native-model-runtime.md)
 - Windowsin eristyskokeen natiivi käynnistin, koeoikeudet tai koesiivous:

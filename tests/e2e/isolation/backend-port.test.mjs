@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {EventEmitter} from 'node:events';
 import {PassThrough} from 'node:stream';
+import {createHash} from 'node:crypto';
 import {setImmediate as immediate} from 'node:timers/promises';
 import {BackendProbePort,validatePrepared,validateBoundaries} from './backend-port.mjs';
 import {KINDS,FrameReader,frame,encodeJson,decodeJson} from './backend-codec.mjs';
@@ -10,15 +11,16 @@ const ownerNonce='1'.repeat(64),childNonce='2'.repeat(64),session='3'.repeat(64)
 function prepared(mode='control'){
   return {pid:1234,childNonce,requestedPolicy:mode,creationMode:'detached-backend-probe',appContainer:mode==='lpac',lpac:mode==='lpac'?null:false,lpacQueryError:mode==='lpac'?87:0,lpacQueryBytes:0,capabilitySids:mode==='lpac'?[{sid:'S-1-15-3-1024-1065365936-1281604716-3511738428-1654721687-432734479-3232135806-4053264122-3456934681',attributes:4}]:[],integrity:mode==='lpac'?4096:8192,job:true,activeProcessLimit:1,affinity:1,priority:'BelowNormal',jobCommitBytes:536870912,sentinelInherited:false,aclsVerified:true,consoleAbsent:true,networkVerified:false};
 }
-function setup(){
+function setup(options={}){
   const child=new EventEmitter();child.stdin=new PassThrough();child.stdout=new PassThrough();child.stderr=new PassThrough();child.stdin.resume();
-  const port=new BackendProbePort(child,{mode:'control',ownerNonce});let outer=0,inner=0;const outgoing=[];
+  const port=new BackendProbePort(child,{mode:'control',ownerNonce,...options});let outer=0,inner=0;const outgoing=[];
   const ownerReader=new FrameReader({nonce:ownerNonce,maxPayloadBytes:65536,allowedKinds:[KINDS.START,KINDS.APP,KINDS.CLOSE_CHILD_INPUT,KINDS.KILL],maxFrames:260,maxTotalBytes:5*1024*1024});
   child.stdin.on('data',bytes=>outgoing.push(...ownerReader.push(bytes)));
   const send=(kind,body=Buffer.alloc(0))=>child.stdout.write(frame(kind,++outer,ownerNonce,body));
-  const app=message=>send(KINDS.CHILD_CHUNK,frame(KINDS.APP,++inner,childNonce,encodeJson(message,16*1024*1024)));
+  const appBytes=body=>send(KINDS.CHILD_CHUNK,frame(KINDS.APP,++inner,childNonce,body));
+  const app=message=>appBytes(encodeJson(message,16*1024*1024));
   const cleanup=()=>{child.stdin.destroy();child.stdout.destroy();child.stderr.destroy();};
-  return {child,port,send,app,cleanup,outgoing};
+  return {child,port,send,app,appBytes,cleanup,outgoing};
 }
 async function start(fixture){
   fixture.send(KINDS.PREPARED,encodeJson(prepared(),16384));await fixture.port.prepared;
@@ -98,4 +100,47 @@ test('prepared policy rejects capability expansion and false LPAC evidence',()=>
 test('boundary failures require an OS access denial',()=>{
   const value={type:'probe.boundaries',session,operations:['package-read','scratch-write','private-read','private-write','code-write','aap-read'].map((name,index)=>index<2?{name,ok:true}:{name,ok:false,code:'EACCES'})};
   validateBoundaries(value,'lpac',session);value.operations[2].code='ENOENT';assert.throws(()=>validateBoundaries(value,'lpac',session));
+});
+
+test('raw sky capture preserves original bytes and gives the observer an independent copy',async()=>{
+  let capture;const fixture=setup({captureSky:value=>{capture=value;value.body.fill(0);}});let delivered;
+  fixture.port.on('message',message=>{if(message.operation==='sky.snapshot')delivered=message;});
+  try{
+    await start(fixture);fixture.port.postMessage({type:'request',protocol:1,session,id:'capture-id',operation:'sky.snapshot'});
+    fixture.app({type:'response',protocol:1,session,id:'other-id',operation:'sky.snapshot',result:null});assert.equal(capture,undefined);
+    const raw=Buffer.from('{ "type":"response", "protocol":1,"session":"'+session+'","id":"capture-id","operation":"sky.snapshot","result":null }\n');
+    fixture.appBytes(raw);assert.equal(capture.bytes,raw.length);assert.equal(capture.sha256,createHash('sha256').update(raw).digest('hex'));
+    assert.equal(capture.session,session);assert.equal(capture.requestId,'capture-id');assert.equal(capture.sequence,3);
+    assert.equal(delivered.id,'capture-id');assert.equal(delivered.result,null);assert.equal(raw[0],123);
+  }finally{fixture.child.emit('close',1,null);fixture.cleanup();}
+});
+
+for(const asynchronous of [false,true])test('raw sky observer '+(asynchronous?'promise rejection':'exception')+' fails the case',async()=>{
+  const fixture=setup({captureSky:()=>{if(asynchronous)return Promise.reject(new Error('Observer rejected'));throw new Error('Observer threw');}});
+  try{
+    await start(fixture);fixture.port.postMessage({type:'request',protocol:1,session,id:'capture-id',operation:'sky.snapshot'});
+    fixture.app({type:'response',protocol:1,session,id:'capture-id',operation:'sky.snapshot',result:null});
+    assert((await fixture.port.fatal) instanceof Error);fixture.child.emit('close',0,null);await assert.rejects(fixture.port.completion);
+    await immediate();
+  }finally{fixture.cleanup();}
+});
+
+test('raw sky capture rejects a second matching capture without retaining another body',async()=>{
+  let captures=0;const fixture=setup({captureSky:()=>{captures++;}});
+  try{
+    await start(fixture);fixture.port.postMessage({type:'request',protocol:1,session,id:'capture-id',operation:'sky.snapshot'});
+    const response={type:'response',protocol:1,session,id:'capture-id',operation:'sky.snapshot',result:null};fixture.app(response);fixture.app(response);
+    assert.match((await fixture.port.fatal).message,/capture budget/);assert.equal(captures,1);
+    fixture.child.emit('close',0,null);await assert.rejects(fixture.port.completion);
+  }finally{fixture.cleanup();}
+});
+
+test('raw sky capture rejects an oversized declared body before calling the observer',async()=>{
+  let captures=0;const fixture=setup({captureSky:()=>{captures++;}});
+  try{
+    await start(fixture);fixture.port.postMessage({type:'request',protocol:1,session,id:'capture-id',operation:'sky.snapshot'});
+    const header=frame(KINDS.APP,2,childNonce);header.writeUInt32LE(16*1024*1024+1,12);
+    fixture.send(KINDS.CHILD_CHUNK,header);assert((await fixture.port.fatal) instanceof Error);assert.equal(captures,0);
+    fixture.child.emit('close',0,null);await assert.rejects(fixture.port.completion);
+  }finally{fixture.cleanup();}
 });

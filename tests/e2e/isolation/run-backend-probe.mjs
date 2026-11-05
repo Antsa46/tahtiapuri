@@ -35,7 +35,7 @@ export async function verifyBuildFiles(projectRoot,build){
   return sourceBoundPaths.map(path=>({...declared.get(path)}));
 }
 
-async function verifyBuild(){
+export async function verifyBuild(){
   const buildBytes=await fs.readFile(join(project,...buildManifestPath.split('/'))),build=JSON.parse(buildBytes.toString('utf8'));
   const manifest=JSON.parse(await fs.readFile(join(native,'resources-manifest.json'),'utf8'));
   assert.equal(build.schema,1);assert.equal(build.creationMode,'detached-backend-probe');assert.equal(build.affinity,1);assert.equal(build.priority,'BelowNormal');
