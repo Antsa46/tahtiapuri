@@ -27,6 +27,7 @@ vastuurajan, lue myös toisen osapuolen sopimus.
 | Saman backend-datan uudelleenkäynnistys sekä täsmälliset EOF-/UTF-8-virheet | [experiments/backend-lifecycle-probe.md](experiments/backend-lifecycle-probe.md) |
 | Backendin kesken työn katkaisu, virheelliset natiiviotsakkeet ja vastaanoton tauko | [experiments/backend-adverse-probe.md](experiments/backend-adverse-probe.md) |
 | MCP:n autentikoidut streamit, sisäänottorajat, lähtörajat ja sulku | [experiments/mcp-stream-composition.md](experiments/mcp-stream-composition.md) |
+| MCP-työntekijän kaksikanavainen viestimuoto, puskurit ja sulkusopimus | [architecture/mcp-native-transport.md](architecture/mcp-native-transport.md) |
 | Natiivin CPU-sovittimen toteutus, rakentaminen, viestirajat ja sulkuportti | [architecture/native-model-runtime.md](architecture/native-model-runtime.md) |
 | Natiivin CPU-runtimen rajattu viestiyhteys ilman mallia | [experiments/native-transport-probe.md](experiments/native-transport-probe.md) |
 | Oikea 4B-malli natiivissa CPU-työntekijässä: alkuperä, lukot ja elinkaari | [experiments/native-cpu-model-probe.md](experiments/native-cpu-model-probe.md) |

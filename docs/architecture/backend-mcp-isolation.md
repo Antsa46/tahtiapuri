@@ -224,3 +224,8 @@ vaihtuessa. Tarkka viesti-, peruutus- ja näyttösopimus on samassa
 [stream-koostamisen dokumentissa](../experiments/mcp-stream-composition.md).
 Natiivia muxia, mainin
 bootstrapia, LPAC-ajoa tai verkko-/tiedostorajaa ei tällä hyväksytä.
+
+Työntekijän kaksikanavainen TMCP/1-kooste ja tavallisen erillisen Noden
+putkikoe ovat [omassa kuljetussopimuksessaan](mcp-native-transport.md).
+Natiivibrokeri, suljettu resurssipaketti, mainin todentaminen ja
+käyttöjärjestelmän rajat jäävät jatkotyöksi; oletusentry ei vaihdu.
