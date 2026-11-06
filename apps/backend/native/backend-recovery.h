@@ -21,7 +21,7 @@ public:
         auto path=owned.controlRoot+L"\\recovery.journal";if(owned.created)privateFileCreate(path,owned.owner,initial);
         file=std::make_unique<Pinned>(path,false,GENERIC_READ|GENERIC_WRITE|READ_CONTROL|WRITE_DAC|WRITE_OWNER|FILE_READ_ATTRIBUTES,0);privatePolicy(*file,owned.owner);
         if(!SetHandleInformation(file->handle.value,HANDLE_FLAG_INHERIT,0))throw WinError("journal-noninherited");
-        exactEntries(owned.controlRoot,{L"owner.lock",L"owner.marker",L"recovery.journal"});
+        verifyBackendControlEntries(owned.controlRoot,true);
     }
     void verify() override{ownership.verify();privatePolicy(*file,ownership.owner);}
     void write(const std::string& bytes) override{

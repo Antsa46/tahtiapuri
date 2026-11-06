@@ -2,7 +2,8 @@ import { TextDecoder } from "node:util";
 import type { Writable } from "node:stream";
 
 export const HEADER = 56;
-export const KINDS = Object.freeze({ START: 1, APP: 2, CLOSE_CHILD_INPUT: 3, KILL: 4, HEARTBEAT: 5, PREPARED: 129, STARTED: 130, CHILD_CHUNK: 131, RESULT: 132, STDERR: 133 });
+export const KINDS = Object.freeze({ START: 1, APP: 2, CLOSE_CHILD_INPUT: 3, KILL: 4, HEARTBEAT: 5, MIGRATION_DECISION: 6,
+  PREPARED: 129, STARTED: 130, CHILD_CHUNK: 131, RESULT: 132, STDERR: 133, MIGRATION_SOURCE: 134, MIGRATION_DESTINATION: 135, MIGRATED: 136 });
 /** Per-frame and pending-work policy; this does not establish OS isolation. */
 export const TRANSPORT_POLICY = Object.freeze({ ownerInputBytes: 65_536, childOutputBytes: 16 * 1024 * 1024,
   maxPendingMessages: 32, maxPendingBytes: 32 * 1024 * 1024 + 32 * HEADER, writeTimeoutMs: 2000 });
@@ -10,6 +11,14 @@ const known = new Set<number>(Object.values(KINDS));
 const uint64 = 0xffff_ffff_ffff_ffffn;
 const integer = (value: number, min: number, max = Number.MAX_SAFE_INTEGER) => Number.isSafeInteger(value) && value >= min && value <= max;
 const asError = (error: unknown) => error instanceof Error ? error : new Error(String(error));
+function payloadLength(kind: number, bytes: number): boolean {
+  if (kind === KINDS.HEARTBEAT) return bytes === 0;
+  if (kind === KINDS.MIGRATION_DECISION) return bytes === 68;
+  if (kind === KINDS.MIGRATION_SOURCE) return bytes >= 5 && bytes <= 32_772;
+  if (kind === KINDS.MIGRATION_DESTINATION) return bytes >= 4 && bytes <= 32_772;
+  if (kind === KINDS.MIGRATED) return bytes === 2;
+  return true;
+}
 function nonceBytes(nonce: string): Buffer {
   if (typeof nonce !== "string" || !/^[a-f0-9]{64}$/.test(nonce)) throw new Error("Invalid TBIP nonce.");
   return Buffer.from(nonce, "hex");
@@ -25,7 +34,7 @@ export interface Frame { readonly kind: number; readonly sequence: bigint; reado
 export function frame(kind: number, sequence: bigint, nonce: string, body: Buffer = Buffer.alloc(0)): Buffer {
   const bytes = nonceBytes(nonce);
   if (!known.has(kind) || typeof sequence !== "bigint" || sequence < 1n || sequence > uint64 || !Buffer.isBuffer(body) || body.length > TRANSPORT_POLICY.childOutputBytes
-    || (kind === KINDS.HEARTBEAT && body.length !== 0))
+    || !payloadLength(kind, body.length))
     throw new Error("Invalid TBIP frame.");
   const result = Buffer.allocUnsafe(HEADER + body.length);
   result.write("TBIP", 0, "ascii"); result.writeUInt16LE(2, 4); result.writeUInt16LE(kind, 6);
@@ -73,7 +82,7 @@ export class FrameReader {
           const kind = this.header.readUInt16LE(6), sequence = this.header.readBigUInt64LE(8), bytes = this.header.readUInt32LE(16);
           if (this.sequence > uint64 || !this.header.subarray(0, 4).equals(Buffer.from("TBIP")) || this.header.readUInt16LE(4) !== 2
             || this.header.readUInt32LE(20) !== 0 || !this.header.subarray(24).equals(this.options.nonce) || !this.options.kinds.has(kind)
-            || sequence !== this.sequence || bytes > this.options.maxPayloadBytes || (kind === KINDS.HEARTBEAT && bytes !== 0)) throw new Error("Invalid TBIP header.");
+            || sequence !== this.sequence || bytes > this.options.maxPayloadBytes || !payloadLength(kind, bytes)) throw new Error("Invalid TBIP header.");
           this.kind = kind; this.bodyUsed = 0; this.body = Buffer.allocUnsafe(bytes);
         }
         const length = Math.min(this.body.length - this.bodyUsed, chunk.length - offset);
@@ -152,7 +161,7 @@ export class BoundedWriter {
     if (this.failure) return Promise.reject(this.failure);
     try {
       if (this.ending || this.stream.destroyed || this.stream.writableEnded) throw new Error("TBIP output is closed.");
-      if (!this.options.kinds.has(kind) || !Buffer.isBuffer(body) || body.length > this.options.maxPayloadBytes) throw new Error("Invalid TBIP output payload.");
+      if (!this.options.kinds.has(kind) || !Buffer.isBuffer(body) || body.length > this.options.maxPayloadBytes || !payloadLength(kind, body.length)) throw new Error("Invalid TBIP output payload.");
       const bytes = HEADER + body.length;
       if (this.sequence + BigInt(this.queue.length) > uint64 || this.pendingMessages >= TRANSPORT_POLICY.maxPendingMessages
         || bytes > TRANSPORT_POLICY.maxPendingBytes - this.pendingBytes) throw new Error("TBIP pending output limit exceeded.");

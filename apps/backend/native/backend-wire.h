@@ -16,8 +16,8 @@ namespace backend_runtime {
 using Nonce = std::array<BYTE,32>;
 constexpr size_t headerBytes=56, chunkBytes=65536, ownerAppBytes=65536;
 constexpr size_t childAppBytes=16*1024*1024, pendingBytes=256*1024, pendingMessages=64;
-enum Kind:uint16_t { Start=1, App=2, CloseInput=3, Kill=4, Heartbeat=5, Prepared=129,
-    Started=130, ChildChunk=131, Result=132, Stderr=133 };
+enum Kind:uint16_t { Start=1, App=2, CloseInput=3, Kill=4, Heartbeat=5, MigrationDecision=6, Prepared=129,
+    Started=130, ChildChunk=131, Result=132, Stderr=133, MigrationSourceFrame=134, MigrationDestinationFrame=135, Migrated=136 };
 inline uint64_t now() { return GetTickCount64(); }
 inline void closeHandle(Handle& handle) { if(handle.value && handle.value!=INVALID_HANDLE_VALUE) CloseHandle(handle.value); handle.value=nullptr; }
 inline uint16_t get16(const BYTE* p) { return uint16_t(p[0])|(uint16_t(p[1])<<8); }

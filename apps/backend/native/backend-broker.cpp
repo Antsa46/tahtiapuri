@@ -1,4 +1,5 @@
 #include "backend-recovery.h"
+#include "backend-observing-migration.h"
 #include <cstddef>
 #pragma comment(lib,"OneCoreUAP.lib")
 
@@ -7,6 +8,10 @@ namespace {
 using namespace br;
 constexpr wchar_t registrySid[]=L"S-1-15-3-1024-1065365936-1281604716-3511738428-1654721687-432734479-3232135806-4053264122-3456934681";
 std::string flag(bool value){return value?"true":"false";}
+struct MigrationGuardLifetime {
+    std::unique_ptr<WindowsObservingMigrationIo> io;bool cleanupVerified=false;
+    ~MigrationGuardLifetime(){if(!cleanupVerified)(void)io.release();}
+};
 struct Attributes {
     std::vector<BYTE> storage;LPPROC_THREAD_ATTRIBUTE_LIST value=nullptr;
     explicit Attributes(DWORD count){SIZE_T bytes=0;InitializeProcThreadAttributeList(nullptr,count,0,&bytes);if(!bytes)throw WinError("attribute-size");storage.resize(bytes);value=reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(storage.data());if(!InitializeProcThreadAttributeList(value,count,0,&bytes)){value=nullptr;throw WinError("attribute-init");}}
@@ -92,10 +97,12 @@ int wmain(int argc,wchar_t** argv){
     try{
         OwnerPipes pipes;Failure failure;Queue input;
         std::unique_ptr<Ownership> ownership;std::unique_ptr<Journal> journal;std::unique_ptr<Resources> resources;
+        MigrationGuardLifetime migrationGuard;auto& migrationIo=migrationGuard.io;std::unique_ptr<ObservingMigration> migration;
         std::unique_ptr<NamedJob> job;std::unique_ptr<ProfileSid> profile;std::unique_ptr<Output> output;
         Supervisor watch(failure,input);watch.deadline.store(now()+30000);
         Handle child,parentWrite,parentRead,errorRead,initialThread;
         std::atomic<bool> prepared{false},startRequested{false},started{false},inputClosed{false},writerClosed{false},outputEof{false},stderrEof{false},firstFrame{false};
+        std::atomic<bool> migrationWaiting{false},migrationDecisionReady{false};std::mutex migrationMutex;std::vector<BYTE> migrationDecision;bool migrationReady=false;
         std::vector<BYTE> stderrBody;Receipt receipt;receipt.run=run;bool cleanupFailed=false,normal=false,began=false;
         // Tasks are destroyed before every local captured by their actions.
         std::unique_ptr<IoTask> ownerReader,inputWriter,childReader,errorReader;
@@ -106,6 +113,11 @@ int wmain(int argc,wchar_t** argv){
                     if(!readExact(pipes.handles[0].value,first.data(),first.size(),watch.ownerClock,true)){failure.fail("owner-eof",ERROR_BROKEN_PIPE);return;}
                     auto decoded=decode(first,sequence.take(),ownerNonce,ownerAppBytes);
                     if(decoded.kind==Kill){if(decoded.size)throw WinError("owner-kill-body",ERROR_INVALID_DATA);watch.ownerClock.finish();watch.lease.store(now());failure.fail("owner-kill",ERROR_OPERATION_ABORTED);return;}
+                    if(decoded.kind==MigrationDecision){
+                        if(decoded.size!=68||!migrationWaiting.exchange(false)||migrationDecisionReady.load())throw WinError("migration-owner-decision-state",ERROR_INVALID_DATA);
+                        std::vector<BYTE> body(68);readExact(pipes.handles[0].value,body.data(),body.size(),watch.ownerClock);watch.ownerClock.finish();
+                        {std::lock_guard<std::mutex> lock(migrationMutex);migrationDecision=std::move(body);}migrationDecisionReady.store(true);continue;
+                    }
                     if(decoded.kind==Start){if(decoded.size||!prepared.load()||startRequested.load())throw WinError("owner-start-state",ERROR_INVALID_DATA);watch.ownerClock.finish();watch.lease.store(now());watch.readyDeadline.store(now()+10000);startRequested.store(true);continue;}
                     if(decoded.kind==Heartbeat){if(decoded.size||!started.load())throw WinError("owner-heartbeat-state",ERROR_INVALID_DATA);watch.ownerClock.finish();watch.lease.store(now());continue;}
                     if(!started.load()||inputClosed.load())throw WinError("owner-input-state",ERROR_INVALID_DATA);
@@ -121,7 +133,15 @@ int wmain(int argc,wchar_t** argv){
             Recovery(*ownership,*journal).run([&](RecoveryStage,uint64_t deadline){watch.deadline.store(deadline);});failure.check();
             if(recover){receipt.jobEmpty=true;receipt.restored=true;receipt.profileDeleted=true;receipt.sessionRemoved=true;receipt.journalClean=true;normal=true;}
             else{
-                watch.deadline.store(now()+30000);resources=std::make_unique<Resources>(*ownership,run);failure.check();journal->begin(run);began=true;
+                // One existing preparation budget includes guarded snapshots,
+                // Main's decision, publication, and all worker preparation.
+                watch.deadline.store(now()+30000);migrationIo=std::make_unique<WindowsObservingMigrationIo>(*ownership);
+                migration=std::make_unique<ObservingMigration>(MigrationContext{narrow(ownership->owner.text),idText(ownership->state->id),idText(ownership->data->id)},*migrationIo,[&]{failure.check();});
+                output->send(MigrationSourceFrame,migration->sourceFrame());auto destination=migration->destinationFrame();migrationWaiting.store(true);output->send(MigrationDestinationFrame,std::move(destination));
+                while(!migrationDecisionReady.load()){failure.check();Sleep(10);}failure.check();
+                std::vector<BYTE> decision;{std::lock_guard<std::mutex> lock(migrationMutex);decision=std::move(migrationDecision);}
+                auto migrated=migration->decide(decision);failure.check();output->send(Migrated,std::move(migrated));migrationReady=true;migrationIo->verifyGuard();
+                resources=std::make_unique<Resources>(*ownership,run);failure.check();journal->begin(run);began=true;
                 job=std::make_unique<NamedJob>(ownership->owner,run);watch.job.store(job->handle.value);profile=journal->createProfile();failure.check();
                 journal->prepareResources(*resources);failure.check();
                 Handle childRead,childWrite,errorWrite;createPipe(childRead,parentWrite,false);createPipe(parentRead,childWrite,true);createPipe(errorRead,errorWrite,true);
@@ -200,6 +220,7 @@ int wmain(int argc,wchar_t** argv){
             }catch(const WinError& error){cleanupFailed=true;failure.fail("cleanup",error.code);}catch(...){cleanupFailed=true;failure.fail("cleanup",ERROR_UNHANDLED_EXCEPTION);}
         }
         if(!receipt.journalClean)cleanupFailed=true;
+        if(migrationReady){try{migrationIo->verifyGuard();}catch(const WinError& error){cleanupFailed=true;failure.fail(error.what(),error.code);}catch(...){cleanupFailed=true;failure.fail("migration-guard",ERROR_UNHANDLED_EXCEPTION);}}
         watch.job.store(nullptr);closeHandle(child);
         const char* outcome=recover?(normal?"recovered":"failed"):(normal&&!failure.failed.load()?"normal":"failed");
         bool reported=false;watch.deadline.store(now()+2000);
@@ -210,6 +231,10 @@ int wmain(int argc,wchar_t** argv){
         // Output's later destructor then has no live synchronous I/O to join.
         if(output){output->abort();output->finish();}
         watch.stop();watch.output.store(nullptr);output.reset();
+        // Cleanup-unverified includes pre-begin migration/staging failures.
+        // Keep its guard handles until OS process termination, not an earlier
+        // scope destructor. No destructor repairs or deletes migration files.
+        migrationGuard.cleanupVerified=!cleanupFailed;
         return reported&&!cleanupFailed&&normal&&!failure.failed.load()?0:1;
     }catch(...){return 1;}
 }

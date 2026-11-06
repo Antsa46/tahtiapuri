@@ -55,6 +55,12 @@ inline std::vector<std::unique_ptr<Pinned>> pinAncestors(const std::wstring& pat
         result.push_back(std::make_unique<Pinned>(path.substr(0,split),true,FILE_READ_ATTRIBUTES,FILE_SHARE_READ|FILE_SHARE_WRITE));
     return result;
 }
+inline void verifyBackendControlEntries(const std::wstring& path,bool journal,bool migration=true) {
+    std::vector<std::wstring> expected={L"owner.lock",L"owner.marker"};if(journal)expected.push_back(L"recovery.journal");
+    if(migration){const auto present=entries(path,7);for(const auto* name:{L"observing-import.tmp",L"observing-migration.tmp",L"observing-migration.marker"})
+        if(std::find(present.begin(),present.end(),name)!=present.end())expected.push_back(name);}
+    exactEntries(path,expected);
+}
 struct Ownership {
     Owner owner;std::wstring stateRoot,controlRoot,dataRoot;bool created=false;
     std::vector<std::unique_ptr<Pinned>> ancestors;
@@ -79,7 +85,7 @@ struct Ownership {
         marker=std::make_unique<Pinned>(controlRoot+L"\\owner.marker",false,GENERIC_READ|READ_CONTROL|WRITE_DAC|WRITE_OWNER|FILE_READ_ATTRIBUTES,FILE_SHARE_READ);
         privatePolicy(*marker,owner);if(readSmall(marker->handle.value,1024)!=body)throw WinError("state-marker",ERROR_INVALID_DATA);
         // Journal creation is exclusively Journal's responsibility, and only for this new root.
-        exactEntries(controlRoot,created?std::vector<std::wstring>{L"owner.lock",L"owner.marker"}:std::vector<std::wstring>{L"owner.lock",L"owner.marker",L"recovery.journal"});
+        verifyBackendControlEntries(controlRoot,!created,!created);
     }
     void verify() const {state->verify();control->verify();data->verify();marker->verify();for(const auto& pin:ancestors)pin->verify();}
 };

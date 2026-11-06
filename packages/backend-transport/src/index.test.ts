@@ -81,6 +81,28 @@ it("recognizes empty outer HEARTBEAT while rejecting it on the APP-only worker c
   const nonempty = Buffer.from(bytes); nonempty.writeUInt32LE(1, 16);
   expect(() => collect(new FrameReader({ ...options, allowedKinds: [KINDS.HEARTBEAT] }), nonempty)).toThrow();
 });
+it("keeps migration control kinds on their explicitly admitted outer channels", async () => {
+  expect([KINDS.MIGRATION_DECISION, KINDS.MIGRATION_SOURCE, KINDS.MIGRATION_DESTINATION, KINDS.MIGRATED]).toEqual([6, 134, 135, 136]);
+  for (const [kind, body] of [[KINDS.MIGRATION_DECISION, Buffer.alloc(68)], [KINDS.MIGRATION_SOURCE, Buffer.alloc(32772)],
+    [KINDS.MIGRATION_DESTINATION, Buffer.alloc(4)], [KINDS.MIGRATED, Buffer.from([1, 1])]] as const) {
+    const bytes = frame(kind, 1n, nonce, body), reader = new FrameReader({ ...options, allowedKinds: [kind], maxPayloadBytes: 65536 });
+    expect(collect(reader, bytes)).toMatchObject([{ kind, sequence: 1n, body }]); reader.finish();
+    expect(() => collect(new FrameReader(options), bytes.subarray(0, HEADER))).toThrow("header");
+    const stream = new HeldStream(), writer = heldWriter(stream, [kind]); const pending = writer.send(kind, body); stream.release(); await pending;
+    expect(stream.writes[0]).toEqual(bytes);
+  }
+});
+it("rejects migration body-size violations at the header before allocating or writing payloads", async () => {
+  for (const [kind, validBytes, invalidBytes] of [[KINDS.MIGRATION_DECISION, 68, 67], [KINDS.MIGRATION_DECISION, 68, 69],
+    [KINDS.MIGRATION_SOURCE, 5, 4], [KINDS.MIGRATION_SOURCE, 5, 32773], [KINDS.MIGRATION_DESTINATION, 4, 3],
+    [KINDS.MIGRATION_DESTINATION, 4, 32773], [KINDS.MIGRATED, 2, 1], [KINDS.MIGRATED, 2, 3]] as const) {
+    expect(() => frame(kind, 1n, nonce, Buffer.alloc(invalidBytes))).toThrow();
+    const header = frame(kind, 1n, nonce, Buffer.alloc(validBytes)).subarray(0, HEADER); header.writeUInt32LE(invalidBytes, 16);
+    const reader = new FrameReader({ ...options, allowedKinds: [kind], maxPayloadBytes: 65536 });
+    expect(() => collect(reader, header)).toThrow("header"); expect((reader as unknown as { body?: Buffer }).body).toBeUndefined();
+    const stream = new HeldStream(), writer = heldWriter(stream, [kind]); await expect(writer.send(kind, Buffer.alloc(invalidBytes))).rejects.toThrow("payload"); expect(stream.writes).toEqual([]);
+  }
+});
 it("handles a maximum payload with one-byte fragmentation without retaining records", () => {
   const body = Buffer.alloc(65_536, 88), bytes = encoded(1n, body), reader = new FrameReader(options); let count = 0;
   for (let offset = 0; offset < bytes.length; offset++) reader.push(bytes.subarray(offset, offset + 1), record => { expect(record.body).toEqual(body); count++; });

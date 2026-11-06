@@ -1,7 +1,8 @@
 # Natiivin backendin tuotantoruntime
 
-Tila: issue #10:n toteutussopimus, ei vielä käyttöön valittu tai ajonaikaisesti
-hyväksytty backend. Aiempi testiruntime säilyy erillisenä näyttönä.
+Tila: issue #10:n toteutussopimus. Vartioitu havaintopaikan siirto ja
+synteettinen Electron-siirtymä on testattu; oletusbackendin vaihto ja koko
+minimipaketin hyväksyntä ovat avoimia. Aiemmat koeruntimet säilyvät erillisenä näyttönä.
 Electron-main on hyväksytty luotettu omistaja; yksi tavallisen käyttäjän
 natiivibroker käynnistää yhden rajatun Noden. Mallin nykyinen käynnistin
 ei muutu. Tavalliseen UtilityProcessiin ei tule automaattista varareittiä.
@@ -99,8 +100,10 @@ Sama rakennus tuottaa manifestin ja brokeriin upotetut polku-/koko-/SHA-pinnit.
 Muokattava manifesti ei yksin ole luottamusankkuri. Tiedostot tarkistetaan
 ja pidetään pinneissä ennen työntekijän resumea.
 
-Descriptorin ja build-manifestin yhteensopivuusmerkintä on
-`safetyPolicy: "process-witness-v1"`. Main vaatii sen ennen stagingia ja
+Vartioidun siirtopolun descriptorin ja build-manifestin merkintä on
+`safetyPolicy: "process-witness-observing-v1"`. Sen rajattu Windows-I/O- ja
+Electron-siirtymän näyttö on [koeraportissa](../experiments/native-backend-runtime.md#t09yn-vartioitu-siirto-ja-electron-siirtymä).
+Main vaatii tämän merkinnän ennen stagingia ja
 run/recover-käynnistystä. Ensimmäisessä hyväksytyssä latauksessa sidotut
 descriptor-, build-manifesti- ja broker-hashit säilyvät samoina jokaisessa
 uudessa valmistelu- ja käynnistystarkistuksessa. Merkintä kuvaa luotetun
@@ -291,3 +294,46 @@ oman vastaavan integraationäytön.
 - [Lukitun Noden libuv: parent-Jobin luonti](https://github.com/nodejs/node/blob/v24.22.2/deps/uv/src/win/process.c#L69-L121)
 - [Libuv: detached-liput ja ehdollinen Job-liitos](https://github.com/nodejs/node/blob/v24.22.2/deps/uv/src/win/process.c#L1052-L1102)
 - [Noden detached-asetus ja prosessin viitteet](https://github.com/nodejs/node/blob/v24.22.2/doc/api/child_process.md#optionsdetached)
+
+## Havaintopaikkojen siirron käynnistysviestit
+
+Vartioitu siirtopolku laajentaa TBIP/2:ta natiivin omilla kontrolliviesteillä.
+Recover pysyy RESULT-only-tilana. Tavallisen ajon järjestys on
+MIGRATION_SOURCE → MIGRATION_DESTINATION → Mainin MIGRATION_DECISION →
+MIGRATED → PREPARED → START → STARTED. Työntekijän sisäinen APP ei voi
+muodostaa näitä kontrolliviestejä. Puuttuva tai väärä vaihe, duplikaatti,
+ristiriita, virheellinen tarkiste tai aikaraja estää STARTin.
+
+| Viesti | Kind | Rajattu sisältö |
+| --- | --- | --- |
+| Main → MIGRATION_DECISION | 6 | 68 tavua: versio, suljettu päätös, läsnäolo ja molemmat SHA-256-tarkisteet |
+| Natiivi → MIGRATION_SOURCE | 134 | 4 tavun prefix sekä enintään 32 KiB lähdetavuja |
+| Natiivi → MIGRATION_DESTINATION | 135 | 4 tavun prefix sekä enintään 32 KiB kohdetavuja |
+| Natiivi → MIGRATED | 136 | 2 tavua: versio ja hyväksytty lopputulos |
+
+Raakasnapshotit vievät yhteensä enintään 65 536 tavua; prefixien kanssa
+kahden kehyksen bodyt enintään 65 544. Main säilyttää korkeintaan yhden
+snapshot-parin ja vapauttaa sen päätöksen jälkeen. Natiivi tarkistaa
+päätöksen nykyistä kertaluonteista handshakea ja omia pinnejään vasten;
+Main ei toimita mielivaltaisia kirjoitustavuja tai polkuja. Nykyisen
+SOURCE-viestin varauslippu koskee vain tätä istuntoa. Se ei ole sama asia
+kuin valmiin merkin historiallinen tieto alkuperäisestä puuttumisesta.
+
+Mainin `NativeBackendChild` sovittaa asynkronisen metadata → recover →
+staging → launch -ketjun Controllerin synkroniseen ChildPort-rajapintaan.
+Yksi 40 sekunnin käynnistysraja kattaa koko valmistelun ja natiivikäynnistyksen.
+Ensimmäinen peruutus aloittaa yhden 25 sekunnin sulkurajan; uusinta ei pidennä
+sitä. Todellinen sulkeutuminen ja onnistunut cleanup pysyvät eri ehtoina.
+Myöhään saapuva valmisteltu resurssi voidaan hylätä vain ennen yhtäkään
+käynnistysyritystä. Epävarmaa käynnistystä tai osittaista valmisteluepäonnistumista
+ei siivota varmuudella puhtaaksi nimeämällä.
+
+Luotettu Electron-kooste voi valita natiivin backendin erikseen; tämä
+valinta ei saa pudota UtilityProcessiin virheen jälkeen. Synteettinen siirtymä
+ja restart on todennettu. Oletuspolun vaihto odottaa edelleen koko tämän
+dokumentin [hyväksymisporttia](#hyväksymisportti). Ennen
+journalin omistamaa istuntoa estyvä siirto pitää loppukuitin failed/blocked-
+tilassa ja säilyttää stagingin: sessionRemoved- tai CLEAN-lippuja ei keksitä.
+[Havaintopaikkojen sopimus](observing-places.md#vartioitu-siirto-samassa-broker-istunnossa)
+omistaa tiedostojen säilyttämisen ja merkin konfliktisäännöt. Rajattu
+siirtymän näyttö ei sulje koko #10:n alkuperäisiä hyväksymisehtoja.

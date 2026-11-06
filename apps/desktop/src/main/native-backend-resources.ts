@@ -9,7 +9,7 @@ import { securePrivateDirectory } from "./private-directory.js";
 import { NativeBackendPort, type NativeBackendProcess, type NativeBackendResult } from "./native-backend-port.js";
 
 const NODE = { version: "24.22.2", archive: "node-v24.22.2-win-x64.zip", archiveSha256: "ca1bff5d8ead13c9f2ea404a176db46bd430704d5b5113734049fa365e7799e2", executableSha256: "1c331340fa6cac5e4294725959070a143fa0507195a78ad77eed7943f719aac9" };
-const SAFETY_POLICY = "process-witness-v1";
+const SAFETY_POLICY = "process-witness-observing-v1";
 const backendFiles = ["runtime/stdio-backend", "composition/create-backend", "composition/create-observing", "composition/create-sky", "ipc/endpoint", "modules/assistant/adapters/parent-model-engine", "modules/assistant/application/assistant-service", "modules/development/application/development-service", "modules/observing/adapters/json-places-repository", "modules/observing/application/places-service", "modules/observing/ports/places-repository", "modules/runtime/application/get-runtime-status", "modules/sky/adapters/astronomy-calculator", "modules/sky/adapters/local-star-catalog", "modules/sky/application/sky-queries", "modules/sky/application/sky-service"];
 /** This production closure is deliberately independent of build scripts and test fixtures. */
 export const NATIVE_BACKEND_RUNTIME_PATHS: readonly string[] = Object.freeze([

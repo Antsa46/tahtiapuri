@@ -3,6 +3,7 @@ import { SKY_CHANNELS, isObservationRequest, isSkySelectionRequest } from "@taht
 import { DevelopmentHost } from "./development-host.js";
 import { DEVELOPMENT_CHANNELS } from "@tahtiapuri/validation/development";
 import { createNativeModelHost } from "./native-model-host.js";
+import { createNativeBackendFactory } from "./native-backend-host.js";
 import { ModelHost } from "./model-host.js";
 import { ASSISTANT_CHANNELS, isModelInput, isJobId } from "@tahtiapuri/validation/assistant";
 import type { ApprovedModel } from "@tahtiapuri/validation/model-wire";
@@ -19,7 +20,10 @@ import { PAGE_URL, localPageResponse } from "./local-page.js";
 
 type DesktopModel = { kind?: "sdk"; entry: string; profile: ApprovedModel; cudaPaths: string[] }
   | { kind: "native-cpu"; runtimeRoot: string; workRoot: string; profile: ApprovedModel };
-export type DesktopPaths = { backendEntry: string; preload: string; renderer: string; data: string; model?: DesktopModel };
+export type DesktopPaths = { backendEntry: string; preload: string; renderer: string; data: string; model?: DesktopModel;
+  /** Trusted composition only. A selected native runtime never falls back. */
+  nativeBackend?: { runtimeRoot: string };
+};
 export function startDesktop(paths: DesktopPaths) {
   protocol.registerSchemesAsPrivileged([{ scheme: "tahtiapuri", privileges: { standard: true, secure: true } }]);
   try { paths = { ...paths, data: prepareOwnedDataRoot(paths.data) }; }
@@ -40,11 +44,14 @@ export function startDesktop(paths: DesktopPaths) {
     serviceName: "Tahtiapuri Model", execArgv: [], cwd: paths.data, stdio: "ignore",
     env: { ...childEnvironment(process.env), PATH: [...modelPaths.cudaPaths, join(process.env.SystemRoot ?? "C:\\Windows", "System32")].join(";") },
   }), modelPaths.profile) : undefined;
-  const backend = new BackendController(
-    () => utilityProcess.fork(paths.backendEntry, [], {
+  const backendFactory = paths.nativeBackend
+    ? createNativeBackendFactory({ runtimeRoot: paths.nativeBackend.runtimeRoot, userDataRoot: paths.data })
+    : () => utilityProcess.fork(paths.backendEntry, [], {
       serviceName: "Tahtiapuri Backend",
       env: childEnvironment(process.env), execArgv: [], cwd: paths.data, stdio: "ignore",
-    }),
+    });
+  const backend = new BackendController(
+    backendFactory,
     () => { void shutdown(1); },
     model,
   );

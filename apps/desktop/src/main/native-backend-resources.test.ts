@@ -59,8 +59,8 @@ beforeEach(() => {
   });
   manifest = { schema: 1, protocol: 2, node: { version: "24.22.2", archive: "node-v24.22.2-win-x64.zip", archiveSha256: "ca1bff5d8ead13c9f2ea404a176db46bd430704d5b5113734049fa365e7799e2", executableSha256: "1c331340fa6cac5e4294725959070a143fa0507195a78ad77eed7943f719aac9" }, files: pins };
   put(runtimePath("bin/backend-broker.exe"), "synthetic broker");
-  buildManifest = { schema: 1, protocol: 2, safetyPolicy: "process-witness-v1", runtimePackageDigest: "", files: [{ path: "bin/backend-broker.exe", sha256: sha("synthetic broker") }] };
-  descriptor = { schema: 1, protocol: 2, id: "tahtiapuri-native-backend-v2", safetyPolicy: "process-witness-v1", broker: { path: "bin/backend-broker.exe", bytes: 16, sha256: sha("synthetic broker") },
+  buildManifest = { schema: 1, protocol: 2, safetyPolicy: "process-witness-observing-v1", runtimePackageDigest: "", files: [{ path: "bin/backend-broker.exe", sha256: sha("synthetic broker") }] };
+  descriptor = { schema: 1, protocol: 2, id: "tahtiapuri-native-backend-v2", safetyPolicy: "process-witness-observing-v1", broker: { path: "bin/backend-broker.exe", bytes: 16, sha256: sha("synthetic broker") },
     package: { path: "package", manifest: "runtime-manifest.json", digest: "" }, buildManifest: { path: "build-manifest.json", sha256: "" } };
   (descriptor.broker as Record<string, unknown>).bytes = Buffer.byteLength("synthetic broker"); saveManifest();
 });
@@ -70,7 +70,7 @@ it("derives the fixed state root and original pinned broker solely from trusted 
   expect(runtime.files).toHaveLength(41); expect(runtime.files.at(-1)?.path).toBe("runtime-manifest.json"); expect(mkdir).not.toHaveBeenCalled(); expect(launch).not.toHaveBeenCalled();
   await runtime.verifyBroker(signal()); expectNoOwnershipChanges();
 });
-it.each([undefined, "process-witness-v0", "PROCESS-WITNESS-V1", null])("rejects descriptor safety policy %s before staging or launch", async policy => {
+it.each([undefined, "process-witness-v0", "process-witness-v1", "PROCESS-WITNESS-OBSERVING-V1", null])("rejects descriptor safety policy %s before staging or launch", async policy => {
   if (policy === undefined) delete descriptor.safetyPolicy; else descriptor.safetyPolicy = policy;
   saveDescriptor(); await expect(loadNativeBackendRuntime(config, signal())).rejects.toThrow("rejected"); expectNoOwnershipChanges();
 });
@@ -105,7 +105,7 @@ it("rejects a coherently replaced broker with a still-valid policy before stagin
   const broker = descriptor.broker as Record<string, unknown>;
   broker.bytes = Buffer.byteLength(replacement); broker.sha256 = sha(replacement);
   buildManifest.files = [{ path: broker.path, sha256: broker.sha256 }]; saveBuildManifest();
-  expect(descriptor.safetyPolicy).toBe("process-witness-v1"); expect(buildManifest.safetyPolicy).toBe("process-witness-v1");
+  expect(descriptor.safetyPolicy).toBe("process-witness-observing-v1"); expect(buildManifest.safetyPolicy).toBe("process-witness-observing-v1");
   expect(buildManifest.runtimePackageDigest).toBe(runtime.digest);
   // Fresh admission accepts coherent trusted metadata; the captured runtime
   // must retain its original anchors rather than silently adopt replacements.

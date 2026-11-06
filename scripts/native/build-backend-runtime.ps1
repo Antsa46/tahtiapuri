@@ -262,13 +262,13 @@ try {
   $brokerHash = Hash-File $binary
   # Run this tagged recipe only after the process-witness source is reviewed;
   # the complete native source set and hashes are checked around compilation.
-  $buildManifest = [ordered]@{ schema = 1; protocol = 2; safetyPolicy = 'process-witness-v1'; affinity = 1; priority = 'BelowNormal'; maxNodeHeapMiB = 512;
+  $buildManifest = [ordered]@{ schema = 1; protocol = 2; safetyPolicy = 'process-witness-observing-v1'; affinity = 1; priority = 'BelowNormal'; maxNodeHeapMiB = 512;
     sdk = $sdkVersion.Name; compiler = $compiler; compilerSha256 = (Hash-File $compiler); environmentSha256 = (Hash-File $environmentScript);
     node = $runtime.node; runtimePackageDigest = $prepared.runtimePackageDigest; generatedTrustAnchors = $generatedPins;
     files = @('logs/source-manifest.json', 'runtime-inputs.json', 'backend-runtime-pins.h', 'package/runtime-manifest.json', 'build.cmd', 'launch-build.cmd', 'bin/backend-broker.exe') | ForEach-Object { [ordered]@{ path = $_; sha256 = (Hash-File (Join-Path $buildRoot $_)) } } }
   Write-Fresh (Join-Path $buildRoot 'build-manifest.json') (($buildManifest | ConvertTo-Json -Depth 8) + "`n")
   Assert-BuildRootPolicy; Assert-NoShadowHeader; Assert-SourceSnapshot; Assert-GeneratedSnapshot
-  $descriptor = [ordered]@{ schema = 1; protocol = 2; id = 'tahtiapuri-native-backend-v2'; safetyPolicy = 'process-witness-v1';
+  $descriptor = [ordered]@{ schema = 1; protocol = 2; id = 'tahtiapuri-native-backend-v2'; safetyPolicy = 'process-witness-observing-v1';
     broker = [ordered]@{ path = 'bin/backend-broker.exe'; sha256 = $brokerHash; bytes = (Get-Item -LiteralPath $binary).Length };
     package = [ordered]@{ path = 'package'; manifest = 'runtime-manifest.json'; digest = $prepared.runtimePackageDigest };
     buildManifest = [ordered]@{ path = 'build-manifest.json'; sha256 = (Hash-File (Join-Path $buildRoot 'build-manifest.json')) } }

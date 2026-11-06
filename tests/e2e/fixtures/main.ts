@@ -4,6 +4,8 @@ import { join } from "node:path";
 const root = process.cwd();
 const scenario = process.argv.at(-2);
 const data = process.argv.at(-1)!;
+const nativeBackendRoot = scenario === "native-backend" ? process.env.TAHTIAPURI_TEST_NATIVE_BACKEND_ROOT : undefined;
+if (scenario === "native-backend" && !nativeBackendRoot) throw new Error("Prepared native backend runtime required.");
 const backendEntry = scenario === "observing-save-fail" ? join(root, ".artifacts/tests/e2e-build/observing-save-fail.js")
   : scenario === "observing-sky-hold" ? join(root, ".artifacts/tests/e2e-build/observing-sky-hold.js")
   : scenario === "sky-no-catalog" ? join(root, ".artifacts/tests/e2e-build/sky-no-catalog.js")
@@ -23,6 +25,7 @@ const model = scenario === "native-model" ? {
 } : undefined;
 startDesktop({
   ...(model ? { model } : {}),
+  ...(nativeBackendRoot ? { nativeBackend: { runtimeRoot: nativeBackendRoot } } : {}),
   backendEntry, data, renderer: join(root, "apps/web/dist"),
   preload: scenario === "probe" ? join(root, ".artifacts/tests/e2e-build/probe-preload.cjs")
     : scenario === "unready-ui" ? join(root, ".artifacts/tests/e2e-build/empty-preload.cjs")

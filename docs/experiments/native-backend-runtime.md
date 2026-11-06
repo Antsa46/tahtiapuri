@@ -337,13 +337,79 @@ workerin riippumaton exit ja erillinen Job-/ACL-/profiili-inventaario jäävät
 tuntemattomiksi. Kohteen siivousnäyttö on katselmoitu natiivipolku ja levytila.
 Kielimallia, GPU:ta, GUI:ta, MCP:tä tai APIa ei ajettu eikä verkkorajaa kokeiltu.
 
+## T09x:n varhaisen palautuksen rajattu estokoe
+
+Yksi erillinen todellinen Windows-koe varmisti CREATING-vaiheen palautuksen
+estyvän, kun puuttuvan Jobin lisäksi ei ole riittävää prosessin päättymistodistetta.
+Palautus palautti BLOCKED-tilan; viisi seurattua muutostoimintoa jäivät nollaan.
+Journalin tavut sekä nykyinen tiedostosisältö ja jäsenyys säilyivät ennallaan.
+Lähde, raakadata ja levytila tarkistettiin riippumattomasti. Säilytetyt resurssit
+kuuluvat estotapauksen näyttöön, eikä niitä korjattu tai poistettu.
+
+Tämä yksittäinen portti ei hyväksy aiempaa yhdistettyä katkaisusarjaa,
+todista uuden omistajan ja workerin kaikkia kaatumisajoituksia tai muuta
+journalin prosessitodisteen vaatimusta.
+
+## T09y:n vartioitu siirto ja Electron-siirtymä
+
+Samassa broker-istunnossa tehtävä vartioitu havaintopaikkojen siirto on
+liitetty Mainin natiivibackend-sovittimeen. Luotettu kooste voi valita sen
+`startDesktop`-rajapinnan `nativeBackend`-valinnalla. Valinta käyttää
+`process-witness-observing-v1`-politiikkaa; epäonnistuminen ei käynnistä
+UtilityProcess-varareittiä. Tavallinen sovelluksen entry säilyttää nykyisen
+backendin, kunnes koko hyväksymisportti täyttyy. Tiedostojen ja viestien
+sopimukset ovat [havaintopaikoissa](../architecture/observing-places.md#vartioitu-siirto-samassa-broker-istunnossa)
+ja [natiiviruntimessa](../architecture/native-backend-runtime.md#havaintopaikkojen-siirron-käynnistysviestit).
+
+Isäntäsovittimen 13 testiä, 173 kohdistettua Main-/siirtoprotokollan testiä,
+natiivi siirron yksikkökoe, desktopin käännös sekä testien tyyppitarkistus ja
+Electron-fixturejen käännös läpäisivät. Uusi natiiviruntime rakennettiin
+muuttuneista lähteistä ja sen suljettu ohjelmapaketti sekä build-pinnit
+varmennettiin. Yksikkötestien I/O-kaksoisolio erotettiin todellisesta
+Windows-tiedostokokeesta.
+
+Todellinen tiedostokoe käytti kolmea tuoretta synteettistä tapausta.
+Erillinen koetyökalu käytti tuotannon Windows-tiedostosovitinta ja siirtoydintä;
+workeria tai AppContainer-profiilia ei käynnistetty. Viidessä lukitussa vaiheessa kirjoitus- ja delete-avaukset estyivät
+jakovirheellä. Korvaava rename epäonnistui; sekä lähteen että korvaajan
+tavut ja Windows-tiedostoidentiteetit säilyivät ennen ja jälkeen yrityksen.
+Kaksi saman polun ja API-kutsun kontrollia onnistui vartion vapautuksen
+jälkeen. Puuttuvan lähteen ensimmäinen luonti estyi varauksen aikana.
+Kopiointi, tyhjän lähteen varaus, valmis siirtomerkki ja myöhempi kelvollinen
+kohdemuutos toimivat. Muuttunut vanha lähde ja ristiriitainen kohteen
+julkaisu estyivät säilyttäen aineiston. Kaikkien kolmen journal oli lopuksi
+CLEAN. Raakatallenteen 62 riviä ja levyn tiedostot tarkistettiin riippumattomasti.
+
+Kaksi aiempaa koeversion ajoa säilyvät epäonnistuneina. Rename-oletus
+vaati tiettyä jakovirhekoodia. Ensimmäisessä ajossa renamen raaka BOOL/virhekoodi jäi kirjaamatta;
+toisen ajon diagnostiikka näytti kieltovirheen. Lopullinen koe tarkisti suorat kirjoitus-/delete-avaukset, renamen todellisen
+estymisen, molemmat tiedostoidentiteetit ja tavut sekä vapautuksen jälkeiset
+onnistuvat kontrollit. Tuotannon vartiointia ei kevennetty.
+
+Yksi Electronin käyttöliittymäkoe läpäisi ilman uusintoja tai ohitettuja testejä.
+Se loi vanhalla backendillä synteettisen paikan, sulki sovelluksen ja käynnisti
+natiivibackendin. Ensimmäinen siirto säilytti lähteen täsmälliset tavut,
+revision ja aktiivivalinnan. Käyttöliittymän muokkaus tallentui natiiviin
+kohteeseen ja säilyi uudessa käynnistyksessä; vanha lähde ja siirtomerkki
+säilyivät samoina. Kaikki kolme sovelluksen sulkua palauttivat koodin 0.
+Molempien natiivisovelluksen sulkujen jälkeen journalin tarkiste, omistaja-/juurikonteksti
+ja CLEAN-tila tarkistettiin. Lopussa istuntohakemisto oli tyhjä. Riippumaton
+katselmus varmisti alkuperäisen testiraportin ja nykyiset tiedostot.
+
+Tiedostokoe todentaa vartiointia ja julkaisemista, käyttöliittymäkoe
+synteettistä siirtymää sekä tavallista sulkua ja restartia. Erillistä nykyisten
+Windows-identiteettien, ACL:ien, prosessien tai profiilien inventaariota ei tehty.
+Kokeissa ei ajettu kielimallia tai GPU-mallia, MCP:tä tai sää-APIa eikä hyväksytty verkkorajaa.
+Myös vanhan natiivipaketin journalin yhteensopivuus uuden paketin kanssa
+on erillinen portti; pakettidigestin tarkistusta ei löysennetty.
+
 ## Avoin hyväksymisnäyttö
 
-Varhaisen katkaisusarjan hyväksyntä, käyttäjäaineiston observing-migraatio sekä
-pakettiversion vaihtaminen tarvitsevat vielä näytön. T09w:n raakaomistajan
-komponenttinäyttö ei korvaa Controllerin tai graafisen Electronin integraatiota.
-Myös muuttuneen ohjaimen graafiset MCP-regressiot ovat tämän osatuloksen
-jälkeen uusittavaa tarkistusta.
+Varhaisen katkaisusarjan hyväksyntä, käyttäjäaineiston käyttöönotto sekä
+pakettiversion vaihtaminen tarvitsevat vielä näytön. T09y todentaa synteettisen
+Electron-siirtymän ja tavallisen sulun; T09w:n lukematon tulostekanava ja
+omistajan/brokerin kaatuminen tarvitsevat oman Controller-/GUI-integraation.
+Myös muuttuneen ohjaimen graafiset MCP-regressiot ovat uusittavaa tarkistusta.
 
 Oikea CPU-malli, saman kokoonpanon verkkokielto, MCP:n natiivi eristys,
 FMI-koetoiminto, GPU/ajotapavalinta ja lopullinen minimaalinen kokonaispaketti

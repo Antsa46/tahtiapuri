@@ -4,6 +4,7 @@ import { FrameReader, KINDS, HEADER, TRANSPORT_POLICY, decodeJson, encodeJson, f
 import { exactKeys, isRecord } from "@tahtiapuri/validation/public";
 import { isInitialize, isReady, isResponse } from "@tahtiapuri/validation/backend";
 import { isModelRun, isModelCancel } from "@tahtiapuri/validation/model-wire";
+import { ObservingMigrationWire } from "./observing-migration-wire.js";
 
 export interface NativeBackendProcess extends EventEmitter {
   readonly pid: number | undefined;
@@ -170,6 +171,7 @@ export class NativeBackendPort extends EventEmitter {
   private readonly processClosed = deferred<void>();
   private readonly writer: OwnerWriter;
   private readonly outer: TimedReader;
+  private readonly migration = new ObservingMigrationWire();
   private child: TimedReader | undefined;
   private state: "preparing" | "prepared" | "started" | "closing" | "terminal" = "preparing";
   private resultSeen = false;
@@ -197,7 +199,8 @@ export class NativeBackendPort extends EventEmitter {
     if (!nonce(options.ownerNonce) || (!options.recover && !/^[a-f0-9]{32}$/.test(options.runNonce ?? ""))) throw protocolError();
     this.prepared = this.preparation.promise; this.completion = this.terminal.promise; this.closure = this.processClosed.promise;
     this.writer = new OwnerWriter(process.stdin, options.ownerNonce, error => this.writeFailure(error));
-    this.outer = new TimedReader(new FrameReader({ nonce: options.ownerNonce, allowedKinds: options.recover ? [KINDS.RESULT] : [KINDS.PREPARED, KINDS.STARTED, KINDS.CHILD_CHUNK, KINDS.RESULT, KINDS.STDERR], maxPayloadBytes: 65536 }), error => this.fail(error));
+    this.outer = new TimedReader(new FrameReader({ nonce: options.ownerNonce, allowedKinds: options.recover ? [KINDS.RESULT]
+      : [KINDS.MIGRATION_SOURCE, KINDS.MIGRATION_DESTINATION, KINDS.MIGRATED, KINDS.PREPARED, KINDS.STARTED, KINDS.CHILD_CHUNK, KINDS.RESULT, KINDS.STDERR], maxPayloadBytes: 65536 }), error => this.fail(error));
     this.prepareTimer = setTimeout(() => this.fail(new Error("Native backend preparation timed out.")), 30_000);
     process.stdout.on("data", (chunk: Buffer) => { try { this.outer.push(chunk, record => this.record(record)); } catch (error) { this.fail(error); } });
     process.stdout.on("end", () => {
@@ -233,9 +236,20 @@ export class NativeBackendPort extends EventEmitter {
       return;
     }
     if (this.resultSeen || this.failure) throw protocolError();
+    if (record.kind === KINDS.MIGRATION_SOURCE || record.kind === KINDS.MIGRATION_DESTINATION || record.kind === KINDS.MIGRATED) {
+      if (this.state !== "preparing" || this.killSent) throw protocolError();
+      if (record.kind === KINDS.MIGRATION_SOURCE) this.migration.acceptSource(record.body);
+      else if (record.kind === KINDS.MIGRATION_DESTINATION) {
+        const decision = this.migration.decide(record.body);
+        // Content failures send action0 and await the unchanged terminal receipt
+        // policy. They never authorize PREPARED/START or invent clean staging.
+        void this.writer.send(KINDS.MIGRATION_DECISION, decision).catch(error => this.writeFailure(error));
+      } else this.migration.acceptMigrated(record.body);
+      return;
+    }
     if (record.kind === KINDS.PREPARED) {
       const value = decodeJson(record.body);
-      if (this.state !== "preparing" || !isNativeBackendPrepared(value, this.options.ownerNonce)) throw protocolError();
+      if (this.state !== "preparing" || this.killSent || !this.migration.complete || !isNativeBackendPrepared(value, this.options.ownerNonce)) throw protocolError();
       this.state = "prepared"; this.preparation.resolve(value);
       this.child = new TimedReader(new FrameReader({ nonce: value.childNonce, allowedKinds: [KINDS.APP], maxPayloadBytes: TRANSPORT_POLICY.childOutputBytes }), error => this.fail(error));
       void this.writer.send(KINDS.START).catch(error => this.writeFailure(error)); return;
@@ -251,7 +265,7 @@ export class NativeBackendPort extends EventEmitter {
       this.emit("spawn"); return;
     }
     if (record.kind === KINDS.STDERR) {
-      if ((this.stderrBytes += record.body.length) > 16384) throw protocolError(); return;
+      if (!this.migration.complete || (this.stderrBytes += record.body.length) > 16384) throw protocolError(); return;
     }
     if (record.kind !== KINDS.CHILD_CHUNK || !this.child || !["started", "closing"].includes(this.state) || !record.body.length) throw protocolError();
     this.child.push(record.body, app => {
@@ -288,6 +302,7 @@ export class NativeBackendPort extends EventEmitter {
   }
   kill(): boolean {
     if (this.brokerClosed || this.resultSeen || this.killSent) return false; this.killSent = true;
+    if (this.state === "preparing") this.migration.cancel();
     if (this.options.recover) return this.process.kill();
     void this.writer.send(KINDS.KILL).catch(() => { this.process.kill(); });
     this.armTermination(); return true;
@@ -303,7 +318,7 @@ export class NativeBackendPort extends EventEmitter {
     // ChildPort users can observe this without requiring an EventEmitter error listener.
     if (this.listenerCount("error")) this.emit("error", this.failure);
   }
-  private clearTimers(): void { clearTimeout(this.prepareTimer); clearTimeout(this.readyTimer); clearInterval(this.heartbeat); this.outer.clear(); this.child?.clear(); }
+  private clearTimers(): void { clearTimeout(this.prepareTimer); clearTimeout(this.readyTimer); clearInterval(this.heartbeat); this.outer.clear(); this.child?.clear(); this.migration.cancel(); }
   private closed(code: number | null): void {
     this.brokerClosed = true;
     this.clearTimers(); clearTimeout(this.terminationTimer); clearTimeout(this.receiptCloseTimer); this.writer.finish(); this.processClosed.resolve();

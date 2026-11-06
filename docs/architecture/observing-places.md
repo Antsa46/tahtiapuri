@@ -150,8 +150,61 @@ kun kelvolliset tavut ovat samat; ristiriitaa ei yhdistetä tai ratkaista
 revision suuruudella.
 
 Suunnittelijan 13 yksikkötestiä ja desktopin tyyppitarkistus läpäisivät.
-Suunnitelma ei lue tai kirjoita tiedostoja eikä ole kytketty käynnistykseen.
-Atominen kohdekirjoitus, natiivin omistajan yksinoikeus, lähteen säilyttäminen
-levyllä ja varsinainen käyttäjäaineiston siirto vaativat erillisen toteutuksen
-ja näytön [natiivin backendin omistajuusrajan](native-backend-runtime.md#omistajuus-ja-kiinteät-juuret)
+Puhdas suunnittelija ei itse lue tai kirjoita tiedostoja. Sitä käyttävä
+vartioitu siirtopolku on toteutettu ja testattu synteettisellä aineistolla
+Windowsissa sekä Electronin käyttöliittymän kautta. Käyttäjäaineiston
+käyttöönotto ja oletuspolun muutos odottavat koko hyväksymisporttia [natiivin backendin omistajuusrajan](native-backend-runtime.md#omistajuus-ja-kiinteät-juuret)
 mukaisesti.
+
+### Vartioitu siirto samassa broker-istunnossa
+
+Siirtopolku toimii muuttumattoman kaatumispalautuksen jälkeen
+ennen profiilin ja työntekijän luomista. Sama natiivi broker pitää vanhan
+`observing/places.json`-lähteen ja sen esivanhemmat pinneissä koko siirron,
+uuden backendin ajon ja varmennetun sulun ajan. Lähdekahva sallii vain
+jaetun lukemisen. Se estää tunnetun vanhan tallentimen korvaavan rename-
+commitin kahvan voimassa ollessa; hakemistokahva yksin ei estä puuttuvan
+lapsitiedoston ensimmäistä luontia. Jakotilan ehdot perustuvat
+[CreateFileW:n sopimukseen](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew).
+
+Puuttuvan lähteen nimi voidaan varata `CREATE_NEW`-avauksella kirjoittamalla
+kelvollinen tyhjä v1-tila ja varmentamalla flush sekä takaisinluku. Olemassa
+olevaa lähdettä ei typistetä tai korvata. Tämä on nimenomainen muutos vanhaan
+tallennusjuureen. Alkuperäinen puuttuminen kirjataan vain todetuksi historiaksi;
+keskeytyksen jälkeen löytyvä tyhjä tiedosto ei yksin todista, kuka sen loi.
+Tiedosto säilytetään ja validoidaan olemassa olevana tai epäselvä tila estetään.
+
+Main validoi rajatut snapshotit tiukalla UTF-8-luvulla ja puhtaalla
+suunnittelijalla. Natiivi säilyttää auktoritatiiviset tavut ja tiedostokahvat,
+tarkistaa päätöksen ja molemmat tarkisteet, julkaisee kohteen korvaamatta
+olemassa olevaa tiedostoa, lukee sen takaisin ja julkaisee lopuksi
+omistajaan sekä juuri-identiteetteihin sidotun siirtomerkin. Julkaisun
+korvaamattomuus käyttää [FILE_RENAME_INFO:n](https://learn.microsoft.com/en-us/windows/win32/api/winbase/ns-winbase-file_rename_info)
+`ReplaceIfExists=false`-ehtoa. Flush/takaisinluku eivät ole lupaus koko
+siirron sähkökatkoatomisuudesta.
+
+Valmis merkki sitoo säilytetyn vanhan lähteen identiteetin ja tarkisteen.
+Jokainen käynnistys lukitsee lähteen ennen merkin tarkistusta. Uuden backendin
+omat kelvolliset kohdemuutokset sallitaan; niitä ei verrata joka käynnistyksessä
+alkuperäisen tuonnin tavuihin. Muuttunut vanha lähde, puuttuva tai vioittunut
+valmis kohde ja virheellinen olemassa oleva merkki estävät käynnistyksen
+säilyttäen molemmat aineistot. Jos merkki puuttuu mutta kohde on jo olemassa,
+uudelleenyritys hyväksyy vain tavuilleen saman kelvollisen kohteen kuin
+validoitu lähde. Puuttuva kohde voidaan kopioida alkuperäisen siirtopäätöksen
+mukaisesti. Väliaikaistiedoston nimi
+ei anna oikeutta sen käyttämiseen, ylikirjoitukseen tai poistamiseen.
+
+Brokerin kaatuminen vapauttaa kahvat mahdollisesti ennen työntekijän
+poistumisen valmistumista. Käytäntö ei todista kaikkien vanhojen prosessien
+pysähtyneen tai estä kaikkea kaatumishetken päällekkäisyyttä. Seuraava ajo
+todistaa työntekijän päättymisen nykyisellä recovery-polulla ja tarkistaa
+lukitun vanhan lähteen uudelleen ennen uutta työntekijää. Sopimus koskee
+tunnettua väliaikaistiedosto–rename-tallenninta; se ei laajenna tukea
+mielivaltaisille vanhoille kirjoittajille tai saman käyttäjän vihamieliselle
+prosessille.
+
+Rajattu Windows-I/O-koe ja synteettinen Electron-siirtymä sekä restart
+on todennettu. [Koeraportti](../experiments/native-backend-runtime.md#t09yn-vartioitu-siirto-ja-electron-siirtymä)
+erottaa toteutuneen näytön katkaisu-, oikeus- ja kokonaispakettirajoista.
+[Natiivibackendin sopimus](native-backend-runtime.md) omistaa siirron viestit
+ja elinkaaren. Käyttäjäaineiston käyttöönotto ja oletuspolun vaihto ovat avoimia.
