@@ -44,3 +44,14 @@ it("cancels the returned job when abort arrives before the probe reply", async (
 it("removes the abort listener once the probe call has settled", async () => {
   const f = fixture(); await f.call(); f.controller.abort(); expect(f.request).toHaveBeenCalledTimes(1);
 });
+
+it("keeps standalone client ownership by default but permits session-owned instances", () => {
+  const client = { request: vi.fn().mockResolvedValue(job), close: vi.fn() };
+  const standalone = createDevelopmentServer(client);
+  standalone.server.onclose?.();
+  expect(client.close).toHaveBeenCalledTimes(1);
+  client.close.mockClear();
+  const shared = createDevelopmentServer(client, { ownsClient: false });
+  shared.server.onclose?.();
+  expect(client.close).not.toHaveBeenCalled();
+});

@@ -20,8 +20,10 @@ Jatkorajauksen omistaa [eristyspolku](../architecture/backend-mcp-isolation.md).
 - `stream-server.ts` tarjoaa erillisen startMcpStreams-koosteen. Kutsuja
   antaa MCP:n tulo- ja lähtöstreamit sekä valmiin kehityskanavan. Polkua,
   tokenia, verkkokohdetta tai tiedostotyökalua ei anneta tälle koostajalle.
-- `bounded-mcp-transport.ts` rajaa ehdokkaan MCP-vastaukset ja niiden
-  odotuksen. Se korvaa SDK:n send-metodin vain tässä ehdokkaassa.
+- `mcp-input-gate.ts` tarkistaa viestit ja varaa keskeneräisille pyynnöille
+  paikat ennen SDK:n tuloviestijonoa.
+- `bounded-mcp-transport.ts` yhdistää sisäänoton rajauksen vastausten
+  tavurajoihin ja määräaikoihin vain tässä ehdokkaassa.
 
 Nykyinen startMcp(descriptionFile) ja sen tavallinen SDK-stdio-käynnistys
 säilyvät. Sovelluksen sulkeuduttua nykyinen ulkoinen adapteri voi edelleen
@@ -31,7 +33,13 @@ nykyiset oikeusrajat säilyvät.
 
 ## Omistajuus ja sulku
 
-Injektoitu kehitys-Duplex kuuluu aina istunnolle. MCP-streamien omistajuus
+Injektoitu kehitys-Duplex kuuluu aina istunnolle. SDK voi vaihtaa
+protokollan tunnistusvaiheessa palvelininstanssia; tällaisen instanssin
+sulku ei sulje yhteistä kehityskanavaa. `createDevelopmentServer` omistaa
+asiakkaan oletusarvoisesti, mutta stream-kooste käyttää `ownsClient: false`
+-asetusta ja hoitaa kanavan lopullisen sulun itse.
+
+MCP-streamien omistajuus
 valitaan eksplisiittisesti:
 
 - server: koostaja sulkee ja tuhoaa omat MCP-streaminsa. Tulokanavan
@@ -54,7 +62,10 @@ drain-odotusta. Ehdokas omistaa siksi kirjoituslupauksensa itse.
 | Kehitysvastaus | 64 KiB kehysraja, nykyisen parserin rajattu erä |
 | Kehityskanavan jono | enintään 64 KiB; ei uutta kirjoitusta vastapaineen aikana |
 | Kehityspyynnön ja drainin määräaika | 5 sekuntia |
-| MCP:n SDK-tulopuskuri | 16 KiB |
+| MCP-tulokehys ja SDK-tulopuskuri | 16 KiB; kehysraja sisältää rivinvaihdon |
+| MCP:n keskeneräiset pyynnöt | enintään kahdeksan, yhteensä enintään 128 KiB koodattuja tulokehyksiä |
+| MCP-pyynnön elinaika | enintään 10 sekuntia vastaanotosta vastauksen kirjoituksen valmistumiseen |
+| MCP-pyynnön tunniste | safe integer tai enintään 128 tavun merkkijono; tyyppi erottaa tunnisteet |
 | MCP-vastauksen koodattu rivi | enintään 256 KiB |
 | MCP:n varatut lähtötavut | enintään 512 KiB; myös writablen jo puskuroimat tavut huomioidaan |
 | MCP-lähtöjonon lähetykset | enintään 16 |
@@ -67,13 +78,57 @@ huomioidaan koodatuissa lähtötavuissa. Kirjoitus valmistuu vasta callbackin
 ja tarvittavan drainin jälkeen. Aikaraja tai ylikoko hylkää kaikki
 keskeneräiset lähetykset ja sulkee ehdokkaan.
 
-**Avoin raja:** SDK:n serveStdio jonottaa jo parsittuja tuloviestejä ilman
-kokonaisjonon rajaa. Sen 16 KiB:n puskuriraja ei ole koko istunnon
-muistiraja. Myöhempi mux/broker ja pitkäikäinen MCP tarvitsevat oman
-sisäänoton sekä muistinkäytön hyväksynnän ennen OS-eristetyn kokonaisuuden
-käyttöönottoa. Tämä osavaihe ei väitä sulkevansa sitä rajaa.
+SDK:n `serveStdio`-jonon edessä on nyt yksityinen Transform-kanava.
+Se kokoaa yhden kehyksen kiinteään puskuriin, tarkistaa tiukan UTF-8:n ja
+JSON-RPC-pyyntökuoren ja päästää läpi vain rajatun määrän pyyntöjä.
+Tyhjät rivit, eräpyynnöt, virheellinen koodaus, BOM, tuntemattomat kuorikentät
+ja muut kuin objektimuotoiset `params`-arvot hylätään. Tämä rajaus on
+kehitysehdokkaan sopimus, ei yleiskäyttöisen MCP-palvelimen toteutus.
 
-## Todennettu näyttö
+Sama tunniste ei saa olla kahdessa keskeneräisessä pyynnössä. Varaus
+vapautuu vasta vastauksen kirjoituscallbackin ja tarvittaessa drainin
+jälkeen; pelkkä työkalun valmistuminen ei riitä. Tunnistetta saa käyttää
+uudelleen valmiin vastauksen jälkeen. Myöhäinen callback ei vapauta
+uuden pyynnön varausta. Sulku pysäyttää sisäänoton välittömästi, irrottaa
+alkuperäisen tulon yksityisestä kanavasta ja poistaa määräajat.
+
+Yksi `notifications/initialized` sallitaan. Muu ilmoitus, myös
+`notifications/cancelled`, sulkee ehdokkaan yhteyden. SDK voi jättää
+protokollatasolla perutun pyynnön vastauksen lähettämättä; varauspaikkaa ei
+vapauteta arvaamalla. Mallityön peruuttamiseen käytetään tavallista
+`cancel_probe`-työkalua, jonka jälkeen samaa yhteyttä voi käyttää edelleen.
+Palvelimen aloittamia asiakaspyyntöjä, tilausten avaamista tai muita
+kaksisuuntaisia toimintoja ei oteta tällä käyttöön.
+
+Nämä rajat koskevat tämän koosteen viestejä ja jonoja. Ne eivät ole koko
+Node-prosessin muistimittaus tai käyttöjärjestelmätason suojaus. Tulevan
+natiivibrokerin omat kanavat, rajat ja resurssipaketti on vielä toteutettava
+ja testattava erikseen.
+
+## Sisäänoton ja protokollavaihdon jatkokoe
+
+Lukitun SDK:n rajattu synteettinen koe vastaanotti 257 pyyntöä palvelimen
+tehtaan odottaessa vapautusta. Tulostreamien puskurit olivat tyhjät eikä
+vastauksia ollut vielä kirjoitettu. Vapauttamisen jälkeen kaikki pyynnöt
+saivat vastauksen. Koe osoittaa, ettei SDK:n raakapuskurin raja yksin rajoita
+jo parsittujen pyyntöjen jonoa; sillä ei mitattu keon kokoa.
+
+Oikealla SDK:lla tehty regressio toisti myös ennenaikaisen kehityskanavan
+sulun siirryttäessä modernista tunnistuksesta vanhempaan alustukseen.
+Istunnon omistajuuskorjaus poisti virheen; moderni ja vanhempi yhteys sekä
+tavallisen entrypointin omistajuus säilyivät toimivina.
+
+Sisäänottorajauksen kohdennettu sarja läpäisi 83 testiä ja MCP-moduulin
+TypeScript-käännös onnistui. Sarja sisältää oikean SDK:n pidätetyn
+avaustehtaan: enintään kahdeksan pyyntöä pääsee käsittelyyn, yhdeksäs
+sulkee yhteyden, samoin määräaika tai erillinen sulku. Myöhään valmistuva
+palvelininstanssi suljetaan lähettämättä vastauksia. Mukana ovat lisäksi
+protokollavaihto, tunnisteiden uudelleenkäyttö, tavurajat, virheelliset
+kehykset, vastapaine, peruutukset ja uudelleen sisään tuleva sulkukutsu.
+Tämä on paikallinen stream-tason näyttö; käyttöjärjestelmätason eristystä
+tai uuden koosteen desktop-käyttöönottoa ei ole tällä todennettu.
+
+## Aiemman koostamisvaiheen näyttö
 
 Kohdennettu MCP-moduulin TypeScript-käännös ja 49/49 yksikkötestiä läpäisivät.
 Testeissä käytetään oikeaa SDK:ta muististreameilla ja synteettistä

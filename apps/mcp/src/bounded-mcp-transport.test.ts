@@ -95,3 +95,46 @@ it("fails closed if a write throws or its callback reports failure", async () =>
   const failed = await fixture(); const pending = expect(failed.transport.send(message())).rejects.toThrow("write failed");
   failed.callbacks[0]!(new Error("synthetic")); await pending; await failed.transport.close();
 });
+
+it("keeps the input reservation until both response callback and drain, then permits ID reuse", async () => {
+  const f = await fixture();
+  const request = '{"jsonrpc":"2.0","id":1,"method":"ping"}\n';
+  const observed = vi.fn(); f.transport.onmessage = observed;
+  f.input.write(request);
+  const response = f.transport.send({ jsonrpc: "2.0", id: 1, result: {} });
+  f.callbacks[0]!();
+  f.output.emit("drain"); await response;
+  f.input.write(request);
+  expect(observed).toHaveBeenCalledTimes(2); expect(f.release).not.toHaveBeenCalled();
+  await f.transport.close();
+});
+it("does not free a pending ID merely because the response callback has fired", async () => {
+  const f = await fixture();
+  const request = '{"jsonrpc":"2.0","id":1,"method":"ping"}\n';
+  const observed = vi.fn(); f.transport.onmessage = observed;
+  f.input.write(request);
+  const response = expect(f.transport.send({ jsonrpc: "2.0", id: 1, result: {} })).rejects.toThrow();
+  f.callbacks[0]!(); f.input.write(request);
+  await response; await f.transport.close();
+  expect(observed).toHaveBeenCalledTimes(1); expect(f.release).toHaveBeenCalledTimes(1);
+});
+it("rejects an unsolicited or second response without returning input credit", async () => {
+  const f = await fixture();
+  await expect(f.transport.send({ jsonrpc: "2.0", id: 42, result: {} })).rejects.toThrow("pending request");
+  expect(f.output.write).not.toHaveBeenCalled(); await f.transport.close();
+  const g = await fixture();
+  g.input.write('{"jsonrpc":"2.0","id":1,"method":"ping"}\n');
+  const first = g.transport.send({ jsonrpc: "2.0", id: 1, result: {} });
+  const duplicate = g.transport.send({ jsonrpc: "2.0", id: 1, result: {} });
+  expect((await Promise.allSettled([first, duplicate])).every(result => result.status === "rejected")).toBe(true);
+  expect(g.output.write).toHaveBeenCalledTimes(1); await g.transport.close();
+});
+
+it("publishes one close promise before a caller-owned input re-enters on pause", async () => {
+  const f = await fixture();
+  let reentered: Promise<void> | undefined;
+  f.input.once("pause", () => { reentered = f.transport.close(); });
+  const closing = f.transport.close();
+  expect(reentered).toBe(closing);
+  await closing; expect(f.release).toHaveBeenCalledTimes(1);
+});

@@ -218,7 +218,9 @@ Tavallisen sovelluksen oletusajotapa ei muutu tämän osakokeen perusteella.
 erottaa nykyisestä yhteyskuvauksesta ja socketista jo autentikoidun
 kehityskanavan sekä MCP:n oman stream-koostamisen. 49 yksikkötestiä ja kuusi
 nykyisen ajotavan työpöytäregressiota läpäisivät; erillinen katselmus hyväksyi
-rajatun lähdemuutoksen korjatun myöhäisen lukuvirheen jälkeen. Ehdokkaan
-ulostulojono ja odotus on rajattu, mutta SDK:n parsittujen tuloviestien
-kokonaisjono jää avoimeksi sisäänottorajaksi. Natiivia muxia, mainin
+rajatun lähdemuutoksen korjatun myöhäisen lukuvirheen jälkeen. Jatkokoe rajaa myös SDK:n jonoon pääsevien keskeneräisten pyyntöjen määrän
+ja elinajan sekä korjaa yhteisen kehityskanavan omistajuuden protokollan
+vaihtuessa. Tarkka viesti-, peruutus- ja näyttösopimus on samassa
+[stream-koostamisen dokumentissa](../experiments/mcp-stream-composition.md).
+Natiivia muxia, mainin
 bootstrapia, LPAC-ajoa tai verkko-/tiedostorajaa ei tällä hyväksytä.

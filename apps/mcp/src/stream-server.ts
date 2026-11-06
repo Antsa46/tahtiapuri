@@ -55,7 +55,7 @@ export function startMcpStreams(streams: McpStreams): StdioServerHandle {
   client.onclose = stop;
   const transport = new BoundedMcpTransport(streams.input, streams.output, release);
   try {
-    handle = serveStdio(() => createDevelopmentServer(client), { transport, maxSubscriptions: 0 });
+    handle = serveStdio(() => createDevelopmentServer(client, { ownsClient: false }), { transport, maxSubscriptions: 0 });
   } catch (error) {
     release();
     throw error;

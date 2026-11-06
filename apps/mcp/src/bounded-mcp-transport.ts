@@ -1,5 +1,6 @@
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import type { Readable, Writable } from "node:stream";
+import { McpInputGate, type McpRequestReservation } from "./mcp-input-gate.js";
 
 // Candidate trial policy, not measured capacity. The byte budget conservatively
 // counts reservations plus bytes already buffered by the injected writable.
@@ -8,6 +9,7 @@ export const MCP_OUTPUT_POLICY = {
 } as const;
 type McpMessage = Parameters<StdioServerTransport["send"]>[0];
 interface PendingSend {
+  request: McpRequestReservation | undefined;
   frame: string;
   bytes: number;
   resolve(): void;
@@ -29,9 +31,18 @@ export class BoundedMcpTransport extends StdioServerTransport {
   private active: PendingSend | undefined;
   private reservedBytes = 0;
 
-  constructor(input: Readable, private readonly output: Writable, private readonly release: () => void) {
-    super(input, output, { maxBufferSize: 16_384 });
+  private readonly gate: McpInputGate;
+  constructor(private readonly input: Readable, private readonly output: Writable, private readonly release: () => void) {
+    const gate = new McpInputGate(error => this.fail(error));
+    super(gate, output, { maxBufferSize: 16_384 });
+    this.gate = gate;
+    // Keep a sink after SDK close removes its own handlers.
+    gate.on("error", error => this.fail(error));
     output.once("close", this.outputClosed);
+  }
+  override async start(): Promise<void> {
+    await super.start();
+    if (!this.stopped) this.input.pipe(this.gate);
   }
   private readonly outputClosed = () => { void this.close(); };
   private fail(error: Error) {
@@ -40,6 +51,10 @@ export class BoundedMcpTransport extends StdioServerTransport {
   }
   override send(message: McpMessage): Promise<void> {
     if (this.stopped) return Promise.reject(this.failure);
+    let request: McpRequestReservation | undefined;
+    try {
+      if ("id" in message && ("result" in message || "error" in message)) request = this.gate.claimResponse(message.id);
+    } catch { this.fail(new Error("MCP response has no pending request.")); return Promise.reject(this.failure); }
     let frame: string;
     try { frame = JSON.stringify(message) + "\n"; }
     catch { this.fail(new Error("MCP message cannot be encoded.")); return Promise.reject(this.failure); }
@@ -52,7 +67,7 @@ export class BoundedMcpTransport extends StdioServerTransport {
     }
     return new Promise<void>((resolve, reject) => {
       const entry: PendingSend = {
-        frame, bytes, resolve, reject, returned: false, written: false, drained: false,
+        request, frame, bytes, resolve, reject, returned: false, written: false, drained: false,
         timer: setTimeout(() => this.fail(new Error("MCP output timed out.")), MCP_OUTPUT_POLICY.sendTimeoutMs),
         ondrain: () => { entry.drained = true; this.finish(entry); },
       };
@@ -88,16 +103,21 @@ export class BoundedMcpTransport extends StdioServerTransport {
     this.output.off("drain", entry.ondrain);
     this.reservedBytes -= entry.bytes;
     this.active = undefined;
+    if (entry.request) this.gate.complete(entry.request);
     entry.resolve();
     this.pump();
   }
   override close(): Promise<void> {
     if (this.closing) return this.closing;
     this.stopped = true;
+    this.gate.stop();
     this.closing = Promise.resolve().then(async () => {
       try { await super.close(); }
-      finally { this.release(); }
+      finally { this.gate.destroy(); this.release(); }
     });
+    // Publish before unpipe/pause: caller-owned streams can synchronously re-enter close.
+    this.input.unpipe(this.gate);
+    this.input.pause();
     this.output.off("close", this.outputClosed);
     for (const entry of this.pending) {
       clearTimeout(entry.timer);

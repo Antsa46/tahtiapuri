@@ -1,4 +1,7 @@
 import { expect, it, vi } from "vitest";
+import { McpServer } from "@modelcontextprotocol/server";
+import { serveStdio } from "@modelcontextprotocol/server/stdio";
+import { BoundedMcpTransport } from "./bounded-mcp-transport.js";
 import { Duplex, PassThrough, Readable } from "node:stream";
 import { once } from "node:events";
 import { startMcpStreams } from "./stream-server.js";
@@ -108,4 +111,97 @@ it("consumes an owned Readable's deferred destroy error after SDK close removes 
   completeDestroy(lateError);
   await closed;
   expect(input.errored).toBe(lateError); expect(development.destroyed).toBe(true); expect(output.destroyed).toBe(true);
+});
+
+const modernMeta = { _meta: {
+  "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+  "io.modelcontextprotocol/clientCapabilities": {},
+} };
+it("keeps the shared development channel through modern discovery and legacy fallback", async () => {
+  const f = fixture();
+  try {
+    const discovery = await f.exchange("server/discover", modernMeta);
+    expect(discovery.error).toBeUndefined();
+    const closedEarly = once(f.development, "close").then(() => { throw new Error("Shared development channel closed during protocol fallback."); });
+    await Promise.race([f.initialize(), closedEarly]);
+    expect(f.development.destroyed).toBe(false);
+    const listed = await f.exchange("tools/list");
+    expect(listed.result?.tools?.map(tool => tool.name).sort()).toEqual(["cancel_probe", "model_probe", "model_status"]);
+    const status = await f.exchange("tools/call", { name: "model_status", arguments: {} });
+    expect(status.result?.structuredContent).toEqual(denied);
+    expect(f.development.commands).toHaveLength(1);
+  } finally { await f.handle.close(); }
+  expect(f.development.destroyed).toBe(true);
+});
+it("keeps modern discovery and subsequent modern tool listing on one connection", async () => {
+  const f = fixture();
+  try {
+    expect((await f.exchange("server/discover", modernMeta)).error).toBeUndefined();
+    const listed = await f.exchange("tools/list", modernMeta);
+    expect(listed.result?.tools?.map(tool => tool.name).sort()).toEqual(["cancel_probe", "model_probe", "model_status"]);
+    expect(f.development.destroyed).toBe(false);
+  } finally { await f.handle.close(); }
+  expect(f.development.destroyed).toBe(true);
+});
+
+it("serves more than eight sequential requests and keeps the cancel_probe tool reusable", async () => {
+  const f = fixture();
+  try {
+    await f.initialize();
+    for (let n = 0; n < 20; n++) expect((await f.exchange("ping")).error).toBeUndefined();
+    const cancelled = await f.exchange("tools/call", { name: "cancel_probe", arguments: { jobId: "00000000-0000-4000-8000-000000000001" } });
+    expect(cancelled.result?.structuredContent).toEqual(denied);
+    expect((await f.exchange("tools/call", { name: "model_status", arguments: {} })).result?.structuredContent).toEqual(denied);
+    expect(f.development.commands.map(command => command.operation)).toEqual(["cancel", "status"]);
+    expect(f.development.destroyed).toBe(false);
+  } finally { await f.handle.close(); }
+});
+it("closes the candidate connection on RPC cancellation while preserving caller-owned streams", async () => {
+  const f = fixture("caller");
+  try {
+    await f.initialize(); const closed = once(f.development, "close");
+    f.input.write('{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":1}}\n');
+    await closed;
+    expect(f.input.destroyed).toBe(false); expect(f.output.destroyed).toBe(false);
+    expect(f.input.isPaused()).toBe(true);
+  } finally { await f.handle.close(); f.input.destroy(); f.output.destroy(); }
+});
+
+it.each(["overflow", "deadline", "explicit close"])("bounds a real SDK factory held during opening: %s", async cause => {
+  vi.useFakeTimers();
+  const input = new PassThrough(), output = new PassThrough();
+  const outputFrames: Buffer[] = []; output.on("data", (chunk: Buffer) => outputFrames.push(chunk));
+  let releaseFactory!: () => void, enteredFactory!: () => void, disposedFactory!: () => void;
+  const gate = new Promise<void>(resolve => { releaseFactory = resolve; });
+  const entered = new Promise<void>(resolve => { enteredFactory = resolve; });
+  const disposed = new Promise<void>(resolve => { disposedFactory = resolve; });
+  const release = vi.fn();
+  const transport = new BoundedMcpTransport(input, output, release);
+  const handle = serveStdio(async () => {
+    enteredFactory(); await gate;
+    const server = new McpServer({ name: "synthetic-held-factory", version: "0.0.1" });
+    server.server.onclose = disposedFactory;
+    return server;
+  }, { transport, maxSubscriptions: 0 });
+  const original = transport.onmessage!;
+  const admitted = vi.fn((...args: Parameters<typeof original>) => original(...args));
+  transport.onmessage = admitted;
+  try {
+    input.write(JSON.stringify({ jsonrpc: "2.0", id: 0, method: "initialize", params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "synthetic", version: "0.0.1" } } }) + "\n");
+    await entered;
+    for (let id = 1; id < 8; id++) input.write(JSON.stringify({ jsonrpc: "2.0", id, method: "ping" }) + "\n");
+    expect(admitted).toHaveBeenCalledTimes(8); expect(outputFrames).toHaveLength(0);
+    if (cause === "overflow") input.write('{"jsonrpc":"2.0","id":8,"method":"ping"}\n');
+    else if (cause === "deadline") await vi.advanceTimersByTimeAsync(10_000);
+    else await handle.close();
+    await transport.close();
+    expect(release).toHaveBeenCalledTimes(1); expect(admitted).toHaveBeenCalledTimes(8);
+    expect(input.isPaused()).toBe(true); expect(vi.getTimerCount()).toBe(0);
+    releaseFactory(); await disposed;
+    expect(outputFrames).toHaveLength(0);
+    input.write('{"jsonrpc":"2.0","id":9,"method":"ping"}\n');
+    expect(admitted).toHaveBeenCalledTimes(8);
+  } finally {
+    releaseFactory(); await handle.close(); input.destroy(); output.destroy(); vi.useRealTimers();
+  }
 });
