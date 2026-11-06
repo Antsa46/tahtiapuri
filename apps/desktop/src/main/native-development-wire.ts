@@ -9,8 +9,8 @@ export type ControlKind = typeof ControlKind[keyof typeof ControlKind];
 export type ControlDirection = "to-main" | "from-main";
 export interface ControlFrame { kind: ControlKind; body: Buffer }
 function check(kind: number, length: number, direction: ControlDirection) {
-  const fixed = direction === "to-main" ? new Map([[ControlKind.hello, 48], [ControlKind.clean, 0]])
-    : new Map([[ControlKind.accept, 16], [ControlKind.stop, 0]]);
+  const fixed = direction === "to-main" ? new Map<number, number>([[ControlKind.hello, 48], [ControlKind.clean, 0]])
+    : new Map<number, number>([[ControlKind.accept, 16], [ControlKind.stop, 0]]);
   const exact = fixed.get(kind);
   const data = direction === "to-main" ? ControlKind.request : ControlKind.response;
   const limit = direction === "to-main" ? NativeControl.requestBytes : NativeControl.responseBytes;

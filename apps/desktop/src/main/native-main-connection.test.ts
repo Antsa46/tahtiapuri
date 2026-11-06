@@ -23,7 +23,7 @@ class Wire extends Duplex {
     if (this.hold) this.held.push(callback); else callback();
   }
 }
-const fixtures: ReturnType<typeof fixture>[] = [];
+const fixtures: { stream: Wire }[] = [];
 function fixture() {
   const stream = new Wire();
   const development = vi.fn(async (operation: string): Promise<DevelopmentResult> => status(operation !== "development.detach"));

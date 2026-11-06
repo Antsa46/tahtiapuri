@@ -1,3 +1,4 @@
+import { claimDevelopmentBackend } from "./development-owner.js";
 import { readFrames, REQUEST_FRAME_BYTES } from "@tahtiapuri/validation/development-framing";
 import { writeDevelopmentFrame } from "./development-socket.js";
 import { createServer, type Server, type Socket } from "node:net";
@@ -21,6 +22,7 @@ export class DevelopmentHost {
   private clientId: string | null = null;
   private readonly description: string;
   constructor(private readonly backend: Pick<BackendController, "development">, private readonly directory: string) {
+    claimDevelopmentBackend(backend);
     this.description = join(directory, "connection.json");
   }
   getStatus() { return this.backend.development("development.status"); }

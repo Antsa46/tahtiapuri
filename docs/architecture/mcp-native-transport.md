@@ -457,12 +457,13 @@ yhteensä 67 läpäissyttä tapausta. Integraatiot käyttävät oikeita
 `DevelopmentService`- ja `AssistantService`-osia sekä synteettistä
 mallivastaajaa: kaikki neljä UI/MCP:n ristikkäistä luku-/peruutuskieltoa,
 aktiivisen MCP-työn peruminen UI-työn jatkuessa ja puutteellisen sulun
-erottaminen varmennettiin. Kohdistetut tyyppitarkistukset läpäisivät.
+erottaminen varmennettiin. Aiemman tyyppitarkistusväitteen oikaisu ja
+varmennettu uusinta ovat alla Main-isännän näytössä.
 Kolmen uuden ajoitustestin epäonnistunut ajo säilyy erikseen; korjaus
 poisti sulun jälkeen jääneen ajastimen sekä kirjoituspoikkeuksen ja
 callback-virheen peittymisen.
 
-Palvelimen kokonaisyhteysraja, alla kuvatun julkaisun ja palautuksen liitos,
+Alla kuvatun Main-isännän liittäminen sovelluksen käynnistykseen,
 apubinäärin paketti, natiivibrokerin TMCT-toteutus, työntekijän käynnistys ja
 todellinen siivousnäyttö sekä Electronin oletuspolun liitos puuttuvat vielä.
 Tämä näyttö ei hyväksy LPAC:ia, verkkokieltoa, FMI:tä, GPU:ta tai koko
@@ -528,7 +529,8 @@ Mukana ovat todellinen Main-kutsusovitin, säilytettävä vanha tiedosto,
 väärä sukupolvi, elävä/poistunut/eri-ikäinen prosessi, kielletty prosessikysely,
 vajaa välitiedosto, ristiriitaiset kahvat, kova linkki, virheellinen syöte,
 jumittunut stdin ja kadonnut tulostekuittaus. Lisäksi 12 sovittimen
-yksikkötestiä ja kohdistetut tyyppitarkistukset läpäisivät.
+yksikkötestiä läpäisivät. Aiemman tyyppitarkistusväitteen oikaisu ja
+varmennettu uusinta ovat alla Main-isännän näytössä.
 Rakennuskuitti sitoo 16 lähdesyötettä ja kolme koebinääriä.
 
 Kaksi epäonnistunutta yritystä säilyvät erillisinä: testin valmistelun
@@ -540,7 +542,7 @@ apurin aikarajat säilyivät ennallaan.
 
 Tämä palautus todistaa vain kuvaustiedostojen tilanteen. Se ei todista
 vanhan brokerin, työntekijän tai Jobin siivousta eikä valtuuta uuden
-istunnon avaamista. Julkaisun omistajaliitos, varmennettu apupaketti,
+istunnon avaamista. Alla kuvattujen Main-isännän ja apupaketin liitos,
 natiivibrokeri ja koko sovelluksen OS-/verkko-/FMI-/CPU-/GPU-näyttö ovat
 edelleen jatkotyötä.
 
@@ -548,3 +550,79 @@ Windows-sopimukset:
 [FILE_RENAME_INFO](https://learn.microsoft.com/en-us/windows/win32/api/winbase/ns-winbase-file_rename_info),
 [SetFileInformationByHandle](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-setfileinformationbyhandle) ja
 [OpenProcess](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-openprocess).
+
+## Yhden avauksen Main-isäntä
+
+`NativeDevelopmentHost` liittää tunnistautumisen, oikean kuvaustiedoston
+käsittelyn ja paikallisen putken samaan elinkaareen. Se on vielä erillinen
+koostamisvaihtoehto; oletusentry käyttää edelleen aiempaa isäntää.
+`development-owner.ts` sallii yhdelle backend-oliolle vain yhden legacy-
+tai native-isännän koko olion eliniän ajan. Sulku tai statuskysely ei
+vapauta tätä omistusta. Koostamisen ei pidä kiertää sitä portin aliasolioilla.
+
+Main omistaa kiinteän yksityisen kontrollihakemiston ja sovelluksen
+instanssilukon. Ennen julkaisua luodaan vain uutena
+`native-session-reserved`-hakemisto. Olemassa oleva varaus estää avauksen.
+Tämä toteutus ei poista varausta koskaan, myöskään onnistuneen CLEANin
+jälkeen, eikä valitse tilalle uutta satunnaishakemistoa. Brokerin varmennettu
+palautus ja uudelleenavaus ovat erillinen jäljellä oleva toteutusportti.
+
+Avaus etenee varauksesta kuvaustiedoston palautukseen, tarkkaan Main-tunnisteeseen,
+backendin istuntoon, kuuntelevaan putkeen ja julkaisuun. Kaikkien odotusten
+jälkeen tarkistetaan peruutus. Putken kokonaisyhteysraja on neljä;
+kuudestoista hyväksyntä on viimeinen samassa sekunnin laskentaikkunassa.
+Väärä tunnistautumaton asiakas ei kuluta oikean asiakkaan tunnusta.
+Jos kuvaus näkyy ennen julkaisijan poistumista, sen kulutus odottaa
+julkaisutyön valmistumista. ACCEPT odottaa edelleen kulutusta ja liittämistä.
+
+Sulku julkaisee yhteisen lupauksensa ennen peruuttamisen sivuvaikutuksia.
+Kuuntelija ja backendin irrotus–mitätöinti eivät odota jumittunutta
+tiedostojulkaisua. Kesken oleva listen/configure odotetaan omassa sulussaan,
+jotta myöhäinen valmistuminen ei palauta resurssia. Koko sulun 30 sekunnin
+määräajan jälkeen ei käynnistetä uutta apuprosessia; peruutus tarkistetaan
+myös asynkronisen pakettitarkistuksen jälkeen. Epävarma apurin poistuminen
+estää uuden tiedosto-operaation. Tulos erottelee kuvaustiedoston havaitun
+puuttumisen, apurin poistumisen, kuuntelijan sulun, backendin mitätöinnin,
+brokerin ilmoituksen ja tämän isännän todella luoman varauksen.
+
+`native-mcp-helpers.ts` tarkistaa suljetun kahden apubinäärin hakemiston
+luotetun koostamisen antamiin koko-/SHA-256-pinneihin. Paketti tarkistetaan
+ennen jokaista kutsua; linkit, muuttuneet tiedostot ja lisäsisältö hylätään.
+Paketista itsestään luettu tarkiste ei kelpaa luottamusjuureksi. Tämä ei
+ole allekirjoitus eikä Windowsin kirjoitus-/poistokahvalla lukittu
+suoritustiedosto. Saman käyttäjän tai ylläpitäjän haitalliset muutokset
+eivät kuulu tässä torjuttuihin muutoksiin.
+
+Rajattu Windows-näyttö: 71/71 testiä läpäisi. Mukana ovat oikeat kaksi
+apubinääriä, suojattu tiedosto, paikallinen putki ja backend-palvelut sekä
+synteettinen broker-vastapää. Aiemman viestikehyksen 12 ja yhteyskerroksen
+35 testiä, kaksi legacy-isännän testiä, kaksi apupaketin peruutustestiä
+sekä 20 isännän/paketin integraatiotapausta läpäisivät. Koepuut poistuivat.
+Kokeen käynnistin sitoo tarkistetut lähdesyötteet koko ajon ajaksi. Kokeet eivät käynnistä
+eristettyä MCP-työntekijää tai todista CLEANin taustalla olevaa Job-siistiytymistä.
+
+Kaksi sulkuvirhettä toistettiin ennen korjausta: 17/18-ajossa julkaisu
+esti kuuntelijan sulun ja epochin mitätöinnin; 23/24-ajossa myöhäinen
+julkaisu aloitti consume-kutsun sulun määräajan jälkeen. Epäonnistuneet
+raportit säilyvät erillisinä.
+
+**Tyyppitarkistusnäytön oikaisu:** aiemmat suoran PowerShell/Node-kutsun
+exit0-havainnot eivät todistaneet kääntäjän onnistumista: kutsu ei palauttanut
+Noden tulostetta eikä LASTEXITCODE-arvoa. Tarkkaa käynnistyssyytä ei ole
+osoitettu. Prosessikahvan säilyttävä, poistumista odottava ja tulosteet
+tallentava uusinta löysi viestikehyksen Map-tyypityksen virheen ja
+yhteystestin kehämäisen fixture-tyypin. Ne korjattiin muuttamatta runtime-
+käytöstä. Nykyinen desktop-käännös, integraatiotestien tyyppitarkistus ja
+laajennettu yksikkötestien tyyppitarkistus palauttivat kaikki todennetun
+exit0:n. Vanhoja AF/AG-tyyppiväitteitä ei käytetä itsenäisenä näyttönä.
+
+Uudelleenavaus, toimitettavan apupaketin rakentaminen, oikea natiivibrokeri,
+workerin käyttöjärjestelmärajat ja itsenäinen siivousnäyttö sekä Electronin
+oletuspolku ja alkuperäinen FMI/verkko/CPU/GPU-minimipaketti ovat kesken.
+
+Main-isännän julkinen koeresepti on
+`tests/integration/mcp/run-native-host.ps1`. Sen `-BootstrapRun`-argumentti
+valitsee aiemman onnistuneen `run-native-bootstrap.ps1`-ajon run-hakemiston.
+Resepti tarkistaa sen 47 tapauksen kuitin, molemmat apubinäärit ja lähdepinnit,
+ajaa 71 tapauksen sarjan yhdellä suorittimella ja kirjoittaa uuden yksityisen
+kuitin. Puuttuvat ympäristöehdot tai ohitetut tapaukset eivät kelpaa onnistumiseksi.
