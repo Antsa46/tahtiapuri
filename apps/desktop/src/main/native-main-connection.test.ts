@@ -238,3 +238,40 @@ for (const failure of ["throw", "callback"] as const)
     });
     f.hello(); expect(await f.connection.closed).toMatchObject({ brokerCleanupReported: true, failed: true });
   });
+
+
+it("discards a valid in-flight request reacting to STOP before its write callback", async () => {
+  const f = fixture(); await ready(f);
+  f.stream.react = bytes => { if (bytes[5] === ControlKind.stop) f.request(); };
+  const closed = f.connection.stop(); await tick();
+  expect(f.development.mock.calls.some(([op]) => op === "development.invoke")).toBe(false);
+  expect(f.stream.sent.map(x => x[5])).toEqual([ControlKind.accept, ControlKind.stop]);
+  f.send(ControlKind.clean); expect((await closed).failed).toBe(false);
+});
+it("discards eight valid late requests without invoking and still accepts CLEAN", async () => {
+  const f = fixture(); await ready(f); const closed = f.connection.stop();
+  for (let i = 1; i <= 8; i++) f.request(i);
+  f.send(ControlKind.clean); expect((await closed).failed).toBe(false);
+  expect(f.development.mock.calls.some(([op]) => op === "development.invoke")).toBe(false);
+});
+it("rejects the ninth request during STOP without reopening admission", async () => {
+  const f = fixture(); await ready(f); const closed = f.connection.stop();
+  for (let i = 1; i <= 9; i++) f.request(i);
+  expect(await closed).toMatchObject({ failed: true, brokerCleanupReported: false });
+  expect(f.development.mock.calls.some(([op]) => op === "development.invoke")).toBe(false);
+});
+for (const problem of ["schema", "utf8", "replay"] as const)
+  it("still rejects invalid late requests during STOP: " + problem, async () => {
+    const f = fixture(); await ready(f); const closed = f.connection.stop();
+    if (problem === "schema") f.request(1, { operation: "settings" });
+    if (problem === "utf8") f.send(ControlKind.request, Buffer.from([0xff]));
+    if (problem === "replay") { f.request(1); f.request(1); }
+    expect((await closed).failed).toBe(true);
+    expect(f.development.mock.calls.some(([op]) => op === "development.invoke")).toBe(false);
+  });
+it("late requests do not renew the STOP deadline", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+  const f = fixture(); await ready(f); const closed = f.connection.stop();
+  await vi.advanceTimersByTimeAsync(NativeControl.shutdownTimeoutMs - 1); f.request();
+  await vi.advanceTimersByTimeAsync(1); expect((await closed).failed).toBe(true);
+});

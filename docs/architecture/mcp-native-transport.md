@@ -671,3 +671,99 @@ vasta siivousvaiheessa. Tarkkaa hidastumisen syytä ei osoitettu. Onnistuneessa
 uusinnassa testiprosessin ulkoraja oli 45 sekuntia. Tuotannon määräaikoja,
 backendin oikeuksia tai oletuskäynnistystä ei muutettu. Lähde- ja
 rakennussyötteiden tarkisteet varmennettiin ajon ympärillä.
+
+## Välittäjän lähdetoteutus ja rajattu sulkunäyttö
+
+MCP:n natiivivälittäjän lähdetoteutus on `apps/mcp/native/mcp-broker.cpp`.
+Se on vielä toteutuskandidaatti: eristetyn Node-työntekijän käynnistystä,
+palautusta tai Electronin oletuspolun liitosta ei ole hyväksytty.
+
+Välittäjä ottaa vain Mainin kiinteän käynnistyskuvauksen. Se todentaa Mainin,
+välittää TMCT/1-hallinnan ja TMCP/1-työntekijävirrat sekä valmistelee vain
+oman varauksen alaisen kiinteän worker/package/scratch-puun.
+Työntekijä ei valitse suoritettavaa tiedostoa, ajoprofiilia tai Jobin nimeä.
+
+Kertakäyttöinen journal kirjoitetaan ja huuhdellaan ennen profiilin ja
+prosessin luontiyritystä. Prosessin tarkka tunniste tallennetaan ennen
+jatkamista. Epävarma luontivaihe tai epäonnistunut journal ei oikeuta
+CLEANiin tai automaattiseen uudelleenyritykseen. Mainin pysyvä varaus
+säilyy. Nämä ovat lähteeseen toteutettuja ehtoja; niiden OS-ajon näyttö puuttuu.
+
+Kirjoituksen kahden sekunnin raja kattaa jonotuksen, fyysisen I/O:n ja
+valmistumisen havainnon ennen jonovarauksen vapautusta. Sulussa
+prosessin exit0 ei yksin riitä: saman alkuperäisen kahden sekunnin
+budjetin sisällä odotetaan kirjoitusjonon tyhjeneminen sekä stdoutin ja
+stderrin EOF. Osittainen TMCP-kehys ja yli 16 KiB:n yhteenlaskettu stderr
+säilyttävät virheen myös onnistuneen resurssisiivouksen jälkeen.
+
+Windowsin rajatussa putkikokeessa viestimuodon testisarja ja 14 I/O-tapausta
+läpäisivät. Mukana ovat myöhäisen onnistuneen kirjoituksen havainto,
+todellinen putkitakapaine, ennen viimeisten tavujen lukua poistunut
+synteettinen lapsi, osittainen otsake/runko/loppukehys sekä 16 384 ja
+16 385 stderr-tavun sulut. Käännöksen ja molempien testiohjelmien
+exit0 todennettiin säilytetyistä prosessikahvoista.
+Oikeaa välittäjää, mallia tai LPAC-profiilia ei käynnistetty tässä kokeessa.
+
+Main hyväksyy sulun aikana enintään kahdeksan muuten validoitua myöhäistä
+pyyntöä vain poisheitettäviksi. Niitä ei suoriteta, niihin ei vastata
+eikä sulkumääräaikaa uusita. Virheellinen tai yhdeksäs pyyntö epäonnistuu.
+Yhteyden 42 testiä ja kolme kohdistettua tyyppitarkistusta läpäisivät.
+
+Havaintoapurin kaksi kokonaisajoa jäivät epäonnistuneiksi: käännöksen exit0:n
+jälkeen erillinen havaintoapuri ei ollut luettavissa, ja se oli siirtynyt
+virustorjunnan karanteeniin ennen suorittamista. Väärää hälytystä ei ole
+vahvistettu. Myöhemmän putkikokeen onnistuminen ei hyväksy tätä apuria.
+Sen live-journalin jakamissopimus ja Job-havainnon elinkaarivaikutus
+tarvitsevat lisäksi korjauksen tai tarkemman koesopimuksen.
+
+Natiivipaketin liitos sovellukseen, oikean työntekijän toiminta ja ulkopuolinen
+prosessi-/Job-/profiili-/tiedostohavainto, palautus ja uudelleenavaus sekä
+alkuperäinen FMI/verkko/CPU/GPU-minimipaketti ovat edelleen kesken.
+
+## Natiivipaketin rakennusresepti
+
+`scripts/native/build-mcp-native.ps1` kokoaa välittäjän ja Main-apurit
+aiemmin hyväksytystä MCP-työntekijäpaketista. Parametrit ovat
+`-WorkerBuild` (kiinteä `build-<32 pientä heksamerkkiä>`) ja
+`-WorkerDigest` (luotetusti annettu manifestin SHA-256). Rakentaja ei
+valitse uusinta hakemistoa tai hyväksy donorin omaa ilmoitusta luottamusjuureksi.
+
+Tuloksena on uusi yksityinen rakennushakemisto:
+
+- `bin/mcp-broker.exe`
+- `helpers/main-bootstrap.exe` ja `helpers/main-identity.exe`
+- `package/`: työntekijäpaketin kahdeksan tiedostoa muuttumattomina
+- erilliset lähde-, työkalu- ja binääripinnit, lokit, rakennusmanifesti ja
+  `runtime-descriptor.json`
+
+Apurihakemistossa ei ole muita tiedostoja. Workerille annettava paketti
+ei sisällä välittäjää, apureita tai rakennusmetadataa. Rakennushakemisto
+luodaan owner/SYSTEM-oikeuksin; runtime-grantit ovat erillinen myöhempi vaihe.
+
+`prepare-mcp-native.mjs` tarkistaa donorin ja kopioidut tavut, generoi
+C++-pinnit tarkistetusta manifestista sekä varmistaa lopuksi suljetun puun,
+single-link-tiedostot ja binäärien ulkoa sidotut pinnit. PowerShell sitoo
+projektin koko natiivin include-ketjun ja tarkistaa lähteet, paketin sekä
+työkalupinnit vaiheiden ympärillä. Käännös käyttää olemassa olevaa MSVC:tä
+ja Windows SDK:ta. Resepti ei asenna työkaluja eikä suorita tuottamiaan ohjelmia.
+
+Kuvaustiedosto siirretään lopulliseen nimeen vasta tarkistusten jälkeen,
+ilman olemassa olevan tiedoston korvaamista. Sen olemassaolo ei yksin
+todista onnistumista: hyväksyntä tarvitsee myös koko ajon todellisen exit0:n,
+onnistuneen loppukuitin ja täsmäävät pinnit. Mainin tuleva composition
+tarvitsee luotetun ulkoisen descriptor-pinnin; itse paketti ei ole
+allekirjoitus. Kaikkien SDK-/CRT-syötteiden täydellistä sulkemista tai
+toistettavaa binäärirakennusta ei luvata.
+
+Rajattu Windows-käännös ja paketin lopputarkistus läpäisivät. Kolmen
+binäärin tarkisteet kirjattiin, ja nykyinen apulataaja hyväksyi täsmälleen
+kahden tiedoston hakemiston kutsumatta apureita. 27 pakettitapausta
+läpäisi ilman ohituksia: 12 aiempaa pakettitestiä, 11 uutta valmistelu- ja
+lopputarkistuksen tapausta sekä neljä kootun apupaketin lataajatestiä.
+Lataajatesti estää kaikki prosessikäynnistykset. Tämä hyväksyy vain
+rakennus- ja pakettirajan, ei välittäjän käynnistystä tai OS-eristystä.
+
+Ensimmäinen yritys säilyy epäonnistuneena: valmistelu onnistui, mutta
+työkalun hakuvaihe epäonnistui PowerShellin yhdistäessä komennot yhdeksi
+riviksi. Reseptin taulukko korjattiin ja UTF-8 asetettiin erikseen.
+Epäonnistunut ajo ei julkaissut lopullista tai pending-kuvausta.

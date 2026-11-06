@@ -32,6 +32,7 @@ export class NativeMainConnection {
   private failed = false;
   private streamClosed = false;
   private pending = 0;
+  private discardedWhileStopping = 0;
   private calls = 0;
   private bucket = Date.now();
   private readonly ids = new Set<string>();
@@ -90,14 +91,18 @@ export class NativeMainConnection {
     if ((this.phase === "active" || this.phase === "stopping") && this.authenticated && frame.kind === ControlKind.clean) {
       this.cleanup = true; this.finish(); return;
     }
-    if (this.phase !== "active" || frame.kind !== ControlKind.request) { this.fail(); return; }
+    const stoppingRequest = this.phase === "stopping" && this.authenticated;
+    if ((this.phase !== "active" && !stoppingRequest) || frame.kind !== ControlKind.request) { this.fail(); return; }
     let value: unknown;
     try { value = JSON.parse(new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(frame.body)); }
     catch { this.fail(); return; }
-    if (!isBridgeCommand(value) || this.ids.has(value.id) || this.pending >= 4) { this.fail(); return; }
+    if (!isBridgeCommand(value) || this.ids.has(value.id) || !stoppingRequest && this.pending >= 4) { this.fail(); return; }
     if (Date.now() - this.bucket >= 1000) { this.bucket = Date.now(); this.calls = 0; }
     if (++this.calls > 60) { this.fail(); return; }
     this.ids.add(value.id); if (this.ids.size > 256) this.ids.delete(this.ids.values().next().value!);
+    // STOP and an already-sent REQUEST can cross on the duplex pipe. Validate
+    // and discard at most eight, without invoking, replying or renewing grace.
+    if (stoppingRequest) { if (++this.discardedWhileStopping > 8) this.fail(); return; }
     ++this.pending;
     void (async () => {
       const result = await this.lease!.invoke(value);
