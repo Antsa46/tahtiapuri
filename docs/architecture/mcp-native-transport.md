@@ -254,7 +254,8 @@ Mainin PID, nollattu varattu kenttä, tarkka 64-bittinen Windows FILETIME,
 16 tavun putkinonce, 16 tavun sukupolvi ja 32 tavun käynnistystunnus.
 Kuvauksessa ei ole vapaata tiedostopolkua, ohjelmaa tai argumentteja.
 FILETIME hankitaan prosessikahvasta, ei JS:n kellosta tai pyöristetystä
-käynnistysajasta. Tarkka Mainin tunnisteen tuottaja on vielä liittämistyötä.
+käynnistysajasta. Tarkan Main-tunnisteen erillinen natiiviapu on toteutettu alla; sen
+kytkentä koko käynnistysketjuun on vielä liittämistyötä.
 
 `main-peer.h` avaa vain nonceen perustuvan paikallisen putken. Se tarkistaa
 avatun putken palvelin-PID:n, säilyttää sitä vastaavan elävän prosessikahvan
@@ -288,7 +289,7 @@ töitä, MCP:n irrotus vapauttaa vain sen työt ja jonossa oleva UI-työ jatkuu.
 Mallivastaukset ovat synteettisiä.
 
 Ennen varsinaista käyttöönottoa puuttuvat edelleen suojatun kuvaustiedoston
-julkaisu ja avatun tiedoston tarkistus, tarkka Main-tunnisteen hankinta,
+julkaisu sekä alla toteutettujen lukijan ja Main-tunnisteavun liittäminen,
 autentikointikuittaus ja sen aikarajat, brokerin hallinta- ja työntekijädatan
 erottelu, legacy/native-omistajuuden yhteensovitus sekä työntekijän käynnistys,
 Jobin tyhjeneminen ja oikeuksien siivous. Yksikään tämän osan testi ei
@@ -298,3 +299,74 @@ Windows-rajapintojen lähteet:
 [GetProcessTimes](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getprocesstimes),
 [GetNamedPipeServerProcessId](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-getnamedpipeserverprocessid) ja
 [CreateFileW](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew).
+
+## Kuvaustiedoston lukija ja Mainin tarkka tunnisteapu
+
+`bootstrap-file.h` lukee vain kiinteän `main-bootstrap.bin`-tiedoston.
+Se ei luo tai korjaa käyttöoikeuksia. Polun täytyy olla paikallisen kiinteän
+levyn kanoninen absoluuttinen polku. Verkko-, laite-, vaihtoehtoisen datavirran
+ja ylähakemiston kautta kulkevat polut hylätään. Avatut hakemistokahvat
+säilyvät koko lukemisen ajan ilman poiston jakamista; reparse-kohteet ja
+lopullisesta polusta poikkeavat kahvat hylätään. Saman käyttäjän tai
+järjestelmänvalvojan tekemää haitallista ACL-muutosta ei väitetä estetyksi.
+
+Kontrollihakemiston omistajan täytyy olla kutsuvan käyttäjän SID.
+Suojatussa pääsylistassa sallitaan täsmälleen käyttäjän ja SYSTEMin
+kaksi täyden oikeuden ACEä hakemisto- ja tiedostoperinnällä. Tiedoston
+omistaja tarkistetaan erikseen; sen suojaamattomassa pääsylistassa on vain
+samat kaksi tehokasta perittyä ACEä. Puuttuva tai null-pääsylista, ylimääräinen
+osapuoli, muu oikeusmaski tai perintämuoto hylätään. Arvot luetaan
+`GetSecurityInfo`-kutsulla avatusta kahvasta, ei erillisen polkuhavainnon
+perusteella. Pelkkä sopiva ACL ei osoita omistajaa.
+
+Tiedoston pitää olla tavallinen levytiedosto, jolla on yksi linkki ja
+96 tavun koko. Lukukahva estää tavallisen kirjoitus- ja poisto-oikeudella
+avaamisen. Tavut kopioidaan kerralla omaan kiinteään puskuriin; kahvat,
+polut ja oikeudet tarkistetaan uudelleen. Lukija palauttaa vain puretun
+arvon ja vapauttaa lukukahvat ennen autentikointia. Näin Main voi kuluttaa
+ja poistaa kuvauksen ennen kuittausta. Eri kenttiä ei lueta eri avauksista.
+
+`main-identity.cpp` hyväksyy vain `--identity`-toiminnon ja kanonisen
+positiivisen PID-luvun. Se avaa ei-periytyvän kysely-/synkronointikahvan,
+vaatii elävän prosessin ja palauttaa PID:n sekä FILETIMEn 16 merkin
+heksadesimaalimerkkijonona. `native-main-identity.ts` kysyy vain oman
+prosessinsa PID:n, tarkistaa vastauksen täsmällisen muodon ja käsittelee
+ajan `bigint`-arvona. Lapselle annetaan rajattu ympäristö ja tulosteraja;
+prosessin sulkeutuminen pitää havaita ennen tuloksen hyväksymistä.
+Epävarma poistuminen palautuu erillisenä virheenä. Avun käyttäjän täytyy
+vielä varmistaa apubinäärin runtime-paketti ennen käynnistystä.
+
+Tämä kysely todistaa havainnon kyselyhetkellä. Broker tarkistaa edelleen
+avaamansa putken todellisen palvelin-PID:n ja tarkan käynnistysajan sekä
+säilyttää elävän Mainin prosessikahvan; kyselyapu ei korvaa sitä.
+
+Erillinen Windows-testi rakentaa pienet apubinäärit ja käyttää ohjelman
+oikeaa `securePrivateDirectory`-toimintoa synteettisissä fixtureissa:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\integration\mcp\run-native-bootstrap.ps1
+```
+
+Rajattu 22 tapauksen Windows-ajo läpäisi kokonaisuudessaan, myös loppusiivouksen.
+Se kattaa oikean perityn ACL:n, ylimääräisen osapuolen ja puuttuvan SYSTEM-oikeuden,
+null-pääsylistan, suojatun lehden, kovan linkin, välittömän ja välihakemiston
+junction-linkin, koon/formaatin/tyypin virheet, kirjoittavan kahvan ristiriidan,
+lukukahvan kirjoitus-/poistoeston sekä tiedoston vaihdon lukijan poistuttua.
+Main-tunnisteapu verrattiin erilliseen .NETin FILETIME-havaintoon; virheelliset
+argumentit hylättiin. Lisäksi 10 yksikkötestiä varmentaa tuloksen,
+lapsiympäristön, sulun odotuksen ja epävarman poistumisen käsittelyn.
+Erillistä väärän omistajan Windows-fixturea ei ole ajettu.
+
+Ensimmäiset epäonnistuneet ajot säilyvät: liian syvä testin työskentelypolku,
+testifixturen tarpeettoman laaja ACL-persistointi ja null-pääsylistan
+poistaman perinnän aiheuttama loppusiivousvirhe. Korjaukset ovat testin
+valmistelussa/palautuksessa; yhteistä tuotannon hakemistoapuria ei muutettu.
+Yksittäisten testien onnistuminen epäonnistuneen loppusiivouksen yhteydessä
+ei kelpaa läpäisseeksi koesarjaksi. Pitkän polun tuotantotuki ja ensimmäisen
+tunnistekokeen aikarajaylityksen tarkka syy eivät ratkea tällä näytöllä.
+
+Kuvauksen julkaisu, autentikointikuittaus, natiivibrokeri, apubinäärin
+paketointi ja koko Electron-liitos ovat edelleen jatkotyötä. Näissä kokeissa
+ei käynnistetä mallia tai eristettyä työntekijää eikä kokeilla verkkoa.
+
+Lähde: [GetSecurityInfo](https://learn.microsoft.com/en-us/windows/win32/api/aclapi/nf-aclapi-getsecurityinfo).
