@@ -131,7 +131,7 @@ repositoryn pakettien paikata puuttuvia importteja. Ensimmäinen yritys
 pysähtyi testikäynnistimen Windows-polun muotoon; `--import` tarvitsee tässä
 file-URL:n. Epäonnistunut raportti säilyy erillisenä. Tämä on alustava
 paketointikoe: toimitettavan paketin tarkisteet, alkuperä, lisenssit ja
-suljettu tiedostoluettelo on vielä rakennettava ja tarkistettava.
+suljettu tiedostoluettelo toteutetaan alla kuvatussa erillisessä rakennuksessa.
 
 Kooste, tavallinen Node-prosessi ja latauskoukku eivät toteuta AppContaineria,
 LPAC:ia, tiedostojen OS-rajaa tai verkkokieltoa. Mainin autentikointia,
@@ -141,3 +141,78 @@ ole tämän osavaiheen perusteella hyväksytty.
 Myös vanhan `server.ts`-entryn modernista tunnistuksesta vanhempaan
 alustukseen siirtymisen omistajuus jää erilliseksi regressio-/siirtotyöksi.
 Ehdokkaan korjausta ei esitetä vanhan oletusentryn korjauksena.
+
+## Kiinteä MCP-ajopaketti
+
+`scripts/native/build-mcp-runtime.ps1` rakentaa erillisen paikallisen paketin.
+Se ei vaihda sovelluksen oletusentryä, käynnistä työntekijää eikä myönnä
+Windows-oikeuksia. Rakennus käyttää jo asennettua Rolldown 1.2.16:ta;
+uutta riippuvuutta tai verkosta tehtävää asennusta ei lisätä.
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\native\build-mcp-runtime.ps1
+```
+
+Uusi rakennusjuuri syntyy `.artifacts/native/mcp-runtime/builds/`-puuhun
+suojattuna vain omistavalle käyttäjälle ja SYSTEMille. Rakennus on sarjallinen,
+matalalla prioriteetilla ja rajatulla suoritinkuormalla; yksittäisellä
+rakentajaprosessilla on kahden minuutin määräaika. Epäonnistuneen rakennuksen
+lokit ja mahdollinen hylätty kooste säilyvät. Juuri ei kelpaa uudelleen
+valmisteluun, eikä aiempaa pakettia ylikirjoiteta.
+
+Paketissa on täsmälleen seuraava sisältö:
+
+```text
+package/
+  node.exe
+  mcp-worker.mjs
+  package.json
+  runtime-manifest.json
+  licenses/
+    node-LICENSE.txt
+    mcp-server-LICENSE.txt
+    mcp-core-LICENSE.txt
+    zod-LICENSE.txt
+```
+
+Virallisen Node 24.22.2 -arkiston, suoritettavan tiedoston ja arkistoon
+verratun lisenssin tarkisteet ovat kiinteät. Yhden ESM-työntekijän lähteet
+ovat rajattu MCP-moduulin ja validation-moduulin TypeScript-joukko sekä
+MCP server/core 2.4.0 ja Zod 4.6.7. Paikalliset importit ratkaistaan suoraan
+lähteisiin: `dist` tai yleinen `node_modules`-haku ei ole varareitti.
+TypeScript-asetusten automaattinen etsintä on pois käytöstä.
+
+Koostajalle annettavat todelliset lähdetavut tarkistetaan ennen rakennusta
+ja sen jälkeen. Paikallinen `runtime-inputs.json` tallentaa myös lockfilen,
+pakettimetatiedot, rakentajan reseptin, Rolldownin suoritettavat JS-tiedostot,
+sen pluginutils-riippuvuuden ja käytetyn natiivikirjaston tarkisteet.
+Natiivikirjaston valinta sidotaan tarkistettuun tiedostoon; perityt WASI-
+valinnat eivät voi vaihtaa sitä. Tämä on luotetun kehitysympäristön
+rakennuskuitti, ei suoja saman käyttäjän tai ylläpitäjän kaappaamaa
+rakentajaa vastaan eikä kaikkien npm-julkaisujen riippumaton alkuperäauditointi.
+
+Lopullinen tuloste saa olla vain yksi ESM-tiedosto ilman lisäresursseja tai
+sourcemapia. Sen parsitusta koodista hyväksytään vain `node:stream`,
+`node:process` ja `node:crypto`; dynaamiset importit ja suorat require-kutsut
+hylätään. Koostajan metatiedoissa havaittu, lopullisesta koodista poistunut
+`node:module`-apu erotetaan todella toimitetuista importeista. Alkuperäiset
+hylätyt rakennukset säilyvät näytössä. Tämä tarkistus ei väitä estävänsä
+kaikkea dynaamista koodin suoritusta tai korvaavansa OS-eristystä.
+
+Manifesti sitoo kiinteän tiedostojoukon, pituudet ja SHA-256:t. Erillinen
+`mcp-runtime-pins.h` sitoo myös manifestin tarkisteen tulevaa natiivibrokeria
+varten. Paketin sisältä luettu, itseään vastaava manifesti ei yksin todenna
+paketin alkuperää: tulevan luotetun käynnistäjän on verrattava sitä omaan
+hyväksyttyyn tarkisteeseensa. Paketin linkit, ylimääräiset tiedostot ja
+hakemistot sekä muuttuneet tavut hylätään. Backendin resurssiluetteloa,
+tallennusjuurta tai mallipainoja ei oteta MCP:n pakettiin.
+
+Rajattu näyttö: 12 paketti-/parseritestiä läpäisi. Oikean paketin omalla
+Nodella ja koostetulla työntekijällä tehty prosessikoe sekä vertailuna
+lähdekäännöksen prosessikoe läpäisivät, yhteensä 2/2 ilman ohituksia.
+Alustus, työkalulista, synteettinen tilavastaus ja CLOSEsta poistuminen
+koodilla 0 toimivat ilman pakkosulkua tai stderr-tulostetta. Testin erillinen
+latauskoukku esti repositoryn riippuvuuksien käyttämisen; paketin tavut
+varmennettiin ennen ajoa ja sen jälkeen. Koukku ei kuulu toimitettavaan
+pakettiin. Natiivi välittäjä, mainin todentaminen, LPAC ja koko sovelluksen
+verkko-/tiedosto-/elinkaarinäyttö ovat yhä seuraavia portteja.

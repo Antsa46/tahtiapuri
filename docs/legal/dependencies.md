@@ -10,6 +10,7 @@ asennuspaketin lisenssiliite. Se viimeistellään T17:ssä toimitetun sisällön
 | Electron 45.2.1 | Desktop-runtime, ikkunat, preload ja UtilityProcess. | MIT; Chromium/Node ja muut mukana toimitetut osat omine ilmoituksineen. |
 | React ja React DOM 19.3.1 | Paikallinen käyttöliittymä. | MIT |
 | Vite 8.3.5 ja @vitejs/plugin-react 6.2.1 | Käyttöliittymän rakennus. | MIT |
+| Rolldown 1.2.16 ja @rolldown/pluginutils 1.0.1 | Olemassa olevan Vite-työkaluketjun koostaja; kiinteän MCP-ajopaketin rakennus. Ei työntekijän runtime-riippuvuus. | MIT |
 | TypeScript 7.0.2 | Käännös ja tyypintarkistus. | Apache-2.0 |
 | Vitest 5.1.0 | Paikalliset yksikkö- ja integraatiotestit. | MIT |
 | @playwright/test 1.64.1 | Oikean Electronin E2E-testit. | Apache-2.0 |
@@ -71,3 +72,8 @@ runtime-toimitukseen. Mallipainot säilyvät erillisinä. Testien Jinja-vertailu
 käyttää olemassa olevan SDK:n transitiivista @huggingface/jinja-riippuvuutta;
 sitä ei lisätä natiivityöntekijään. MSVC-ajoympäristön toimitus ja sen ehdot
 sekä lopullisen asennuspaketin lisenssiliite ovat edelleen avoimia.
+
+MCP:n erillinen [kiinteä ajopaketti](../architecture/mcp-native-transport.md#kiinteä-mcp-ajopaketti)
+säilyttää Noden koko LICENSE-tiedoston sekä MCP server/core- ja Zod-pakettien
+LICENSE-tiedostot. Kooste säilyttää myös lähteiden kommentit. Tämä rajattu
+ajopaketti ei vielä ole lopullinen asennin tai sen koko lisenssiliite.

@@ -3,10 +3,10 @@ import { spawn } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { encodeMuxFrame, McpMuxReader, MuxKind, type MuxFrame } from "./mcp-mux-wire.js";
 
-async function exerciseWorker(entry: string, loader?: string) {
+async function exerciseWorker(entry: string, loader?: string, executable = process.execPath) {
   const env: NodeJS.ProcessEnv = {};
   for (const key of ["SystemRoot", "WINDIR", "TEMP", "TMP"]) if (process.env[key]) env[key] = process.env[key];
-  const child = spawn(process.execPath, ["--max-old-space-size=128", ...(loader ? ["--import", pathToFileURL(loader).href] : []), entry], { env, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+  const child = spawn(executable, ["--max-old-space-size=128", ...(loader ? ["--import", pathToFileURL(loader).href] : []), entry], { env, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
   let sequence = 1, request = 0, remainder = "", stderrBytes = 0, forced = false, observedClose = false, expectedClose = false;
   let phase = "readiness";
   const commands: string[] = [], pending = new Map<number, (reply: { result?: { tools?: { name: string }[]; structuredContent?: unknown }; error?: unknown }) => void>();
@@ -76,5 +76,5 @@ it.skipIf(process.platform !== "win32")("runs the fixed worker over real Windows
 const bundle = process.env.TAHTIAPURI_MCP_TEST_BUNDLE;
 const loader = process.env.TAHTIAPURI_MCP_TEST_LOADER;
 it.skipIf(process.platform !== "win32" || !bundle || !loader)("runs an explicitly supplied bundle with repository dependency resolution blocked", async () => {
-  await exerciseWorker(bundle!, loader!);
+  await exerciseWorker(bundle!, loader!, process.env.TAHTIAPURI_MCP_TEST_NODE);
 }, 12_000);
