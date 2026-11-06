@@ -767,3 +767,40 @@ Ensimmäinen yritys säilyy epäonnistuneena: valmistelu onnistui, mutta
 työkalun hakuvaihe epäonnistui PowerShellin yhdistäessä komennot yhdeksi
 riviksi. Reseptin taulukko korjattiin ja UTF-8 asetettiin erikseen.
 Epäonnistunut ajo ei julkaissut lopullista tai pending-kuvausta.
+
+
+## Oikean työntekijän toiminnallinen sulkukoe
+
+`tests/integration/mcp/native-broker.integration.test.ts` on erikseen
+käynnistettävä Windows-koe. Se käyttää tarkistettua natiivipakettia,
+oikeaa Main-isäntää ja MCP-työntekijää sekä DevelopmentService- ja
+AssistantService-sovelluspalveluja synteettisellä mallimoottorilla.
+Kokeessa suoritetaan MCP:n alustus, työkalulista ja `model_status`.
+Tilakyselyn pitää kulkea backendin kehityspalveluun ilman malliajon käynnistystä.
+
+Koe pitää asiakkaan stdin-virran auki ja pyytää sen jälkeen Mainilta sulun.
+Onnistuminen edellyttää välittäjän todellista exit0:aa, stdout-EOF:ää,
+virheetöntä Main-sulkutulosta, backend-oikeuden mitätöintiä ja kuuntelijan
+sulkeutumista. Välittäjän poistumisen jälkeen tarkistetaan journalin
+CLEAN-vaihe, tarkiste ja ajokonteksti sekä käynnistyskuvauksen ja worker-puun
+puuttuminen. Pysyvä varaus ja journal säilytetään myös onnistumisessa.
+Koe ei käynnistä palautusta eikä valmistele tuotannon uudelleenavausta.
+
+Korjattu rajattu Windows-koe läpäisi yhden tapauksen ilman ohituksia.
+Testiprosessin ja koko koeajurin todelliset exit0:t havaittiin;
+lähde- ja pakettipinnit täsmäsivät ajon jälkeen. Malliajoja ei syntynyt,
+stdout päättyi, eikä pakkopysäytystä tai siivousvirhettä havaittu.
+Kohdistettu integraatiotestien tyyppitarkistus läpäisi.
+
+Ensimmäinen kokonaisajo epäonnistui testin liian tiukkaan stdin-close-
+tapahtuman järjestysvaatimukseen. Tilakierros, välittäjän exit0 ja Mainin
+sulkutulos oli havaittu, mutta ne eivät muuta epäonnistunutta ajoa hyväksytyksi.
+Korjattu testi edellyttää stdin-virran olevan auki Main-STOPin hetkellä ja
+välittäjän päättyvän sen jälkeen. Mahdollinen stdin-close saa tapahtua vasta
+STOPin jälkeen; sen puuttuminen ennen child-closea ei yksin ole virhe.
+
+Tämä on Node-isännän toiminnallinen koe. Välittäjän oma CLEAN-ilmoitus ja
+paikallinen tiedostojälki eivät ole riippumaton prosessi-, Job-, profiili-
+tai verkkorajan havainto. Electronin oletuspolku, palautus ja uudelleenavaus
+sekä koko FMI/verkko/CPU/GPU-koepaketti tarvitsevat edelleen oman näyttönsä.
+Erillistä karanteeniin joutunutta havaintoapuria ei käytetä tässä kokeessa.
