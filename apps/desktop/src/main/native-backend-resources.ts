@@ -9,6 +9,7 @@ import { securePrivateDirectory } from "./private-directory.js";
 import { NativeBackendPort, type NativeBackendProcess, type NativeBackendResult } from "./native-backend-port.js";
 
 const NODE = { version: "24.22.2", archive: "node-v24.22.2-win-x64.zip", archiveSha256: "ca1bff5d8ead13c9f2ea404a176db46bd430704d5b5113734049fa365e7799e2", executableSha256: "1c331340fa6cac5e4294725959070a143fa0507195a78ad77eed7943f719aac9" };
+const SAFETY_POLICY = "process-witness-v1";
 const backendFiles = ["runtime/stdio-backend", "composition/create-backend", "composition/create-observing", "composition/create-sky", "ipc/endpoint", "modules/assistant/adapters/parent-model-engine", "modules/assistant/application/assistant-service", "modules/development/application/development-service", "modules/observing/adapters/json-places-repository", "modules/observing/application/places-service", "modules/observing/ports/places-repository", "modules/runtime/application/get-runtime-status", "modules/sky/adapters/astronomy-calculator", "modules/sky/adapters/local-star-catalog", "modules/sky/application/sky-queries", "modules/sky/application/sky-service"];
 /** This production closure is deliberately independent of build scripts and test fixtures. */
 export const NATIVE_BACKEND_RUNTIME_PATHS: readonly string[] = Object.freeze([
@@ -21,7 +22,7 @@ export const NATIVE_BACKEND_RUNTIME_PATHS: readonly string[] = Object.freeze([
   "resources/catalogs/manifest.json", "resources/catalogs/stars.json", "node.exe", "licenses/node-LICENSE.txt", "package.json",
 ].sort());
 type Pin = { readonly path: string; readonly bytes: number; readonly sha256: string };
-type Descriptor = { schema: 1; protocol: 2; id: "tahtiapuri-native-backend-v2"; broker: Pin; package: { path: "package"; manifest: "runtime-manifest.json"; digest: string }; buildManifest: { path: "build-manifest.json"; sha256: string } };
+type Descriptor = { schema: 1; protocol: 2; id: "tahtiapuri-native-backend-v2"; safetyPolicy: typeof SAFETY_POLICY; broker: Pin; package: { path: "package"; manifest: "runtime-manifest.json"; digest: string }; buildManifest: { path: "build-manifest.json"; sha256: string } };
 /** Paths are supplied only by trusted Electron composition, never renderer/MCP input. */
 export interface NativeBackendResourceConfig { runtimeRoot: string; userDataRoot: string }
 export interface NativeBackendRuntime {
@@ -96,11 +97,18 @@ async function bytes(path: string, signal: AbortSignal, limit: number, expected?
   } finally { await handle.close(); }
 }
 function descriptor(value: unknown): Descriptor {
-  if (!isRecord(value) || !exactKeys(value, ["schema", "protocol", "id", "broker", "package", "buildManifest"]) || value.schema !== 1 || value.protocol !== 2 || value.id !== "tahtiapuri-native-backend-v2"
+  if (!isRecord(value) || !exactKeys(value, ["schema", "protocol", "id", "safetyPolicy", "broker", "package", "buildManifest"]) || value.schema !== 1 || value.protocol !== 2 || value.id !== "tahtiapuri-native-backend-v2" || value.safetyPolicy !== SAFETY_POLICY
     || !pin(value.broker) || value.broker.path !== "bin/backend-broker.exe" || !isRecord(value.package) || !exactKeys(value.package, ["path", "manifest", "digest"])
     || value.package.path !== "package" || value.package.manifest !== "runtime-manifest.json" || !hash(value.package.digest)
     || !isRecord(value.buildManifest) || !exactKeys(value.buildManifest, ["path", "sha256"]) || value.buildManifest.path !== "build-manifest.json" || !hash(value.buildManifest.sha256)) return denied();
   return value as Descriptor;
+}
+function buildManifest(value: unknown, metadata: Descriptor): void {
+  // Compatibility admission inside the trusted build chain, not a signature.
+  if (!isRecord(value) || value.schema !== metadata.schema || value.protocol !== metadata.protocol
+    || value.safetyPolicy !== metadata.safetyPolicy || value.runtimePackageDigest !== metadata.package.digest || !Array.isArray(value.files)) return denied();
+  const brokerPins = value.files.filter((file: unknown) => isRecord(file) && file.path === metadata.broker.path);
+  if (brokerPins.length !== 1 || !isRecord(brokerPins[0]) || brokerPins[0].sha256 !== metadata.broker.sha256) denied();
 }
 function manifest(value: unknown): readonly Pin[] {
   if (!isRecord(value) || !exactKeys(value, ["schema", "protocol", "node", "files"]) || value.schema !== 1 || value.protocol !== 2
@@ -133,17 +141,26 @@ async function closedTree(root: string, files: readonly Pin[], signal: AbortSign
 export async function loadNativeBackendRuntime(config: NativeBackendResourceConfig, signal: AbortSignal): Promise<NativeBackendRuntime> {
   canonical(config.runtimeRoot); canonical(config.userDataRoot); await directory(config.runtimeRoot); await directory(config.userDataRoot);
   if (dirname(config.runtimeRoot) === config.runtimeRoot || dirname(config.userDataRoot) === config.userDataRoot) denied();
-  const metadata = descriptor(decodeJson(await bytes(join(config.runtimeRoot, "runtime-descriptor.json"), signal, 16384)));
+  const descriptorBytes = await bytes(join(config.runtimeRoot, "runtime-descriptor.json"), signal, 16384);
+  const descriptorDigest = digest(descriptorBytes);
+  const metadata = descriptor(decodeJson(descriptorBytes));
   const manifestBytes = await bytes(join(config.runtimeRoot, "package/runtime-manifest.json"), signal, 65536);
   if (digest(manifestBytes) !== metadata.package.digest) denied();
   const files = [...manifest(decodeJson(manifestBytes)), Object.freeze({ path: "runtime-manifest.json", bytes: manifestBytes.length, sha256: metadata.package.digest })];
   await closedTree(join(config.runtimeRoot, "package"), files, signal);
   const broker = join(config.runtimeRoot, metadata.broker.path);
   requireProcessPaths(config.runtimeRoot, broker);
-  const verifyBroker = async (operationSignal: AbortSignal) => { await bytes(broker, operationSignal, 167772160, metadata.broker); };
+  const verifyBroker = async (operationSignal: AbortSignal) => {
+    // Recheck the admitted metadata and binary before staging and each launch.
+    const currentDescriptor = await bytes(join(config.runtimeRoot, "runtime-descriptor.json"), operationSignal, 16384);
+    if (digest(currentDescriptor) !== descriptorDigest) denied();
+    descriptor(decodeJson(currentDescriptor));
+    const buildBytes = await bytes(join(config.runtimeRoot, "build-manifest.json"), operationSignal, 65536);
+    if (digest(buildBytes) !== metadata.buildManifest.sha256) denied();
+    buildManifest(decodeJson(buildBytes), metadata);
+    await bytes(broker, operationSignal, 167772160, metadata.broker);
+  };
   await verifyBroker(signal);
-  const buildBytes = await bytes(join(config.runtimeRoot, "build-manifest.json"), signal, 65536);
-  if (digest(buildBytes) !== metadata.buildManifest.sha256) denied();
   return Object.freeze({ runtimeRoot: config.runtimeRoot, userDataRoot: config.userDataRoot, stateRoot: join(config.userDataRoot, "backend-state"), broker, digest: metadata.package.digest, files: Object.freeze(files), verifyBroker });
 }
 async function ownTree(root: string, marker: string): Promise<void> {

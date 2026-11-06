@@ -1,7 +1,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
 import { basename, dirname, join, resolve, sep } from "node:path";
-import { NATIVE_BACKEND_RUNTIME_PATHS, loadNativeBackendRuntime, nativeBackendSpawnOptions, prepareNativeBackendResources } from "./native-backend-resources.js";
+import { NATIVE_BACKEND_RUNTIME_PATHS, launchNativeBackend, loadNativeBackendRuntime, nativeBackendSpawnOptions, prepareNativeBackendResources, recoverNativeBackend } from "./native-backend-resources.js";
 
 // Entirely in memory: no filesystem, private-directory helper or process launch.
 const files = new Map<string, Buffer>(), directories = new Set<string>(), links = new Set<string>(), hardlinks = new Set<string>();
@@ -9,6 +9,7 @@ const mkdir = vi.fn(async (path: string) => { if (directories.has(path)) throw O
 const remove = vi.fn(async (root: string) => { for (const path of [...files.keys()]) if (path === root || path.startsWith(root + sep)) files.delete(path); for (const path of [...directories]) if (path === root || path.startsWith(root + sep)) directories.delete(path); });
 const secure = vi.fn(async (path: string) => { addDirectory(path); });
 const copy = vi.fn(async (source: string, destination: string) => put(destination, files.get(source)!));
+const write = vi.fn(async (path: string, value: string | Buffer) => put(path, value));
 const launch = vi.fn((..._args: unknown[]) => { throw new Error("Unexpected process launch."); });
 function stat(path: string) {
   if (!files.has(path) && !directories.has(path)) throw Object.assign(new Error("missing"), { code: "ENOENT" });
@@ -24,13 +25,13 @@ vi.mock("node:fs/promises", () => ({
   open: async (path: string) => ({ stat: async () => stat(path), readFile: async () => Buffer.from(files.get(path)!), close: async () => {} }),
   opendir: async (path: string) => ({ async *[Symbol.asyncIterator]() { for (const entry of children(path)) yield entry; } }),
   mkdir: (...args: [string]) => mkdir(...args), rm: (...args: [string]) => remove(...args),
-  writeFile: async (path: string, value: string | Buffer) => put(path, value),
+  writeFile: (...args: [string, string | Buffer]) => write(...args),
   copyFile: (...args: [string, string]) => copy(...args),
 }));
 vi.mock("./private-directory.js", () => ({ securePrivateDirectory: (...args: [string]) => secure(...args) }));
 vi.mock("node:child_process", () => ({ spawn: (...args: unknown[]) => launch(...args) }));
 const sha = (bytes: string | Buffer) => createHash("sha256").update(bytes).digest("hex");
-let descriptor: Record<string, unknown>, manifest: Record<string, unknown>;
+let descriptor: Record<string, unknown>, manifest: Record<string, unknown>, buildManifest: Record<string, unknown>;
 // Use canonical host paths even though every filesystem operation is mocked.
 const config = { runtimeRoot: resolve("/trusted"), userDataRoot: resolve("/userdata") };
 const runtimePath = (path: string) => join(config.runtimeRoot, path);
@@ -38,9 +39,18 @@ const userPath = (path: string) => join(config.userDataRoot, path);
 const signal = () => new AbortController().signal;
 function saveManifest() {
   const text = JSON.stringify(manifest, null, 2) + "\n"; put(runtimePath("package/runtime-manifest.json"), text);
-  (descriptor.package as Record<string, unknown>).digest = sha(text); saveDescriptor();
+  (descriptor.package as Record<string, unknown>).digest = sha(text);
+  buildManifest.runtimePackageDigest = sha(text); saveBuildManifest();
+}
+function saveBuildManifest() {
+  const text = JSON.stringify(buildManifest); put(runtimePath("build-manifest.json"), text);
+  (descriptor.buildManifest as Record<string, unknown>).sha256 = sha(text); saveDescriptor();
 }
 function saveDescriptor() { put(runtimePath("runtime-descriptor.json"), JSON.stringify(descriptor)); }
+function expectNoOwnershipChanges() {
+  expect(secure).not.toHaveBeenCalled(); expect(mkdir).not.toHaveBeenCalled(); expect(copy).not.toHaveBeenCalled();
+  expect(write).not.toHaveBeenCalled(); expect(remove).not.toHaveBeenCalled(); expect(launch).not.toHaveBeenCalled();
+}
 beforeEach(() => {
   files.clear(); directories.clear(); links.clear(); hardlinks.clear(); vi.clearAllMocks(); addDirectory(config.userDataRoot); addDirectory(config.runtimeRoot);
   const pins = NATIVE_BACKEND_RUNTIME_PATHS.map(path => {
@@ -48,15 +58,61 @@ beforeEach(() => {
     return { path, bytes: Buffer.byteLength(content), sha256: path === "node.exe" ? "1c331340fa6cac5e4294725959070a143fa0507195a78ad77eed7943f719aac9" : sha(content) };
   });
   manifest = { schema: 1, protocol: 2, node: { version: "24.22.2", archive: "node-v24.22.2-win-x64.zip", archiveSha256: "ca1bff5d8ead13c9f2ea404a176db46bd430704d5b5113734049fa365e7799e2", executableSha256: "1c331340fa6cac5e4294725959070a143fa0507195a78ad77eed7943f719aac9" }, files: pins };
-  put(runtimePath("bin/backend-broker.exe"), "synthetic broker"); put(runtimePath("build-manifest.json"), "synthetic build manifest");
-  descriptor = { schema: 1, protocol: 2, id: "tahtiapuri-native-backend-v2", broker: { path: "bin/backend-broker.exe", bytes: 16, sha256: sha("synthetic broker") },
-    package: { path: "package", manifest: "runtime-manifest.json", digest: "" }, buildManifest: { path: "build-manifest.json", sha256: sha("synthetic build manifest") } };
+  put(runtimePath("bin/backend-broker.exe"), "synthetic broker");
+  buildManifest = { schema: 1, protocol: 2, safetyPolicy: "process-witness-v1", runtimePackageDigest: "", files: [{ path: "bin/backend-broker.exe", sha256: sha("synthetic broker") }] };
+  descriptor = { schema: 1, protocol: 2, id: "tahtiapuri-native-backend-v2", safetyPolicy: "process-witness-v1", broker: { path: "bin/backend-broker.exe", bytes: 16, sha256: sha("synthetic broker") },
+    package: { path: "package", manifest: "runtime-manifest.json", digest: "" }, buildManifest: { path: "build-manifest.json", sha256: "" } };
   (descriptor.broker as Record<string, unknown>).bytes = Buffer.byteLength("synthetic broker"); saveManifest();
 });
 it("derives the fixed state root and original pinned broker solely from trusted composition", async () => {
   const runtime = await loadNativeBackendRuntime(config, signal());
   expect(runtime.stateRoot).toBe(userPath("backend-state")); expect(runtime.broker).toBe(runtimePath("bin/backend-broker.exe"));
   expect(runtime.files).toHaveLength(41); expect(runtime.files.at(-1)?.path).toBe("runtime-manifest.json"); expect(mkdir).not.toHaveBeenCalled(); expect(launch).not.toHaveBeenCalled();
+  await runtime.verifyBroker(signal()); expectNoOwnershipChanges();
+});
+it.each([undefined, "process-witness-v0", "PROCESS-WITNESS-V1", null])("rejects descriptor safety policy %s before staging or launch", async policy => {
+  if (policy === undefined) delete descriptor.safetyPolicy; else descriptor.safetyPolicy = policy;
+  saveDescriptor(); await expect(loadNativeBackendRuntime(config, signal())).rejects.toThrow("rejected"); expectNoOwnershipChanges();
+});
+it.each([
+  ["safetyPolicy", undefined], ["safetyPolicy", "process-witness-v0"], ["safetyPolicy", null],
+  ["schema", 2], ["protocol", 1], ["runtimePackageDigest", "0".repeat(64)],
+  ["files", []], ["files", [{ path: "bin/backend-broker.exe", sha256: "0".repeat(64) }]],
+])("rejects hash-linked build metadata mismatch at %s=%s before staging or launch", async (key, value) => {
+  if (value === undefined) delete buildManifest[key as string]; else buildManifest[key as string] = value;
+  saveBuildManifest(); await expect(loadNativeBackendRuntime(config, signal())).rejects.toThrow("rejected"); expectNoOwnershipChanges();
+});
+it("rejects an opaque legacy build manifest even with a matching descriptor hash", async () => {
+  const legacy = "synthetic build manifest"; put(runtimePath("build-manifest.json"), legacy);
+  (descriptor.buildManifest as Record<string, unknown>).sha256 = sha(legacy); saveDescriptor();
+  await expect(loadNativeBackendRuntime(config, signal())).rejects.toThrow(); expectNoOwnershipChanges();
+});
+it.each(["descriptor", "build-manifest", "coherently-relinked-metadata"])("rechecks admitted %s before staging and either launch path", async changed => {
+  const runtime = await loadNativeBackendRuntime(config, signal());
+  if (changed === "descriptor") { delete descriptor.safetyPolicy; saveDescriptor(); }
+  else {
+    buildManifest.safetyPolicy = "process-witness-v0";
+    if (changed === "coherently-relinked-metadata") saveBuildManifest();
+    else put(runtimePath("build-manifest.json"), JSON.stringify(buildManifest));
+  }
+  await expect(prepareNativeBackendResources(runtime, signal())).rejects.toThrow("rejected");
+  await expect(launchNativeBackend({ runtime, root: userPath("unstaged"), runNonce: "0".repeat(32), ownerNonce: "0".repeat(64), discardBeforeLaunch: async () => {} }, signal())).rejects.toThrow("rejected");
+  await expect(recoverNativeBackend(runtime, signal())).rejects.toThrow("rejected"); expectNoOwnershipChanges();
+});
+it("rejects a coherently replaced broker with a still-valid policy before staging and either launch path", async () => {
+  const runtime = await loadNativeBackendRuntime(config, signal());
+  const replacement = "synthetic replacement broker"; put(runtime.broker, replacement);
+  const broker = descriptor.broker as Record<string, unknown>;
+  broker.bytes = Buffer.byteLength(replacement); broker.sha256 = sha(replacement);
+  buildManifest.files = [{ path: broker.path, sha256: broker.sha256 }]; saveBuildManifest();
+  expect(descriptor.safetyPolicy).toBe("process-witness-v1"); expect(buildManifest.safetyPolicy).toBe("process-witness-v1");
+  expect(buildManifest.runtimePackageDigest).toBe(runtime.digest);
+  // Fresh admission accepts coherent trusted metadata; the captured runtime
+  // must retain its original anchors rather than silently adopt replacements.
+  await expect(loadNativeBackendRuntime(config, signal())).resolves.toMatchObject({ broker: runtime.broker, digest: runtime.digest });
+  await expect(prepareNativeBackendResources(runtime, signal())).rejects.toThrow("rejected");
+  await expect(launchNativeBackend({ runtime, root: userPath("unstaged"), runNonce: "0".repeat(32), ownerNonce: "0".repeat(64), discardBeforeLaunch: async () => {} }, signal())).rejects.toThrow("rejected");
+  await expect(recoverNativeBackend(runtime, signal())).rejects.toThrow("rejected"); expectNoOwnershipChanges();
 });
 it("rejects a descriptor that introduces a different executable, state path, or arguments", async () => {
   descriptor.arguments = ["untrusted"]; saveDescriptor(); await expect(loadNativeBackendRuntime(config, signal())).rejects.toThrow("rejected");

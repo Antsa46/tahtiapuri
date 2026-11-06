@@ -40,7 +40,7 @@ vastuurajan, lue myös toisen osapuolen sopimus.
 | Oikean 4B-painon CPU-lataus, koetiedoston lukitus ja malliprosessin elinkaari | [experiments/model-isolation-probe.md](experiments/model-isolation-probe.md) |
 | Pieni CPU-keskustelukonteksti, vastaus, peruutus ja omistajan sulku | [experiments/inference-isolation-probe.md](experiments/inference-isolation-probe.md) |
 | Electronin GUI-mainin ja Chromium-lasten eristysyhteensopivuus | [experiments/desktop-isolation-probe.md](experiments/desktop-isolation-probe.md) |
-| Havaintopaikkojen asetukset, viimeksi käytetty paikka ja observing-IPC | [architecture/observing-places.md](architecture/observing-places.md) |
+| Havaintopaikkojen asetukset, viimeksi käytetty paikka, observing-IPC ja siirron esivalmistelu | [architecture/observing-places.md](architecture/observing-places.md) |
 | Käyttäjätiedot, keskusteluhistoria ja mallin konteksti, poisto, välimuistit ja vienti/palautus | [architecture/data-lifecycle-plan.md](architecture/data-lifecycle-plan.md) |
 | Tähtilaskenta, UTC/paikallisaika, koordinaatit, magnitudit ja paikallinen katalogi | [architecture/sky-calculation.md](architecture/sky-calculation.md) |
 | Paikallisen tähtikartan projektio, kohdevalinta, aika/paikka ja kartan IPC | [architecture/sky-map.md](architecture/sky-map.md) |

@@ -1,82 +1,64 @@
 #pragma once
-#include "backend-resources.h"
-#include <cstring>
+#include "backend-journal-codec.h"
+#include "backend-process-witness.h"
+#include <utility>
 
 namespace backend_runtime {
-enum class Phase { Clean,Preparing,ProfileCreating,ProfileOwned,Prepared,Running,Closing,Terminating,Restoring,ProfileDeleted };
-inline const char* phaseName(Phase phase) {
-    switch(phase){case Phase::Clean:return "CLEAN";case Phase::Preparing:return "PREPARING";case Phase::ProfileCreating:return "PROFILE_CREATING";
-    case Phase::ProfileOwned:return "PROFILE_OWNED";case Phase::Prepared:return "PREPARED";case Phase::Running:return "RUNNING";case Phase::Closing:return "CLOSING";
-    case Phase::Terminating:return "TERMINATING";case Phase::Restoring:return "RESTORING";case Phase::ProfileDeleted:return "PROFILE_DELETED";}throw WinError("journal-phase",ERROR_INVALID_DATA);
-}
-inline Phase parsePhase(const std::string& text) {
-    for(auto p:{Phase::Clean,Phase::Preparing,Phase::ProfileCreating,Phase::ProfileOwned,Phase::Prepared,Phase::Running,Phase::Closing,Phase::Terminating,Phase::Restoring,Phase::ProfileDeleted})
-        if(text==phaseName(p))return p;throw WinError("journal-unknown-phase",ERROR_INVALID_DATA);
-}
-struct JournalRecord {
-    Phase phase=Phase::Clean;std::wstring run,job,profile,sid;std::string sessionIdentity,profileState="NONE";
+// Persistence and profile deletion are native-owned dependencies. Tests can
+// substitute them without touching a real control root or AppContainer profile.
+struct JournalApi {
+    virtual ~JournalApi()=default;
+    virtual void verify()=0;
+    virtual void write(const std::string& bytes)=0;
+    virtual void flush()=0;
+    virtual std::string read()=0;
+    virtual void deleteProfile(const std::wstring& profile)=0;
 };
-inline std::vector<std::string> journalLines(const std::string& value) {
-    if(value.empty()||value.size()>4096||value.back()!='\n')throw WinError("journal-shape",ERROR_INVALID_DATA);
-    std::vector<std::string> lines;size_t start=0;for(size_t at=0;at<value.size();++at){unsigned char c=value[at];if(c=='\n'){lines.push_back(value.substr(start,at-start));start=at+1;}else if(c<32||c>126)throw WinError("journal-character",ERROR_INVALID_DATA);}
-    return lines;
-}
-struct ProfileSid {
-    PSID value=nullptr;~ProfileSid(){if(value)FreeSid(value);}ProfileSid()=default;ProfileSid(const ProfileSid&)=delete;ProfileSid& operator=(const ProfileSid&)=delete;
+class WindowsJournalApi final:public JournalApi {
+    Ownership& ownership;std::unique_ptr<Pinned> file;
+public:
+    WindowsJournalApi(Ownership& owned,const std::string& initial):ownership(owned) {
+        auto path=owned.controlRoot+L"\\recovery.journal";if(owned.created)privateFileCreate(path,owned.owner,initial);
+        file=std::make_unique<Pinned>(path,false,GENERIC_READ|GENERIC_WRITE|READ_CONTROL|WRITE_DAC|WRITE_OWNER|FILE_READ_ATTRIBUTES,0);privatePolicy(*file,owned.owner);
+        if(!SetHandleInformation(file->handle.value,HANDLE_FLAG_INHERIT,0))throw WinError("journal-noninherited");
+        exactEntries(owned.controlRoot,{L"owner.lock",L"owner.marker",L"recovery.journal"});
+    }
+    void verify() override{ownership.verify();privatePolicy(*file,ownership.owner);}
+    void write(const std::string& bytes) override{
+        LARGE_INTEGER zero={};if(!SetFilePointerEx(file->handle.value,zero,nullptr,FILE_BEGIN))throw WinError("journal-rewind");
+        writeAll(file->handle.value,reinterpret_cast<const BYTE*>(bytes.data()),bytes.size());if(!SetEndOfFile(file->handle.value))throw WinError("journal-end");
+    }
+    void flush() override{if(!FlushFileBuffers(file->handle.value))throw WinError("journal-flush");}
+    std::string read() override{return readSmall(file->handle.value,4096);}
+    void deleteProfile(const std::wstring& profile) override{HRESULT result=DeleteAppContainerProfile(profile.c_str());if(FAILED(result))throw WinError("profile-delete",static_cast<DWORD>(result));}
 };
-inline void verifyProfileSid(const std::wstring& name,PSID sid) {
-    if(name.size()>64||!IsValidSid(sid))throw WinError("profile-sid",ERROR_INVALID_SID);
-    ProfileSid derived;HRESULT result=DeriveAppContainerSidFromAppContainerName(name.c_str(),&derived.value);
-    if(FAILED(result)||!derived.value||!EqualSid(sid,derived.value))throw WinError("profile-derived-sid",FAILED(result)?static_cast<DWORD>(result):ERROR_INVALID_SID);
-    SID_IDENTIFIER_AUTHORITY authority=SECURITY_APP_PACKAGE_AUTHORITY;
-    if(std::memcmp(GetSidIdentifierAuthority(sid),&authority,sizeof(authority))!=0||*GetSidSubAuthorityCount(sid)!=8||*GetSidSubAuthority(sid,0)!=SECURITY_APP_PACKAGE_BASE_RID)
-        throw WinError("profile-sid-shape",ERROR_INVALID_SID);
-}
 class Journal {
-    Ownership& ownership;std::unique_ptr<Pinned> file;JournalRecord record;bool blocked=false;
-    std::string serialize(const JournalRecord& r) const {
-        auto optional=[](const std::wstring& text){return text.empty()?std::string("-"):narrow(text);};
-        std::string body="TAHTIAPURI_BACKEND_JOURNAL_V1\n"+std::string(runtimePackageDigest)+"\n"+narrow(ownership.owner.text)+"\n"+
-            idText(ownership.state->id)+"\n"+idText(ownership.data->id)+"\nOWNER_SYSTEM_PROTECTED_MEDIUM_V1\nCREATION_JOB_LIST_GLOBAL_V1\n"+
-            phaseName(r.phase)+"\n"+optional(r.run)+"\n"+optional(r.job)+"\n"+optional(r.profile)+"\n"+(r.sessionIdentity.empty()?"-":r.sessionIdentity)+"\n"+r.profileState+"\n"+optional(r.sid)+"\n";
-        return body+hashBytes(reinterpret_cast<const BYTE*>(body.data()),body.size())+"\n";
-    }
-    void validate(const JournalRecord& r) const {
-        if(r.phase==Phase::Clean){if(!r.run.empty()||!r.job.empty()||!r.profile.empty()||!r.sid.empty()||!r.sessionIdentity.empty()||r.profileState!="NONE")throw WinError("journal-clean-fields",ERROR_INVALID_DATA);return;}
-        if(!lowerHex(r.run,32)||!lowerHex(widen(r.sessionIdentity),24)||r.job!=jobName(ownership.owner,r.run)||r.profile!=profileName(ownership.owner,r.run)||r.profile.size()>64)throw WinError("journal-owned-names",ERROR_INVALID_DATA);
-        if(r.profileState!="NONE"&&r.profileState!="CREATING"&&r.profileState!="OWNED"&&r.profileState!="DELETED")throw WinError("journal-profile-state",ERROR_INVALID_DATA);
-        if(r.profileState=="OWNED"||r.profileState=="DELETED"){
-            LocalMemory sid;if(!ConvertStringSidToSidW(r.sid.c_str(),&sid.value))throw WinError("journal-profile-sid");verifyProfileSid(r.profile,sid.value);
-        }else if(!r.sid.empty())throw WinError("journal-unowned-sid",ERROR_INVALID_DATA);
-        if((r.phase==Phase::Preparing&&r.profileState!="NONE")||(r.phase==Phase::ProfileCreating&&r.profileState!="CREATING")||
-            (r.phase==Phase::ProfileOwned&&r.profileState!="OWNED")||(r.phase==Phase::ProfileDeleted&&r.profileState!="DELETED")||
-            ((r.phase==Phase::Prepared||r.phase==Phase::Running||r.phase==Phase::Closing)&&r.profileState!="OWNED"))throw WinError("journal-phase-profile",ERROR_INVALID_DATA);
-    }
+    Ownership* ownership=nullptr;JournalContext context;std::unique_ptr<WindowsJournalApi> windows;JournalApi* api=nullptr;JournalRecord record;bool blocked=false;
+    void requireUsable() const{if(blocked)throw WinError("journal-blocked",ERROR_INVALID_STATE);}
     void commit(const JournalRecord& next) {
-        if(blocked)throw WinError("journal-blocked",ERROR_INVALID_STATE);
-        try {validate(next);ownership.verify();privatePolicy(*file,ownership.owner);auto bytes=serialize(next);writeFile(file->handle.value,bytes);
-            if(readSmall(file->handle.value,4096)!=bytes)throw WinError("journal-write-readback",ERROR_INVALID_DATA);record=next;
+        requireUsable();
+        try {auto bytes=serializeJournal(next,context);api->verify();api->write(bytes);api->flush();
+            if(api->read()!=bytes)throw WinError("journal-write-readback",ERROR_INVALID_DATA);record=next;
         }catch(...){blocked=true;throw;}
     }
 public:
-    explicit Journal(Ownership& owned):ownership(owned) {
-        auto path=owned.controlRoot+L"\\recovery.journal";if(owned.created)privateFileCreate(path,owned.owner,serialize(record));
-        file=std::make_unique<Pinned>(path,false,GENERIC_READ|GENERIC_WRITE|READ_CONTROL|WRITE_DAC|WRITE_OWNER|FILE_READ_ATTRIBUTES,0);privatePolicy(*file,owned.owner);
-        if(!SetHandleInformation(file->handle.value,HANDLE_FLAG_INHERIT,0))throw WinError("journal-noninherited");
-        auto bytes=readSmall(file->handle.value,4096);auto lines=journalLines(bytes);if(lines.size()!=15)throw WinError("journal-field-count",ERROR_INVALID_DATA);
-        auto optional=[](const std::string& text){return text=="-"?std::wstring():widen(text);};
-        record.phase=parsePhase(lines[7]);record.run=optional(lines[8]);record.job=optional(lines[9]);record.profile=optional(lines[10]);record.sessionIdentity=lines[11]=="-"?"":lines[11];record.profileState=lines[12];record.sid=optional(lines[13]);validate(record);
-        if(serialize(record)!=bytes)throw WinError("journal-authentication",ERROR_INVALID_DATA);
-        exactEntries(owned.controlRoot,{L"owner.lock",L"owner.marker",L"recovery.journal"});
+    explicit Journal(Ownership& owned):ownership(&owned),context{runtimePackageDigest,narrow(owned.owner.text),idText(owned.state->id),idText(owned.data->id)} {
+        windows=std::make_unique<WindowsJournalApi>(owned,serializeJournal(record,context));api=windows.get();record=parseJournal(api->read(),context);
     }
-    const JournalRecord& current() const{if(blocked)throw WinError("journal-blocked",ERROR_INVALID_STATE);return record;}
+    Journal(const JournalContext& expected,JournalApi& native):context(expected),api(&native){api->verify();record=parseJournal(api->read(),context);}
+    const JournalRecord& current() const{requireUsable();return record;}
+    void requireRecorded() const{requireUsable();if(record.phase!=Phase::Prepared||record.processState!=ProcessState::Recorded)throw WinError("journal-process-unrecorded",ERROR_INVALID_STATE);}
+    void creatingProcess(){requireUsable();if(record.phase!=Phase::Prepared||record.profileState!="OWNED"||record.processState!=ProcessState::None)throw WinError("journal-process-create-order",ERROR_INVALID_STATE);
+        auto next=record;next.processState=ProcessState::Creating;commit(next);}
+    void recordProcess(DWORD pid,uint64_t creation){requireUsable();if(record.phase!=Phase::Prepared||record.processState!=ProcessState::Creating)throw WinError("journal-process-record-order",ERROR_INVALID_STATE);
+        auto next=record;next.processState=ProcessState::Recorded;next.processPid=pid;next.processCreationTime=creation;commit(next);}
     void begin(const std::wstring& run) {
-        if(record.phase!=Phase::Clean)throw WinError("journal-needs-recover",ERROR_INVALID_STATE);
-        JournalRecord next;next.phase=Phase::Preparing;next.run=run;next.job=jobName(ownership.owner,run);next.profile=profileName(ownership.owner,run);
-        Pinned session(sessionPath(ownership.stateRoot,run),true);requireOwner(session.handle.value,ownership.owner);next.sessionIdentity=idText(session.id);commit(next);
+        requireUsable();if(!ownership||record.phase!=Phase::Clean)throw WinError("journal-needs-recover",ERROR_INVALID_STATE);
+        JournalRecord next;next.phase=Phase::Preparing;next.run=run;next.job=jobName(ownership->owner,run);next.profile=profileName(ownership->owner,run);
+        Pinned session(sessionPath(ownership->stateRoot,run),true);requireOwner(session.handle.value,ownership->owner);next.sessionIdentity=idText(session.id);commit(next);
     }
     std::unique_ptr<ProfileSid> createProfile() {
-        if(record.phase!=Phase::Preparing||record.profileState!="NONE")throw WinError("profile-create-phase",ERROR_INVALID_STATE);
+        requireUsable();if(record.phase!=Phase::Preparing||record.profileState!="NONE")throw WinError("profile-create-phase",ERROR_INVALID_STATE);
         auto next=record;next.phase=Phase::ProfileCreating;next.profileState="CREATING";commit(next);
         auto sid=std::make_unique<ProfileSid>();HRESULT result=CreateAppContainerProfile(next.profile.c_str(),L"Tahtiapuri backend",L"Owned restricted backend worker",nullptr,0,&sid->value);
         // Failure or a crash before durable OWNED is intentionally ambiguous and blocks recovery.
@@ -84,6 +66,7 @@ public:
         next.phase=Phase::ProfileOwned;next.profileState="OWNED";next.sid=sidText(sid->value);commit(next);return sid;
     }
     void advance(Phase phase) {
+        requireUsable();
         bool valid=(phase==Phase::Prepared&&record.phase==Phase::ProfileOwned)||(phase==Phase::Running&&record.phase==Phase::Prepared)||
             (phase==Phase::Closing&&record.phase==Phase::Running)||(phase==Phase::Terminating&&record.phase!=Phase::Clean&&record.profileState!="CREATING")||
             (phase==Phase::Restoring&&record.phase==Phase::Terminating);
@@ -100,12 +83,13 @@ public:
         auto next=record;
         if(next.profileState=="OWNED"){
             LocalMemory sid;if(!ConvertStringSidToSidW(next.sid.c_str(),&sid.value))throw WinError("profile-delete-sid");verifyProfileSid(next.profile,sid.value);
-            HRESULT result=DeleteAppContainerProfile(next.profile.c_str());if(FAILED(result))throw WinError("profile-delete",static_cast<DWORD>(result));
+            api->deleteProfile(next.profile);
             next.profileState="DELETED";
         }
         if(next.profileState=="DELETED")next.phase=Phase::ProfileDeleted;commit(next);
     }
     void clean() {
+        requireUsable();
         if((record.phase!=Phase::ProfileDeleted&&record.phase!=Phase::Restoring)||(record.profileState!="NONE"&&record.profileState!="DELETED"))throw WinError("journal-clean-order",ERROR_INVALID_STATE);
         commit(JournalRecord{});
     }
@@ -154,31 +138,75 @@ public:
     DWORD active() const {
         if(absent)return 0;JOBOBJECT_BASIC_ACCOUNTING_INFORMATION stats={};if(!QueryInformationJobObject(handle.value,JobObjectBasicAccountingInformation,&stats,sizeof(stats),nullptr))throw WinError("job-active-query");return stats.ActiveProcesses;
     }
-    void terminateAndWait(DWORD timeout=5000) {
-        if(absent)return;verifyJobSecurity(handle.value,owner);verifyJobLimits(handle.value);
+    void terminateAndWait(TerminationBudget& budget) {
+        if(absent)throw WinError("job-termination-handle-missing",ERROR_INVALID_STATE);
+        budget.check();verifyJobSecurity(handle.value,owner);budget.check();verifyJobLimits(handle.value);budget.check();
         // An open recovery handle prevents last-handle death; explicit terminate is required.
-        if(!TerminateJobObject(handle.value,42))throw WinError("job-terminate");auto began=now();
-        for(;;){if(active()==0)return;if(now()-began>=timeout)throw WinError("job-empty-timeout",ERROR_TIMEOUT);Sleep(10);}
+        if(!TerminateJobObject(handle.value,42))throw WinError("job-terminate");budget.check();
+        for(;;){const auto count=active();budget.check();if(count==0)return;budget.pause();}
     }
 };
 enum class RecoveryStage { JobTermination,Restore };
+using RecoveryNotify=std::function<void(RecoveryStage,uint64_t)>;
+enum class CleanupStep { JobEmpty,Restored,ProfileDeleted,SessionRemoved,Clean };
+using CleanupNotify=std::function<void(CleanupStep)>;
+struct RecoveryApi {
+    virtual ~RecoveryApi()=default;
+    virtual ProcessWitnessApi& witness()=0;
+    virtual void verify()=0;
+    virtual void baseline()=0;
+    // true is an opened, authenticated exact Job; false is FILE_NOT_FOUND only.
+    virtual bool openJob(const JournalRecord& record)=0;
+    virtual void terminateJob(TerminationBudget& budget)=0;
+    virtual void restore()=0;
+    virtual void removeSession(const JournalRecord& record)=0;
+};
+class WindowsRecoveryApi final:public RecoveryApi {
+    Ownership& ownership;Resources* resources;NamedJob* held;std::unique_ptr<NamedJob> recovered;
+public:
+    WindowsRecoveryApi(Ownership& owned,Resources* data=nullptr,NamedJob* current=nullptr):ownership(owned),resources(data),held(current){}
+    ProcessWitnessApi& witness() override{return windowsProcessWitnessApi();}
+    void verify() override{ownership.verify();}
+    void baseline() override{ResourceTree clean;clean.walk(ownership.dataRoot,ownership.owner);clean.baseline(ownership.owner,false);}
+    bool openJob(const JournalRecord& record) override{recovered=std::make_unique<NamedJob>(ownership.owner,record.run,true);held=recovered.get();return !held->absent;}
+    void terminateJob(TerminationBudget& budget) override{if(!held)throw WinError("cleanup-job-creation-unproven",ERROR_INVALID_STATE);held->terminateAndWait(budget);}
+    void restore() override{if(resources)resources->closePins();Resources::restorePersistent(ownership);}
+    void removeSession(const JournalRecord& record) override{Resources::removeSession(ownership,record.run,record.sessionIdentity);}
+};
+inline void cleanupAfterWitness(Journal& journal,const JournalRecord& before,RecoveryApi& api,const RecoveryNotify& notify={},const CleanupNotify& progress={}) {
+    // A proof is local to this call. There is deliberately no journal proof bit.
+    // A poisoned journal fails here before restore, profile/session deletion or CLEAN.
+    journal.current();if(notify)notify(RecoveryStage::Restore,api.witness().tick()+15000);
+    journal.advance(Phase::Terminating);journal.advance(Phase::Restoring);api.restore();if(progress)progress(CleanupStep::Restored);
+    journal.deleteProfile();if(progress)progress(CleanupStep::ProfileDeleted);
+    api.removeSession(before);if(progress)progress(CleanupStep::SessionRemoved);
+    journal.clean();if(progress)progress(CleanupStep::Clean);
+}
+inline void recoverOwned(Journal& journal,RecoveryApi& api,const RecoveryNotify& notify={}) {
+    api.verify();const auto before=journal.current();
+    if(before.phase==Phase::Clean){if(notify)notify(RecoveryStage::Restore,api.witness().tick()+15000);api.baseline();return;}
+    if(before.profileState=="CREATING")throw WinError("recover-profile-ambiguous",ERROR_INVALID_STATE);
+    TerminationBudget budget(api.witness());if(notify)notify(RecoveryStage::JobTermination,budget.deadline());budget.check();
+    const bool found=api.openJob(before);budget.check();
+    if(found)api.terminateJob(budget);
+    else if(before.processState==ProcessState::Creating)throw WinError("recover-process-ambiguous",ERROR_INVALID_STATE);
+    else if(before.processState==ProcessState::Recorded)proveRecordedProcessExit(api.witness(),budget,before.processPid,before.processCreationTime);
+    budget.check();cleanupAfterWitness(journal,before,api,notify);
+}
+inline void cleanupCurrent(Journal& journal,RecoveryApi& api,const RecoveryNotify& notify={},const CleanupNotify& progress={}) {
+    TerminationBudget budget(api.witness());if(notify)notify(RecoveryStage::JobTermination,budget.deadline());budget.check();
+    // Always attempt bounded termination of the live broker's verified Job,
+    // even when a preceding commit poisoned Journal. No journal advance precedes it.
+    api.terminateJob(budget);budget.check();if(progress)progress(CleanupStep::JobEmpty);
+    const auto before=journal.current();cleanupAfterWitness(journal,before,api,notify,progress);
+}
 struct Recovery {
     Ownership& ownership;Journal& journal;
     Recovery(Ownership& owned,Journal& log):ownership(owned),journal(log){}
-    void run(const std::function<void(RecoveryStage)>& notify={}) {
-        ownership.verify();const auto before=journal.current();
-        // This trusted callback only publishes the broker's supervisor phase. It
-        // must not reenter or mutate Journal; no journal reference is passed to it.
-        if(before.phase==Phase::Clean){if(notify)notify(RecoveryStage::Restore);ResourceTree clean;clean.walk(ownership.dataRoot,ownership.owner);clean.baseline(ownership.owner,false);return;}
-        if(before.profileState=="CREATING")throw WinError("recover-profile-ambiguous",ERROR_INVALID_STATE);
-        // Journal validation authenticates the exact Global name, data identities and
-        // creation-time Job-list contract under the exclusive control lock. Therefore
-        // FILE_NOT_FOUND alone is accepted here only together with those prerequisites.
-        if(notify)notify(RecoveryStage::JobTermination);
-        NamedJob job(ownership.owner,before.run,true);job.terminateAndWait();
-        if(notify)notify(RecoveryStage::Restore);
-        journal.advance(Phase::Terminating);journal.advance(Phase::Restoring);Resources::restorePersistent(ownership);
-        journal.deleteProfile();Resources::removeSession(ownership,before.run,before.sessionIdentity);journal.clean();
-    }
+    void run(const RecoveryNotify& notify={}){WindowsRecoveryApi api(ownership);recoverOwned(journal,api,notify);}
 };
+inline void createRecordedProcess(Journal& journal,const std::function<void()>& create,const std::function<std::pair<DWORD,uint64_t>()>& identity) {
+    journal.creatingProcess();create();const auto process=identity();journal.recordProcess(process.first,process.second);
+}
+inline void resumeRecordedProcess(Journal& journal,const std::function<void()>& resume){journal.requireRecorded();resume();}
 }

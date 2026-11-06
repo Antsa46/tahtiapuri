@@ -50,7 +50,7 @@ Lue tehtävän mukaan:
   [rajattu 4B-latauskoe](docs/experiments/model-isolation-probe.md) sekä
   [rajattu keskustelukonteksti ja tekstintuotto](docs/experiments/inference-isolation-probe.md) sekä
   [Electronin GUI-eristyskoe](docs/experiments/desktop-isolation-probe.md)
-- havaintopaikkojen asetukset, tallennus tai observing-IPC:
+- havaintopaikkojen asetukset, tallennus, observing-IPC tai siirto natiivibackendiin:
   [nimetyt havaintopaikat](docs/architecture/observing-places.md)
 - käyttäjätieto, historian säilytys ja poisto, välimuistit tai vienti/palautus:
   [tiedon elinkaari](docs/architecture/data-lifecycle-plan.md)

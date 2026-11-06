@@ -118,7 +118,7 @@ int wmain(int argc,wchar_t** argv){
             ownership=std::make_unique<Ownership>(stateRoot);failure.check();journal=std::make_unique<Journal>(*ownership);
             if(recover)receipt.run=journal->current().run;
             // Recovery itself authenticates the journal and exact Job identity.
-            Recovery(*ownership,*journal).run([&](RecoveryStage stage){watch.deadline.store(now()+(stage==RecoveryStage::JobTermination?5000:15000));});failure.check();
+            Recovery(*ownership,*journal).run([&](RecoveryStage,uint64_t deadline){watch.deadline.store(deadline);});failure.check();
             if(recover){receipt.jobEmpty=true;receipt.restored=true;receipt.profileDeleted=true;receipt.sessionRemoved=true;receipt.journalClean=true;normal=true;}
             else{
                 watch.deadline.store(now()+30000);resources=std::make_unique<Resources>(*ownership,run);failure.check();journal->begin(run);began=true;
@@ -136,19 +136,22 @@ int wmain(int argc,wchar_t** argv){
                 canonicalPath(resources->nodePath);canonicalPath(resources->entryPath);canonicalPath(ownership->dataRoot);
                 auto command=quote(resources->nodePath)+L" --preserve-symlinks --preserve-symlinks-main "+quote(resources->entryPath)+L" "+quote(ownership->dataRoot)+L" "+nonceText(childNonce);
                 auto env=environment(*resources);PROCESS_INFORMATION process={};failure.check();
-                if(!CreateProcessW(resources->nodePath.c_str(),command.data(),nullptr,nullptr,TRUE,EXTENDED_STARTUPINFO_PRESENT|CREATE_UNICODE_ENVIRONMENT|CREATE_SUSPENDED|DETACHED_PROCESS,
-                    env.data(),resources->packageRoot.c_str(),&startup.StartupInfo,&process))throw WinError("child-create");
-                child.value=process.hProcess;initialThread.value=process.hThread;receipt.childCreated=true;closeHandle(childRead);closeHandle(childWrite);closeHandle(errorWrite);
+                createRecordedProcess(*journal,[&]{
+                    if(!CreateProcessW(resources->nodePath.c_str(),command.data(),nullptr,nullptr,TRUE,EXTENDED_STARTUPINFO_PRESENT|CREATE_UNICODE_ENVIRONMENT|CREATE_SUSPENDED|DETACHED_PROCESS,
+                        env.data(),resources->packageRoot.c_str(),&startup.StartupInfo,&process))throw WinError("child-create");
+                    child.value=process.hProcess;initialThread.value=process.hThread;receipt.childCreated=true;
+                },[&]{return std::make_pair(process.dwProcessId,windowsProcessWitnessApi().creationTime(child.value));});
+                closeHandle(childRead);closeHandle(childWrite);closeHandle(errorWrite);
                 verifyJobSecurity(job->handle.value,ownership->owner);verifyJobLimits(job->handle.value);BOOL member=FALSE;DWORD_PTR affinity=0,system=0;
                 if(!IsProcessInJob(child.value,job->handle.value,&member)||!member||job->active()!=1||!GetProcessAffinityMask(child.value,&affinity,&system)||affinity!=1||GetPriorityClass(child.value)!=BELOW_NORMAL_PRIORITY_CLASS)throw WinError("child-job-readback",ERROR_ACCESS_DENIED);
                 const auto token=inspectToken(child.value);verifyCapability(child.value);
                 if(!token.app||token.integrity!=SECURITY_MANDATORY_LOW_RID||token.sid!=sidText(profile->value)||token.capabilities!=1||
                     (token.lpac!=1&&!(token.lpac==-1&&token.lpacQueryError==ERROR_INVALID_PARAMETER&&token.lpacQueryBytes==0)))throw WinError("child-token-readback",ERROR_ACCESS_DENIED);
                 pipes.noConsole(process.dwProcessId);receipt.consoleBefore=true;failure.check();
-                prepared.store(true);watch.lease.store(now());watch.deadline.store(0);
+                journal->requireRecorded();prepared.store(true);watch.lease.store(now());watch.deadline.store(0);
                 output->json(Prepared,"{\"pid\":"+std::to_string(process.dwProcessId)+",\"childNonce\":\""+narrow(nonceText(childNonce))+"\",\"requestedPolicy\":\"lpac-registryRead\",\"creationMode\":\"detached-backend\",\"appContainer\":true,\"lpac\":"+jsonFlag(token.lpac)+",\"lpacQueryError\":"+std::to_string(token.lpacQueryError)+",\"lpacQueryBytes\":"+std::to_string(token.lpacQueryBytes)+",\"capabilitySids\":[{\"sid\":\""+narrow(registrySid)+"\",\"attributes\":4}],\"integrity\":4096,\"job\":true,\"activeProcessLimit\":1,\"affinity\":1,\"priority\":\"BelowNormal\",\"processMemoryBytes\":536870912,\"aclsVerified\":true,\"consoleAbsent\":true,\"networkVerified\":false}");
                 while(!startRequested.load()){failure.check();Sleep(10);}failure.check();
-                if(ResumeThread(initialThread.value)==static_cast<DWORD>(-1))throw WinError("child-resume");receipt.childResumed=true;
+                resumeRecordedProcess(*journal,[&]{if(ResumeThread(initialThread.value)==static_cast<DWORD>(-1))throw WinError("child-resume");receipt.childResumed=true;});
                 started.store(true);output->send(Started);journal->advance(Phase::Running);failure.check();
                 inputWriter=std::make_unique<IoTask>(failure,[&,childNonce]{Sequence sequence;Record record;while(input.take(record)){
                     if(record.barrier){closeHandle(parentWrite);writerClosed.store(true);input.complete(record);return;}
@@ -188,14 +191,12 @@ int wmain(int argc,wchar_t** argv){
         ownerReader.reset();inputWriter.reset();childReader.reset();errorReader.reset();closeHandle(parentWrite);closeHandle(parentRead);closeHandle(errorRead);closeHandle(initialThread);
         if(!recover&&began&&journal&&ownership){
             try{
-                // An ambiguous or failed journal write makes advance throw before
-                // any destructive restore/profile/session operation is attempted.
-                if(!job)throw WinError("cleanup-job-creation-unproven",ERROR_INVALID_STATE);
-                watch.deadline.store(now()+5000);journal->advance(Phase::Terminating);job->terminateAndWait();
-                receipt.jobEmpty=true;if(child.value&&!GetExitCodeProcess(child.value,&receipt.exitCode))throw WinError("child-final-exit");
-                watch.deadline.store(now()+15000);journal->advance(Phase::Restoring);resources->closePins();Resources::restorePersistent(*ownership);receipt.restored=true;
-                journal->deleteProfile();receipt.profileDeleted=true;Resources::removeSession(*ownership,run,journal->current().sessionIdentity);receipt.sessionRemoved=true;
-                journal->clean();receipt.journalClean=true;
+                WindowsRecoveryApi cleanup(*ownership,resources.get(),job.get());
+                cleanupCurrent(*journal,cleanup,[&](RecoveryStage,uint64_t deadline){watch.deadline.store(deadline);},[&](CleanupStep step){
+                    if(step==CleanupStep::JobEmpty){receipt.jobEmpty=true;if(child.value&&!GetExitCodeProcess(child.value,&receipt.exitCode))throw WinError("child-final-exit");}
+                    else if(step==CleanupStep::Restored)receipt.restored=true;else if(step==CleanupStep::ProfileDeleted)receipt.profileDeleted=true;
+                    else if(step==CleanupStep::SessionRemoved)receipt.sessionRemoved=true;else if(step==CleanupStep::Clean)receipt.journalClean=true;
+                });
             }catch(const WinError& error){cleanupFailed=true;failure.fail("cleanup",error.code);}catch(...){cleanupFailed=true;failure.fail("cleanup",ERROR_UNHANDLED_EXCEPTION);}
         }
         if(!receipt.journalClean)cleanupFailed=true;

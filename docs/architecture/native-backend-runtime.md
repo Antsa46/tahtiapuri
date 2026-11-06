@@ -38,6 +38,9 @@ Nykyinen observing-aineisto siirretään hallitusti ennen tämän polun valintaa
 validoitu sisältö, revisio ja aktiivinen paikka säilyvät. Lähde säilytetään,
 kunnes uusi tallennus on varmennettu. Muutto ei käynnisty koeruntimen avulla
 käyttäjän oikealle aineistolle ilman toteutettua ja testattua sovelluspolkua.
+Puhdas, käynnistyksestä erillinen
+[siirtosuunnittelija](observing-places.md#natiivibackendiin-siirtymisen-esivalmistelu)
+on tätä valmisteleva komponentti; se ei toteuta tiedosto-operaatioita.
 
 ## Windows-polkujen esitykset ja käynnistysrajat
 
@@ -76,6 +79,13 @@ Sama rakennus tuottaa manifestin ja brokeriin upotetut polku-/koko-/SHA-pinnit.
 Muokattava manifesti ei yksin ole luottamusankkuri. Tiedostot tarkistetaan
 ja pidetään pinneissä ennen työntekijän resumea.
 
+Descriptorin ja build-manifestin yhteensopivuusmerkintä on
+`safetyPolicy: "process-witness-v1"`. Main vaatii sen ennen stagingia ja
+run/recover-käynnistystä. Ensimmäisessä hyväksytyssä latauksessa sidotut
+descriptor-, build-manifesti- ja broker-hashit säilyvät samoina jokaisessa
+uudessa valmistelu- ja käynnistystarkistuksessa. Merkintä kuvaa luotetun
+build-ketjun turvasopimuksen versiota.
+
 LPAC + registryRead on nimetyn Node-ehdokkaan politiikka. Capability on
 laaja eksplisiittinen poikkeus, ei yksittäisen rekisteriavaimen grantti.
 Token, AppContainer-SID, capabilityjoukko, integrity ja Job luetaan takaisin.
@@ -91,6 +101,15 @@ Vain kolme nimettyä stdio-kahvaa periytyy. Ympäristö, Node-optiot ja entry
 ovat kiinteät. APPDATA, LOCALAPPDATA ja USERPROFILE osoittavat istunnon
 omaan scratch-hakemistoon kuten TEMP ja TMP; käyttäjän oikeita
 profiilihakemistoja ei peritä. Käynnistys on DETACHED eikä konsoli saa ilmestyä resumeen.
+
+## Toteutuksen ja näytön versiot
+
+T09r:n ensimmäinen toiminnallinen koe ja T09s:n pitkä istunto käyttivät
+journal V1:tä. Niissä todennettiin käynnistys, taivas- tai tilakyselyt ja
+normaali sulku ilman kielimallia. Näyttö säilyy omana rajattuna
+kokonaisuutenaan. Alla oleva journal V2 ja
+prosessitodiste ovat T09s:n toteutussopimus; niiden lähde-, katkaisu- ja
+palautuskokeet vaaditaan ennen kaatumispalautuksen hyväksymistä.
 
 ## Elinkaari ja palautus
 
@@ -109,6 +128,19 @@ DACL-/integrity-peruspolitiikka ja vaihe. Profiilin todettu omistus kirjataan
 erikseen ennen grantteja. CLEAN on pysyvä tietue; puuttuvaa journalia ei
 nimetä olemassa olevan juuren puhtaudeksi.
 
+Journal V2 on suljettu 18 rivin ASCII/LF-esitys nykyisen 4096 tavun
+rajan sisällä. Nykyisten omistus-, juuri-, paketti- ja profiilikenttien
+lisäksi se tallentaa prosessitilan NONE/CREATING/RECORDED, PID:n ja koko
+GetProcessTimes-luontiajan FILETIME-arvon. PID on DWORD-alueen
+kanoninen desimaaliluku; luontiaika säilyy 16 merkin heksajonona.
+
+CREATING kirjoitetaan, flushataan ja luetaan takaisin ennen ainoaa
+suspendattua CreateProcessW-yritystä. RECORDED ja palautetusta kahvasta
+luettu PID/creationTime vahvistetaan pysyvästi ennen ulkoista PREPAREDia,
+STARTia ja ResumeThreadia. Virhe ei palauta tilaa NONEksi eikä salli uutta
+luontiyritystä. Myrkytetty journal estää Resumen, palautusmuutokset ja
+CLEANin; hallussa oleva varmennettu Job päätetään silti rajatusti.
+
 Normaali sulku lopettaa sisäänoton, käsittelee shutdown-vastauksen ja
 sulkee lapsen syötteen järjestyksessä. Tarvittaessa Job päätetään. Sen
 nollajäsenyys varmistetaan, data-DACL:t ja integrity palautetaan ja luetaan
@@ -122,13 +154,28 @@ olevan Jobin omistus, DACL ja rajat tarkistetaan ennen terminatea ja
 ActiveProcesses=0-pollausta. Avattu Job-kahva estää last-handle-tapahtuman;
 recover ei odota sen yksin tappavan työntekijää.
 
-Jobin todellinen puuttuminen voi osoittaa lapsen poistumisen vain yhdessä
-suojatun etukäteistietueen, saman Global-nimiavaruuden, yksinomistuksen ja
-atomisen creation-time Job-ehdon kanssa. Tämä kattaa myös kaatumisen ennen
-PID:n journalointia. Puuttuva PID, Job-nimi, RESULT tai journal yksin ei
-ole näyttö. Väärä identiteetti, access denied tai tuntematon tila estää
-palautuksen. Uudelleen validoidut datajälkeläiset eivät saa johtaa juuren
-ulkopuolelle. Turvatonta puuta ei seurata tai poisteta korjauksena.
+Job-nimen puuttuminen ei ole päättymistodiste: väliaikaisen olion nimi
+voi poistua ennen olion viimeisten kernel-viitteiden vapautumista.
+Puuttuvan Jobin haarassa V2:n NONE todistaa luontipolun perusteella, ettei
+lasta luotu. CREATING jää epävarmaksi ja estää palautuksen. RECORDED vaatii
+kirjatun PID:n sekä creationTimen kanssa täsmäävän prosessikahvan ja
+WAIT_OBJECT_0-tuloksen. Query-virhe, identiteettiero ja timeout estävät.
+Prosessikysely pyytää vain SYNCHRONIZE- ja QUERY_LIMITED_INFORMATION-oikeudet.
+
+OpenProcessin virhe ei yksin osoita poissaoloa. Sen jälkeen sallitaan yksi
+onnistunut TH32CS_SNAPPROCESS-snapshot: täydellinen enumeraatio päättyy
+`ERROR_NO_MORE_FILES`-päätökseen, palauttava broker löytyy ja kirjattu PID puuttuu.
+Puuttuva oma PID, tyhjä/epätäydellinen tulos tai virhe estää palautuksen.
+Muiden prosessien nimiä tai tietoja ei kerätä raporttiin. Todiste käyttää
+koko ajan samaa viiden sekunnin budjettia; haarat eivät aloita sitä uudelleen.
+Yhden prosessin todiste perustuu lisäksi muuttumattomaan yhden työntekijän,
+creation-time Jobin ja breakaway-kiellon kokonaisuuteen.
+
+Vasta päättymistodiste sallii oikeuksien palautuksen, profiilin ja istunnon
+poiston sekä CLEANin. Vanha journal-versio estetään myös CLEANina; migraatio
+ja pakettidigestin vaihdon yhteensopivuus ovat erillinen avoin portti.
+Uudelleen validoidut datajälkeläiset eivät saa johtaa juuren ulkopuolelle.
+Turvatonta puuta ei seurata tai poisteta korjauksena.
 
 Profiilin luomisen ja sen pysyvän onnistumismerkinnän välinen kaatuminen
 voi jättää omistuksen epäselväksi. Ensimmäinen toteutus estää tämän
@@ -201,6 +248,9 @@ kunnes vastaava näyttö saadaan. Unit- tai probe-tulos ei vaihda oletuspolkua.
 ## Ensisijaiset Windows-lähteet
 
 - [Jobin elinkaari ja KILL_ON_JOB_CLOSE](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects)
+- [Kernel-olion nimi, kahvalaskuri ja viitelaskuri](https://learn.microsoft.com/en-us/windows-hardware/drivers/kernel/life-cycle-of-an-object)
+- [Prosessin asynkroninen päättäminen ja odotus](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-terminateprocess)
+- [Koko prosessilistan snapshot](https://learn.microsoft.com/en-us/windows/win32/api/tlhelp32/nf-tlhelp32-createtoolhelp32snapshot)
 - [Creation-time Job-lista](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute)
 - [Global- ja istuntonimiavaruudet](https://learn.microsoft.com/en-us/windows/win32/termserv/kernel-object-namespaces)
 - [Profiilin luonti](https://learn.microsoft.com/en-us/windows/win32/api/userenv/nf-userenv-createappcontainerprofile)

@@ -137,3 +137,21 @@ Uusi luku selvittää tallennetun tilan ennen seuraavaa muokkausta.
 Vioittuneen tiedoston korjaus ei sisälly UI:hin, mutta tiedosto säilytetään
 ja onnistuneen korjauksen jälkeen lukua voi yrittää uudelleen. Käyttäjätietojen
 vienti/palautus, keskusteluhistoria ja sääasetusten tallennus pysyvät erillisinä työpaketteina.
+
+## Natiivibackendiin siirtymisen esivalmistelu
+
+Issue #10:n `observing-migration.ts` sisältää puhtaan siirtosuunnittelijan.
+Se saa lähteen ja kohteen tavusnapshotit, tarkistaa tämän dokumentin v1-muodon
+ja palauttaa copy-, already-present-, no-source- tai blocked-suunnitelman.
+Puuttuva tiedosto erotetaan vioittuneesta. Valmis kopiosuunnitelma omistaa
+omat tavunsa ja säilyttää alkuperäisen revision, tunnisteet, järjestyksen,
+aktiivivalinnan ja raakamuotoilun. Jo olemassa oleva kohde hyväksytään vain,
+kun kelvolliset tavut ovat samat; ristiriitaa ei yhdistetä tai ratkaista
+revision suuruudella.
+
+Suunnittelijan 13 yksikkötestiä ja desktopin tyyppitarkistus läpäisivät.
+Suunnitelma ei lue tai kirjoita tiedostoja eikä ole kytketty käynnistykseen.
+Atominen kohdekirjoitus, natiivin omistajan yksinoikeus, lähteen säilyttäminen
+levyllä ja varsinainen käyttäjäaineiston siirto vaativat erillisen toteutuksen
+ja näytön [natiivin backendin omistajuusrajan](native-backend-runtime.md#omistajuus-ja-kiinteät-juuret)
+mukaisesti.
