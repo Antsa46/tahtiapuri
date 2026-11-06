@@ -4,8 +4,9 @@ import { join } from "node:path";
 const root = process.cwd();
 const scenario = process.argv.at(-2);
 const data = process.argv.at(-1)!;
-const nativeBackendRoot = scenario === "native-backend" ? process.env.TAHTIAPURI_TEST_NATIVE_BACKEND_ROOT : undefined;
-if (scenario === "native-backend" && !nativeBackendRoot) throw new Error("Prepared native backend runtime required.");
+const usesNativeBackend = scenario === "native-backend" || scenario === "native-backend-model";
+const nativeBackendRoot = usesNativeBackend ? process.env.TAHTIAPURI_TEST_NATIVE_BACKEND_ROOT : undefined;
+if (usesNativeBackend && !nativeBackendRoot) throw new Error("Prepared native backend runtime required.");
 const backendEntry = scenario === "observing-save-fail" ? join(root, ".artifacts/tests/e2e-build/observing-save-fail.js")
   : scenario === "observing-sky-hold" ? join(root, ".artifacts/tests/e2e-build/observing-sky-hold.js")
   : scenario === "sky-no-catalog" ? join(root, ".artifacts/tests/e2e-build/sky-no-catalog.js")
@@ -14,7 +15,7 @@ const backendEntry = scenario === "observing-save-fail" ? join(root, ".artifacts
   : scenario === "unready-ui" ? join(root, ".artifacts/tests/e2e-build/recording-backend.js")
   : join(root, "apps/backend/dist/runtime/backend.js");
 const approved = JSON.parse(readFileSync(join(root, "resources/models/qwen3-4b.json"), "utf8"));
-const model = scenario === "native-model" ? {
+const model = scenario === "native-model" || scenario === "native-backend-model" ? {
   kind: "native-cpu" as const, runtimeRoot: join(root, ".local/native/tahtiapuri-model"), workRoot: join(data, "native-model"),
   profile: { file: join(root, ".local/models", approved.file), bytes: approved.bytes, sha256: approved.sha256, templateSha256: approved.expectedChatTemplateSha256 },
 } : scenario?.startsWith("model") ? {

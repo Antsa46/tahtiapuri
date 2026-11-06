@@ -1,8 +1,9 @@
 # Natiivin backendin tuotantoruntime
 
 Tila: issue #10:n toteutussopimus. Vartioitu havaintopaikan siirto ja
-synteettinen Electron-siirtymä on testattu; oletusbackendin vaihto ja koko
-minimipaketin hyväksyntä ovat avoimia. Aiemmat koeruntimet säilyvät erillisenä näyttönä.
+synteettinen Electron-siirtymä sekä yksi oikean CPU-mallin yhteisajo on testattu;
+oletusbackendin vaihto ja koko minimipaketin hyväksyntä ovat avoimia.
+Aiemmat koeruntimet säilyvät erillisenä näyttönä.
 Electron-main on hyväksytty luotettu omistaja; yksi tavallisen käyttäjän
 natiivibroker käynnistää yhden rajatun Noden. Mallin nykyinen käynnistin
 ei muutu. Tavalliseen UtilityProcessiin ei tule automaattista varareittiä.
@@ -267,6 +268,9 @@ rajattu shutdown ja yksi oikeaan CPU-malliin sidottu käyttötapaus.
 Juuri tämän Node-/paketti-/politiikkakokoonpanon verkkokielto tarvitaan.
 MCP, FMI, CUDA ja koko paketin alkuperäiset ehdot säilyvät avoimina,
 kunnes vastaava näyttö saadaan. Unit- tai probe-tulos ei vaihda oletuspolkua.
+Yhden oikean CPU-mallin
+normaali käyttöliittymäpolku on todennettu [T09z:n yhteisajossa](../experiments/native-backend-runtime.md#t09zn-oikea-cpu-malli-samassa-electron-koosteessa);
+sen näyttö ei kata yllä mainittuja virhe-, verkko- tai koko paketin portteja.
 
 Yhden istunnon aiemmat tavu- ja CHILD_CHUNK-kokonaisrajat on ylitetty
 [rajatussa normaalikokeessa](../experiments/native-backend-runtime.md#t09un-yhden-istunnon-tavu--ja-lohkorajat).

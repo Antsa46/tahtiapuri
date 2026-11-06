@@ -1,6 +1,6 @@
 # Natiivibackendin ensimmäinen toiminnallinen koe
 
-T09r–T09w, issue #10:n rajattuja osatuloksia. Natiivin backendin pohja toimii
+T09r–T09z, issue #10:n rajattuja osatuloksia. Natiivin backendin pohja toimii
 rajatuissa Windows-kokeissa. Sovelluksen oletusbackend ei vielä vaihdu
 eikä issue valmistu tämän näytön perusteella.
 
@@ -403,6 +403,47 @@ Kokeissa ei ajettu kielimallia tai GPU-mallia, MCP:tä tai sää-APIa eikä hyv�
 Myös vanhan natiivipaketin journalin yhteensopivuus uuden paketin kanssa
 on erillinen portti; pakettidigestin tarkistusta ei löysennetty.
 
+## T09z:n oikea CPU-malli samassa Electron-koosteessa
+
+Yksi uusi käyttöliittymäkoe läpäisi natiivibackendin ja oikean Qwen3-4B-mallin
+CPU-yhteiskäytön ilman uusintoja tai ohituksia. Kooste käyttää erikseen valittua
+natiivibackendia ja nykyistä natiivia mallisovitinta; oletusentry ei vaihdu.
+Testi sijaitsee `tests/e2e/desktop/native-backend-model.spec.ts`:ssä. Tavallinen
+nopea työpöytäsarja jättää sen pois; erikseen valmisteltu mallisarja ottaa sen mukaan.
+
+Tyhjän vanhan lähteen varaus ja siirto säilyivät, käyttöliittymä tallensi
+synteettisen paikan ja aktiivivalinnan natiivikohteen revisioon 1. Mallilta
+saatiin valmis vastaus ”Jupiter.” CPU-ajossa, ilman GPU-kerroksia, 4096 tokenin
+kontekstirajalla. Vastauksen jälkeen mallityötila oli tyhjä. Sovelluksen
+normaali sulku palautti koodin 0 ilman signaalia; tarkisteeseen ja
+omistajakontekstiin sidottu journal oli CLEAN ja molemmat työtilat tyhjiä.
+Vanhan lähteen, siirtomerkin ja tallennetun natiivikohteen tavut säilyivät.
+Alkuperäisen mallipainon täydet tarkisteet varmennettiin ennen ajoa ja sen jälkeen.
+
+Kaksi aiempaa yhteisajoa jäivät epäonnistuneiksi ennen ensimmäistä ikkunaa.
+Ensimmäisessä testin 30 sekunnin ikkunaodotus oli tuotannon 40 sekunnin
+käynnistysrajaa lyhyempi; tarkka alkuperäinen syy jäi avoimeksi. Testin
+odotukseksi korjattiin 45 sekuntia ja lisättiin rajattu prosessitulosteen
+sekä todellisen exitin seuranta. Toinen ajo päättyi silti tuotannon
+40 sekunnin rajaan keskeneräisen tiedostovalmistelun aikana.
+
+Erillinen alkuperäisiä valmistelufunktioita mittaava koe toisti 40 sekunnin
+ylityksen yhden loogisen suorittimen koerajoituksella. Sen keskeytynyt työ
+ja oma valmistelusiivous päättyivät erillisen odotusrajan sisällä.
+Uusi kahden loogisen suorittimen valmisteluvertailu valmistui käynnistysrajan sisällä,
+ja palautettu työtila poistui alkuperäisellä siivoustoiminnolla. Seuraava
+samoin rajattu yhteisajo läpäisi. Luotetut apuprosessit voivat periä laajemman
+affiniteetin; eristettyjen työntekijöiden alkuperäisiä oikeus- ja Job-rajoja,
+tuotannon aikarajoja tai tiedostotarkistuksia ei muutettu. Yksittäinen
+vertailu ei erottele affiniteettia välimuistin tai ajoituksen vaikutuksista
+eikä muuta aiempia epäonnistumisia onnistumisiksi.
+
+Pienen CPU-tapauksen toimivuus ei ole käyttösujuvuuden tai tähtitieteellisen
+vastauslaadun hyväksyntä. Konekohtaiset kestot säilyvät vain paikallisissa artefakteissa.
+Nykyisiä Windows-prosesseja, profiileja tai ACL:iä ei inventoitu erikseen;
+levytila ja sovelluksen sulku eivät yksin ole riippumaton OS-siivoustodiste.
+Koe ei käytä MCP:tä, sää-APIa tai GPU-mallia eikä todenna verkkokieltoja.
+
 ## Avoin hyväksymisnäyttö
 
 Varhaisen katkaisusarjan hyväksyntä, käyttäjäaineiston käyttöönotto sekä
@@ -411,7 +452,8 @@ Electron-siirtymän ja tavallisen sulun; T09w:n lukematon tulostekanava ja
 omistajan/brokerin kaatuminen tarvitsevat oman Controller-/GUI-integraation.
 Myös muuttuneen ohjaimen graafiset MCP-regressiot ovat uusittavaa tarkistusta.
 
-Oikea CPU-malli, saman kokoonpanon verkkokielto, MCP:n natiivi eristys,
+T09z todentaa yhden oikean CPU-mallin normaalin käyttöliittymäpolun.
+Saman kokoonpanon verkkokielto, MCP:n natiivi eristys,
 FMI-koetoiminto, GPU/ajotapavalinta ja lopullinen minimaalinen kokonaispaketti
 säilyvät issue #10:n hyväksymisehdoissa. Monen istunnon yhteiskesto ei todista
 yhden istunnon aikarajattomuutta. Raakadata, käyttäjä-/konetunnisteet ja
