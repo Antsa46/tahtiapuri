@@ -1,6 +1,6 @@
 # Natiivibackendin ensimmäinen toiminnallinen koe
 
-T09r–T09v, issue #10:n rajattuja osatuloksia. Natiivin backendin pohja toimii
+T09r–T09w, issue #10:n rajattuja osatuloksia. Natiivin backendin pohja toimii
 rajatuissa Windows-kokeissa. Sovelluksen oletusbackend ei vielä vaihdu
 eikä issue valmistu tämän näytön perusteella.
 
@@ -287,10 +287,61 @@ Koe käytti rajattua Node-isäntää ja synteettistä aineistoa ilman mallia,
 GPU:ta, GUI:ta, MCP:tä tai APIa. Se ei hyväksy koko Electron-pakettia tai
 selitä ensimmäisen epäonnistumisen syytä.
 
+## T09w:n lukematon tulostekanava
+
+Yksi tuore brokerin komponenttikoe käytti elossa pysyvää Node-raakaomistajaa.
+Se käytti tuotannon käynnistysoptioita ja protokollaa, mutta ei Controllerin
+tai NativeBackendPortin virhetilanteessa käynnistämää KILL-politiikkaa.
+Muuttumattoman ohjaimen integraatiota ei siis tällä todennettu.
+
+Seitsemän kuitattua käyttökyselyä tallensi ja aktivoi synteettisen paikan
+revisioon 2 sekä palautti kokonaisen 5 079 kohteen taivaan. Molempien
+kehystasojen ehjät etuliitteet ja tallennusjonojen valmistuminen tarkistettiin.
+Koetyökalun vanhat pacing-jatkot poistettiin ennen stdout-lukijan pausea.
+Sen jälkeen lähetettiin yksi saman välimuistikontekstin taivaspyyntö,
+jonka kirjoituskuittaus onnistui. Normaalilla kahden sekunnin asetuksella
+tehtiin vielä yksi ulomman heartbeatin ja yksi APP-pingin kirjoitusyritys.
+Kaikkien 12 kirjoituksen callbackit ja write-returnit onnistuivat; vertaisen
+lukemista ei tällä todisteta. Ajastimia ei pysäytetty puuttuvan vastauksen vuoksi.
+
+Todellinen broker-exit oli 1 ilman signaalia, kun lukija oli edelleen pausessa.
+Pausen ja synkronisen exit-havainnon välillä ei ollut resume-kutsuja,
+resume-eventtejä, sovellukselle toimitettua lisädataa tai koetyökalun interventiota. Noden
+exitin jälkeinen flushStdio ja rajattu loppuosan tyhjennys sallittiin vasta
+havaitun prosessin päättymisen jälkeen. Tämä ei todista nollaa kernelin
+esilukua. Myös todellinen close ja kaikkien stdio-putkien sulku varmistettiin.
+
+Ennen suunniteltua CLEAN-recoveria journal oli jo alkuperäisessä kontekstissa
+CLEAN/NONE, sessions olemassa ja tyhjä sekä levyn tila täsmälleen kuitattu
+revisio 2. Palautuskutsu ja normaali restart säilyttivät samat tavut, paikan
+ja aktiivivalinnan. Koko ajurin ja käynnistäjän todellinen poistumiskoodi oli 0.
+
+Talteenotettu loppu jäi osittaiseksi: täyttä kohteen RESULT-kuittia ei ollut,
+ja sekä ulommassa että sisemmässä kehystyksessä jäi keskeneräinen kehys.
+Keskeneräinen vastauksen alku vastasi lämmitettyä taivasvastausta uudella
+pyyntötunnisteella, mutta kokonaista vastausta ei saatu. Loppuosaa ei
+resynkronoitu tai esitetty täydellisenä vastauksena. Capturejen valmistuminen
+tarkoittaa tiedostojen viimeistelyä, ei ehjää protokollavirtaa.
+Riippumaton purku tarkisti etuliitteen, tarkat loppuosat, kaikki kirjoitus-
+ja tapahtumatallenteet sekä pause → exit → tyhjennys → close -järjestyksen.
+
+Lähdekatselmus korjasi koetyökalun rajattujen siivousoperaatioiden seurannan,
+mahdollisen ehjän loppukuitin ristiriitatarkistuksen ja tapahtumien semanttisen
+uusintapurun. Ajuri odottaa myös myöhemmin rekisteröidyt siivousoperaatiot
+alkuperäisen aikarajan sisällä. Tässä onnistuneessa ajossa terminal-input-
+virhehaaraa tai ehjän RESULTin tarkistuspolkua ei käytetty.
+
+Tulos on rajattu siivouksen valmistumiseen sovellustason tulosteenlukijan
+ollessa pysähdyksissä todelliseen exitiin asti. Ensimmäinen watchdog-haara,
+workerin riippumaton exit ja erillinen Job-/ACL-/profiili-inventaario jäävät
+tuntemattomiksi. Kohteen siivousnäyttö on katselmoitu natiivipolku ja levytila.
+Kielimallia, GPU:ta, GUI:ta, MCP:tä tai APIa ei ajettu eikä verkkorajaa kokeiltu.
+
 ## Avoin hyväksymisnäyttö
 
-Kuuro tulostekanava, varhaisen katkaisusarjan hyväksyntä, käyttäjäaineiston observing-migraatio sekä pakettiversion
-vaihtaminen tarvitsevat vielä näytön.
+Varhaisen katkaisusarjan hyväksyntä, käyttäjäaineiston observing-migraatio sekä
+pakettiversion vaihtaminen tarvitsevat vielä näytön. T09w:n raakaomistajan
+komponenttinäyttö ei korvaa Controllerin tai graafisen Electronin integraatiota.
 Myös muuttuneen ohjaimen graafiset MCP-regressiot ovat tämän osatuloksen
 jälkeen uusittavaa tarkistusta.
 

@@ -269,6 +269,12 @@ Yhden istunnon aiemmat tavu- ja CHILD_CHUNK-kokonaisrajat on ylitetty
 [rajatussa normaalikokeessa](../experiments/native-backend-runtime.md#t09un-yhden-istunnon-tavu--ja-lohkorajat).
 Tämä osanäyttö ei hyväksy yllä olevaa koko sovelluspaketin porttia.
 
+[Node-isännän menetys](../experiments/native-backend-runtime.md#t09tn-rajattu-omistajakuolema)
+ja [pysäytetyn tulosteenlukijan aikainen siivous](../experiments/native-backend-runtime.md#t09wn-lukematon-tulostekanava)
+on todennettu erillisissä rajatuissa kokeissa. Jälkimmäinen käyttää
+raakaomistajaa: Controllerin virhepolku ja koko Electron-paketti tarvitsevat
+oman vastaavan integraationäytön.
+
 ## Ensisijaiset toteutuslähteet
 
 - [Jobin elinkaari ja KILL_ON_JOB_CLOSE](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects)
