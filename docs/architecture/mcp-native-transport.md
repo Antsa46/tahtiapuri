@@ -290,7 +290,7 @@ Mallivastaukset ovat synteettisiä.
 
 Ennen varsinaista käyttöönottoa puuttuvat edelleen suojatun kuvaustiedoston
 julkaisu sekä alla toteutettujen lukijan ja Main-tunnisteavun liittäminen,
-autentikointikuittaus ja sen aikarajat, brokerin hallinta- ja työntekijädatan
+alla kuvatun Main-yhteyskerroksen liittäminen brokeriin, brokerin hallinta- ja työntekijädatan
 erottelu, legacy/native-omistajuuden yhteensovitus sekä työntekijän käynnistys,
 Jobin tyhjeneminen ja oikeuksien siivous. Yksikään tämän osan testi ei
 hyväksy verkkokieltoa tai koko MCP:n OS-eristystä.
@@ -365,8 +365,106 @@ Yksittäisten testien onnistuminen epäonnistuneen loppusiivouksen yhteydessä
 ei kelpaa läpäisseeksi koesarjaksi. Pitkän polun tuotantotuki ja ensimmäisen
 tunnistekokeen aikarajaylityksen tarkka syy eivät ratkea tällä näytöllä.
 
-Kuvauksen julkaisu, autentikointikuittaus, natiivibrokeri, apubinäärin
-paketointi ja koko Electron-liitos ovat edelleen jatkotyötä. Näissä kokeissa
+Kuvauksen julkaisu, alla kuvatun Main-yhteyskerroksen liittäminen
+natiivibrokeriin, apubinäärin paketointi ja koko Electron-liitos ovat
+edelleen jatkotyötä. Näissä kokeissa
 ei käynnistetä mallia tai eristettyä työntekijää eikä kokeilla verkkoa.
 
 Lähde: [GetSecurityInfo](https://learn.microsoft.com/en-us/windows/win32/api/aclapi/nf-aclapi-getsecurityinfo).
+
+
+## Mainin autentikoitu TMCT/1-yhteyskerros
+
+`native-main-connection.ts` liittää kertakäyttöisen pääsyoikeuden Mainin
+rajattuun binääriseen yhteyteen. Tämä on toteutettu yhteyskerros, ei vielä
+oletuskäynnistykseen liitetty palvelin tai natiivibrokeri. Omistajan on
+tarjottava oikean kuvaustiedoston poistava `consume`-toiminto ja juuri tämän
+backend-sukupolven mitätöivä `revoke`-toiminto. Rajapintatestin synteettinen
+poistotoiminto ei todista kuvaustiedoston tuotantojulkaisua tai poistamista.
+
+TMCT on eri protokolla kuin työntekijän TMCP. Tulevan luotetun brokerin
+on muodostettava hallintaviestit itse; työntekijän tavuja ei saa tulkita
+tai kopioida hallintaotsakkeiksi. REQUEST/RESPONSE sisältävät yhden tiukasti
+UTF-8:sta purettavan JSON-viestin, eivät mielivaltaista stream-katkelmaa.
+Broker kokoaa työntekijän rivit rajatusti ennen REQUEST-kehystystä ja
+palauttaa RESPONSEn työntekijälle rivinä.
+
+Otsake on 16 tavua: ASCII `TMCT`, versio 1, yhden tavun laji, kaksi
+nollattua varattua tavua, little-endian payload-pituus ja little-endian
+32-bittinen järjestysnumero. Suunnat numeroidaan erikseen yhdestä alkaen;
+maksimiarvon jälkeen seuraa nolla. Otsake tarkistetaan ennen payloadin
+varaamista. Osittaisen kehyksen kahden sekunnin määräaika ei ala uudelleen
+yksittäisistä lisätavuista.
+
+| Laji | Suunta | Payload |
+| --- | --- | --- |
+| HELLO = 1 | broker → Main | Täsmälleen 48 tavua: sukupolvi 16 ja tunnus 32 |
+| ACCEPT = 2 | Main → broker | Täsmälleen 16 tavua: hyväksytty sukupolvi |
+| REQUEST = 3 | broker → Main | Yksi kehityspyyntö, 1–16 384 tavua |
+| RESPONSE = 4 | Main → broker | Yksi vastaus, 1–65 536 tavua |
+| STOP = 5 | Main → broker | Tyhjä |
+| CLEAN = 6 | broker → Main | Tyhjä |
+
+HELLO kuluttaa tunnuksen synkronisesti. ACCEPT voidaan lähettää vasta,
+kun kuvaustiedoston poistaminen ja backend-asiakkaan liittäminen ovat
+onnistuneet. Koko tunnistautumisella on kolmen sekunnin määräaika.
+Pyynnön lähettäminen HELLO:n perässä ennen ACCEPTia hylätään. Tila vaihtuu
+ACCEPTin lähettämiseksi ennen fyysistä write-kutsua: vastapuoli voi nähdä
+kuittauksen ennen paikallisen kirjoituscallbackin valmistumista. Fyysisen
+kirjoituksen callbackia ja tarvittavaa drainia odotetaan silti; niiden
+virhettä ei tulkita onnistumiseksi.
+
+Yhteys hyväksyy enintään neljä keskeneräistä pyyntöä. Varaus pysyy voimassa
+vastauksen fyysiseen valmistumiseen asti, ei vain backend-tuloksen saapumiseen.
+Lisäksi sovelletaan 60 pyynnön sekuntirajaa ja 256 viimeisen tunnisteen
+toistokieltoa. Fyysisessä FIFO:ssa on enintään kahdeksan kehystä ja 512 KiB
+varattuja tavuja; myös Writablen puskuroimat tavut lasketaan konservatiivisesti
+mukaan. Kirjoituksen kahden sekunnin määräaika alkaa jonoon hyväksymisestä.
+
+STOP estää uudet pyynnöt synkronisesti ja käynnistää asiakkaan irrotuksen.
+Sen rajatun valmistumisen tai epäonnistumisen jälkeen omistajan pitää
+mitätöidä backendin sukupolvi. Tämä järjestys estää mitätöintiä muuttamasta
+vielä odottavaa oikeaa irrotusta vanhan istunnon virheeksi. Brokerille
+annetaan enintään 15 sekuntia CLEAN-ilmoitukseen. Kesken jäävää
+kuvaustiedoston poistotoimintoa seurataan erikseen: epävarma valmistuminen
+säilyy virheenä, eikä myöhäinen vastaus avaa yhteyttä uudelleen.
+
+CLEAN tarkoittaa **autentikoidun luotetun brokerin ilmoitusta**, että sen
+työntekijä on poistunut, Job tyhjentynyt ja omat resurssit siivottu.
+Mainin yhteyskerros ei itse todista näitä käyttöjärjestelmähavaintoja.
+Brokerin on toteutettava niiden riippumaton tarkistus ennen ilmoitusta;
+pelkkä työntekijän kuitti, protokollatulos tai putken EOF ei riitä.
+
+CLEAN voi saapua myös brokerin aloitteesta esimerkiksi MCP-isännän sulkeutuessa.
+Se lopettaa uuden työn, hylkää jonossa olevat ja myöhäiset vastaukset,
+irrottaa asiakkaan ja sulkee yhteyden. Jokainen sen jälkeinen tavu on
+virhe, myös kesken jäävä otsakkeen alku. Todellinen kirjoitusvirhe
+säilyy virheenä, vaikka CLEAN olisi saapunut saman write-kutsun aikana.
+Pelkkä `destroy()` ei todista streamin sulkeutumista: close-tapahtumaa
+odotetaan erikseen rajatusti.
+
+Tulos erottaa `brokerCleanupReported`, `backendDetachSettled`,
+`descriptorConsumptionSettled`, `epochRevoked` ja `streamClosed`.
+Tunnistautumattoman hylätyn asiakkaan vuoksi ei peruta toisen asiakkaan
+käyttämätöntä tunnusta; suorittamattomasta irrotuksesta tai mitätöinnistä
+ei raportoida onnistumista. Hyväksytty yhteys on tämän toteutuksen jälkeen
+aina päättyvä: tunnusta ei julkaista automaattisesti uudelleen. Uudelleenavaus
+vaatii myöhemmin omistajalta edellisen brokerin todellisen siivousnäytön.
+
+Rajattu Windows-näyttö sisältää 12 kehyksen, 35 yhteyden ja 17 aiemman
+pääsyoikeuden testiä sekä kolme todellisen paikallisputken integraatiotestiä,
+yhteensä 67 läpäissyttä tapausta. Integraatiot käyttävät oikeita
+`DevelopmentService`- ja `AssistantService`-osia sekä synteettistä
+mallivastaajaa: kaikki neljä UI/MCP:n ristikkäistä luku-/peruutuskieltoa,
+aktiivisen MCP-työn peruminen UI-työn jatkuessa ja puutteellisen sulun
+erottaminen varmennettiin. Kohdistetut tyyppitarkistukset läpäisivät.
+Kolmen uuden ajoitustestin epäonnistunut ajo säilyy erikseen; korjaus
+poisti sulun jälkeen jääneen ajastimen sekä kirjoituspoikkeuksen ja
+callback-virheen peittymisen.
+
+Palvelimen kokonaisyhteysraja, kuvaustiedoston julkaisu ja kaatumispalautus,
+apubinäärin paketti, natiivibrokerin TMCT-toteutus, työntekijän käynnistys ja
+todellinen siivousnäyttö sekä Electronin oletuspolun liitos puuttuvat vielä.
+Tämä näyttö ei hyväksy LPAC:ia, verkkokieltoa, FMI:tä, GPU:ta tai koko
+minimipakettia. Kuvaustiedoston puuttuminen ei todista vanhan työntekijän
+siivoutumista.
