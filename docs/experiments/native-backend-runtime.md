@@ -1,6 +1,6 @@
 # Natiivibackendin ensimmäinen toiminnallinen koe
 
-T09r ja T09s, issue #10:n osatuloksia. Natiivin backendin pohja toimii
+T09r–T09v, issue #10:n rajattuja osatuloksia. Natiivin backendin pohja toimii
 rajatuissa Windows-kokeissa. Sovelluksen oletusbackend ei vielä vaihdu
 eikä issue valmistu tämän näytön perusteella.
 
@@ -181,11 +181,115 @@ eivät erilliseen Windows-inventaarioon. Tämä koe ei muuta varhaisten
 snapshot-diagnoosien hylättyjä tuloksia eikä todenna luonnollista koko
 snapshot-palautusta tai kuittaamattoman tallennuksen kaatumiskestävyyttä.
 
+## T09u:n yhden istunnon tavu- ja lohkorajat
+
+Yksi uusi normaali V2-istunto ylitti molemmat aiemmat kokonaisrajat:
+sisemmissä APP-kehyksissä kertyi 135 695 476 JSON-body-tavua ja ulommassa
+protokollassa 2 076 todellista CHILD_CHUNK-kehystä. Molemmat rajat täyttyivät
+jo ennen shutdown-pyyntöä. OS:n data-eventtejä tai pyyntöjen lukumäärää ei
+käytetty protokollalohkojen laskurina.
+
+Istunto palautti 56 kokonaista taivasvastausta, jokaisessa 5 079 kohdetta.
+Riippumaton suoratoistava raakapurku tarkisti kehysten otsakkeet, sekvenssit,
+noncet, täsmälliset tavulaskurit, kaikki taivasvastaukset sekä 59 paritettua
+RPC-pyyntöä. Molempien tavusuuntien hashit ja pituudet täsmäsivät, kirjoitusten
+callbackit onnistuivat ja shutdown-vastaus edelsi lapsen syötteen sulkua.
+Valmiita snapshot-olioita ei kerätty kasvavaan listaan. Levyjonon rajat
+sisälsivät aktiivisen kirjoituksen; tuottajan pacing säilytti molemmat
+normaalit heartbeatit.
+
+Brokerin loppukuitti oli normal/clean ja ilmoitti workerin poistumiskoodiksi 0.
+Myös brokerin todellinen exit/close oli 0. Vasta sulkeutumisen jälkeen luetut journalit
+olivat kelvollisia, samoja CLEAN/NONE-tietueita ja sessions-hakemisto tyhjä.
+Ohjelmapaketin lähde-, runtime- ja rakennuspinnit tarkistettiin erikseen.
+Job-/ACL-/profiilisiivouksen näyttö perustuu brokerin kuittiin ja
+katselmoituun lähteeseen; erillistä Windows-inventaariota ei tehty.
+
+Ensimmäinen käynnistäjä hylkäsi kelvollisen loppukuitin, koska PowerShell
+jäsensi ajan Decimal-tyypiksi ja tarkistus salli vain muut numerotyypit.
+Alkuperäinen virhetulos säilytettiin, vaikka sen natiivihavainnot voitiin
+varmistaa erikseen. Rajattu korjaus hyväksyy myös Decimalin ja hylkää
+NaN-/Infinity-arvot muuttamatta aikarajoja, ajuria tai liikennemäärän ehtoja.
+Uusi erillinen vahvistusajo läpäisi myös käynnistäjän ja riippumattoman
+raakanäyttötarkastuksen. Automaattista uusintaa tai rajojen nostoa ei tehty.
+
+Koe käytti vain synteettistä aineistoa ilman kielimallia, GPU:ta, GUI:ta,
+MCP:tä tai APIa. Se todentaa yhden istunnon tavu- ja lohkorajojen ylityksen;
+pitkän joutoistunnon näyttö on erillinen T09s-koe. Koko sovelluspakettia tai
+verkkorajaa ei hyväksytä tämän osatuloksen perusteella.
+
+## T09v:n käynnistyskorjaus ja normaali elinkaari
+
+Run ja recover käyttävät nyt yhteistä `detached: true` -käynnistysasetusta,
+jotta brokerin oma siivous ei riippuisi Noden ehdollisesta parent-Jobista.
+Stdio-putket ja seurattu ChildProcess säilyvät; `unref()`-kutsua ei tehdä.
+[Mekanismi ja rajat](../architecture/native-backend-runtime.md#brokerin-suhde-isäntäprosessiin)
+erottavat tämän työntekijän varsinaisesta OS-eristyksestä.
+
+Resurssisovittimen 31 kohdistettua testiä ja desktopin TypeScript-käännös
+läpäisivät. Yksi tuore normaalikoe varmisti asetuksen palautusalustuksessa
+sekä kahdessa oikeassa backend-istunnossa. Ensimmäinen tallensi ja aktivoi
+synteettisen paikan revisioon 2, palautti 5 079 kohteen taivaan ja sulkeutui.
+Toinen luki täsmälleen saman tilan ja sulkeutui normaalisti. Kaikkien kolmen
+brokerin todellinen exit/close oli 0. Molempien tavusuuntien kehykset,
+kymmenen RPC-paria, kirjoituskuittaukset ja shutdown-vastauksen järjestys
+varmistettiin riippumattomasti. CLEAN/NONE-journalit, tyhjä sessions-puu ja
+molemmat observing-tallenteet vastasivat nykyistä levytilaa.
+
+Tämä koe varmistaa uuden asetuksen normaalin elinkaaren, ei Electronin
+GUI:ta tai ympäröivästä Jobista irtautumista. T09u:n tavu- ja lohkorajakoe
+tehtiin ennen käynnistyskorjausta; se ei ollut uuden asetuksen regressiokoe.
+
+## T09t:n rajattu omistajakuolema
+
+Ensimmäinen katkaisukoe epäonnistui: koetyökalun omistajaprosessi poistui
+odotetusti, mutta tarkkailija ilmoitti vain yleisen virheen. Brokerin
+poistumiskoodi ja ensisijainen siivousvaihe jäivät tuntemattomiksi.
+Alkuperäinen aineisto ja sen RUNNING-journal säilytettiin muuttumattomina;
+epävarmaa juurta ei palautettu tai korjattu käsin. Rajattu jälkikäteinen
+lukukoe ei saanut prosessikahvaa eikä selvittänyt poistumiskoodia.
+
+Lähdetarkistus tunnisti erikseen Noden ehdollisen parent-Job-liitoksen.
+T09v:n käynnistyskorjauksen lisäksi koetyökaluun lisättiin rajatut erilliset
+tallenteet ensisijaiselle virheelle ja sitä seuraavalle pakkosiivoukselle.
+Tämä ei osoita ensimmäisen epäonnistumisen syytä. Uusi koe tehtiin vasta
+lähde-, käännös-, syntaksi- ja normaalin elinkaaren tarkistusten jälkeen.
+
+Yhdessä uudessa kokeessa vain kohdeistunnon omistajaprosessi katkaistiin.
+Tarkkailija sitoi prosessit PID:n lisäksi täydelliseen luontiaikaan ja
+brokerin ohjelmaidentiteettiin. Omistajan todellinen poistumiskoodi oli 91,
+brokerin itsenäinen poistumiskoodi 1 ja tarkkailijan 0. Hätävahtia tai
+brokerin ulkopuolista pakkopäättämistä ei tarvittu. Kohdebrokerin putkia
+omisti vain katkaistu prosessi; ulkopuolinen lukija ei jatkanut niiden
+tyhjentämistä.
+
+Journal oli kelvollinen CLEAN/NONE ja sessions-hakemisto tyhjä jo ennen
+myöhempää palautuskutsua. Tarkkailijan kohdekahvat sulkeutuivat ennen
+suunniteltua tuoretta recover-kutsua. Sen jälkeen uusi backend luki saman
+kuitatun revision, paikan ja aktiivivalinnan ja sulkeutui normaalisti.
+Palautuskutsun ei siis väitetä tehneen kohdeistuntoa CLEANiksi.
+
+Riippumaton tarkistus kattaa ennen katkaisua tallennetut rajatut
+protokolla- ja tapahtumaetuliitteet, seitsemän pyyntö–vastausparia sekä
+tuoreen status-/lukuvastaushaasteen. Etuliitteen näytteessä ei ollut
+odottavia pyyntöjä; katkaisuhetken atomista tilaa ei havaittu. Normaaleja
+health-ajastimia ei pysäytetty. EOF:n ja leasen keskinäinen syy, katkaisun
+jälkeisten tavujen täydellisyys, workerin oma poistumiskoodi ja palautuksen
+todistushaara säilyvät tuntemattomina. Job-/ACL-/profiilisiivouksen näyttö
+on katselmoitu natiivipolku ja levyltä luettu lopputila, ei erillinen
+Windowsin prosessi- tai käyttöoikeusinventaario. Alkuperäisen raportin
+`recoveryRequiredAtTargetEnd: true` on alustuksessa asetettu tieto, jonka
+uudelleenkäyttöpolitiikka ei täsmenny raportissa. Varovainen recover-portti
+voi säilyä ilman luotettua kohdekuittia, vaikka journal on jo CLEAN.
+Arvoa ei käytetä väittämään, että palautus korjasi likaisen journalin.
+
+Koe käytti rajattua Node-isäntää ja synteettistä aineistoa ilman mallia,
+GPU:ta, GUI:ta, MCP:tä tai APIa. Se ei hyväksy koko Electron-pakettia tai
+selitä ensimmäisen epäonnistumisen syytä.
+
 ## Avoin hyväksymisnäyttö
 
-Vanhojen tavu- ja fragmenttikiintiöiden ylittävä yhden istunnon liikenne,
-omistajaprosessin kuolema, kuuro tulostekanava, varhaisen katkaisusarjan
-hyväksyntä, käyttäjäaineiston observing-migraatio sekä pakettiversion
+Kuuro tulostekanava, varhaisen katkaisusarjan hyväksyntä, käyttäjäaineiston observing-migraatio sekä pakettiversion
 vaihtaminen tarvitsevat vielä näytön.
 Myös muuttuneen ohjaimen graafiset MCP-regressiot ovat tämän osatuloksen
 jälkeen uusittavaa tarkistusta.

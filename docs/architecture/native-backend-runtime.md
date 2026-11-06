@@ -42,6 +42,26 @@ Puhdas, käynnistyksestä erillinen
 [siirtosuunnittelija](observing-places.md#natiivibackendiin-siirtymisen-esivalmistelu)
 on tätä valmisteleva komponentti; se ei toteuta tiedosto-operaatioita.
 
+## Brokerin suhde isäntäprosessiin
+
+Main käynnistää brokerin sekä run- että recover-polulla asetuksella
+`detached: true`. ChildProcess pysyy silti seurattuna: `unref()`-kutsua ei
+tehdä, kaikki kolme stdio-putkea säilyvät ja portti odottaa todellisen
+exit-/close-tapahtuman. Asetus ei siirrä elinkaaren omistajuutta pois Mainilta.
+
+Lukitun Noden Windows-libuv yrittää liittää tavallisen ei-detached-lapsen
+omaan KILL_ON_JOB_CLOSE-Jobiinsa. Isännän kuolema voisi silloin päättää
+brokerin ennen sen omaa siivousta. Detached ohittaa juuri tämän liitoksen;
+se ei pyydä CREATE_BREAKAWAY_FROM_JOB-lippua eikä takaa irtautumista
+mahdollisesta muusta ympäröivästä Jobista. Tämä ei ole eristysmekanismi.
+Brokerin rajatun työntekijän oma Job, oikeudet ja valvonta säilyvät ennallaan.
+
+Omistajan kadotessa brokerin pitää voida havaita putken sulku tai leasen
+vanheneminen, päättää työntekijänsä ja siivota omat resurssinsa ilman
+isännän tulosteenlukijaa. Tavallinen sulku ja omistajan menetys varmennetaan
+erikseen; lähteestä tunnistettu parent-Job-riski ei yksin todista aiemman
+koevirheen syytä tai onnistunutta kaatumissiivousta.
+
 ## Windows-polkujen esitykset ja käynnistysrajat
 
 Julkinen polkusopimus, journalista johdetut nimet, pinnien odotetut nimet
@@ -245,7 +265,11 @@ Juuri tämän Node-/paketti-/politiikkakokoonpanon verkkokielto tarvitaan.
 MCP, FMI, CUDA ja koko paketin alkuperäiset ehdot säilyvät avoimina,
 kunnes vastaava näyttö saadaan. Unit- tai probe-tulos ei vaihda oletuspolkua.
 
-## Ensisijaiset Windows-lähteet
+Yhden istunnon aiemmat tavu- ja CHILD_CHUNK-kokonaisrajat on ylitetty
+[rajatussa normaalikokeessa](../experiments/native-backend-runtime.md#t09un-yhden-istunnon-tavu--ja-lohkorajat).
+Tämä osanäyttö ei hyväksy yllä olevaa koko sovelluspaketin porttia.
+
+## Ensisijaiset toteutuslähteet
 
 - [Jobin elinkaari ja KILL_ON_JOB_CLOSE](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects)
 - [Kernel-olion nimi, kahvalaskuri ja viitelaskuri](https://learn.microsoft.com/en-us/windows-hardware/drivers/kernel/life-cycle-of-an-object)
@@ -257,3 +281,7 @@ kunnes vastaava näyttö saadaan. Unit- tai probe-tulos ei vaihda oletuspolkua.
 - [Profiilin poisto ja uudelleenyritys](https://learn.microsoft.com/en-us/windows/win32/api/userenv/nf-userenv-deleteappcontainerprofile)
 - [Windowsin polkujen enimmäispituus ja extended-esitys](https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation)
 - [Työhakemiston pituusraja](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-setcurrentdirectory)
+
+- [Lukitun Noden libuv: parent-Jobin luonti](https://github.com/nodejs/node/blob/v24.22.2/deps/uv/src/win/process.c#L69-L121)
+- [Libuv: detached-liput ja ehdollinen Job-liitos](https://github.com/nodejs/node/blob/v24.22.2/deps/uv/src/win/process.c#L1052-L1102)
+- [Noden detached-asetus ja prosessin viitteet](https://github.com/nodejs/node/blob/v24.22.2/doc/api/child_process.md#optionsdetached)

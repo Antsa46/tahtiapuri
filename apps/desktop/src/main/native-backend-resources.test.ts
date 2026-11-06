@@ -151,9 +151,9 @@ it("does not begin preparation or private-directory changes for a cancelled call
   const runtime = await loadNativeBackendRuntime(config, signal()), abort = new AbortController(); abort.abort();
   await expect(prepareNativeBackendResources(runtime, abort.signal)).rejects.toThrow(); expect(secure).not.toHaveBeenCalled(); expect(mkdir).not.toHaveBeenCalled();
 });
-it("uses fixed hidden pipe launch options and excludes inherited Node/proxy options", async () => {
+it("uses fixed detached hidden pipe launch options and excludes inherited Node/proxy options", async () => {
   const runtime = await loadNativeBackendRuntime(config, signal()), systemRoot = resolve("/windows"); vi.stubEnv("SystemRoot", systemRoot); vi.stubEnv("NODE_OPTIONS", "untrusted");
-  try { expect(nativeBackendSpawnOptions(runtime)).toEqual({ cwd: config.runtimeRoot, windowsHide: true, stdio: ["pipe", "pipe", "pipe"], env: { SystemRoot: systemRoot, WINDIR: systemRoot, PATH: join(systemRoot, "System32") } }); }
+  try { expect(nativeBackendSpawnOptions(runtime)).toEqual({ cwd: config.runtimeRoot, detached: true, windowsHide: true, stdio: ["pipe", "pipe", "pipe"], env: { SystemRoot: systemRoot, WINDIR: systemRoot, PATH: join(systemRoot, "System32") } }); }
   finally { vi.unstubAllEnvs(); }
 });
 

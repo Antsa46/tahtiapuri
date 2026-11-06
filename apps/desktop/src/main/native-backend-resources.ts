@@ -213,11 +213,13 @@ export async function prepareNativeBackendResources(runtime: NativeBackendRuntim
     throw error;
   }
 }
-export function nativeBackendSpawnOptions(runtime: NativeBackendRuntime): { cwd: string; windowsHide: true; stdio: ["pipe", "pipe", "pipe"]; env: NodeJS.ProcessEnv } {
+export function nativeBackendSpawnOptions(runtime: NativeBackendRuntime): { cwd: string; detached: true; windowsHide: true; stdio: ["pipe", "pipe", "pipe"]; env: NodeJS.ProcessEnv } {
   requireProcessPaths(runtime.runtimeRoot, runtime.broker);
   const systemRoot = process.env.SystemRoot;
   if (!systemRoot || !isAbsolute(systemRoot)) return denied();
-  return { cwd: runtime.runtimeRoot, windowsHide: true, stdio: ["pipe", "pipe", "pipe"], env: { SystemRoot: systemRoot, WINDIR: systemRoot, PATH: join(systemRoot, "System32") } };
+  // Keep broker cleanup reachable after owner death instead of joining libuv's
+  // optional parent-death Job. Pipes and the tracked ChildProcess remain owned.
+  return { cwd: runtime.runtimeRoot, detached: true, windowsHide: true, stdio: ["pipe", "pipe", "pipe"], env: { SystemRoot: systemRoot, WINDIR: systemRoot, PATH: join(systemRoot, "System32") } };
 }
 export async function launchNativeBackend(resources: PreparedNativeBackendResources, signal: AbortSignal): Promise<NativeBackendPort> {
   signal.throwIfAborted(); await resources.runtime.verifyBroker(signal); signal.throwIfAborted();
