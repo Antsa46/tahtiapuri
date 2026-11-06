@@ -42,6 +42,8 @@ $sourcePaths=@(
  'apps/mcp/native/bootstrap-file.h',
  'apps/mcp/native/bootstrap-publication.h',
  'apps/mcp/native/broker-io.h',
+ 'apps/mcp/native/broker-journal-codec.h',
+ 'apps/mcp/native/broker-journal-store.h',
  'apps/mcp/native/broker-journal.h',
  'apps/mcp/native/broker-relay.h',
  'apps/mcp/native/broker-resources.h',

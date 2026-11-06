@@ -147,6 +147,8 @@ test("round trips real MCP status and Main STOP through the native broker candid
     // bootstrap. This fixture no longer copies or repairs a worker package.
     const staged = await routine(() => readdir(reservation), 3000, "prepared-reservation");
     expect(staged).toEqual(["worker"]); workerPresentAtEnabled = true;
+    const stageStat = await routine(() => lstat(join(reservation, "worker"), { bigint: true }), 3000, "stage-identity");
+    const reservationStat = await routine(() => lstat(reservation, { bigint: true }), 3000, "reservation-identity");
     phase = "spawn";
     // Single descriptor argument, stdio transport, no model or network endpoint.
     if (performance.now() >= routineEnd) throw new Error("No broker spawn after deadline");
@@ -188,8 +190,13 @@ test("round trips real MCP status and Main STOP through the native broker candid
     expect(journalStat.isFile() && !journalStat.isSymbolicLink() && journalStat.nlink === 1).toBe(true);
     expect(journalStat.size).toBe(1024);
     const journal = await routine(() => readFile(journalPath), 3000, "journal-read");
-    expect(journal.length).toBe(1024); expect(journal.subarray(0, 8).equals(Buffer.from([84, 77, 67, 74, 82, 78, 49, 0]))).toBe(true);
-    expect(journal.readUInt32LE(8)).toBe(1); expect(journal.readUInt32LE(12)).toBe(1024); expect(journal.readUInt32LE(16)).toBe(7);
+    expect(journal.length).toBe(1024); expect(journal.subarray(0, 8).equals(Buffer.from([84, 77, 67, 74, 82, 78, 50, 0]))).toBe(true);
+    expect(journal.readUInt32LE(8)).toBe(2); expect(journal.readUInt32LE(12)).toBe(1024); expect(journal.readUInt32LE(16)).toBe(7);
+    expect(journal.readUInt32LE(20)).toBe(peer.child.pid); expect(journal.readBigUInt64LE(504)).toBeGreaterThan(0n);
+    expect(BigInt(journal.readUInt32LE(64))).toBe(stageStat.dev);
+    expect((BigInt(journal.readUInt32LE(68)) << 32n) | BigInt(journal.readUInt32LE(72))).toBe(stageStat.ino);
+    expect(BigInt(journal.readUInt32LE(512))).toBe(reservationStat.dev);
+    expect((BigInt(journal.readUInt32LE(516)) << 32n) | BigInt(journal.readUInt32LE(520))).toBe(reservationStat.ino);
     expect(journal.readUInt32LE(24)).toBe(context.pid); expect(journal.readBigUInt64LE(32).toString()).toBe(context.creation);
     expect(journal.subarray(48, 64).toString("hex")).toBe(context.generation);
     expect(journal.subarray(80, 144).toString("ascii")).toBe(runtime.packageDigest);

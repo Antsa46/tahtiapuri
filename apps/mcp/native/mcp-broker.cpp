@@ -70,6 +70,7 @@ int wmain(int argc,wchar_t** argv){
                 Sleep(2);
             }
         }catch(const WinError& e){failed=!(requestedStop&&std::string(e.what())=="mcp-main-stop");reason=e.what();error=e.code;}
+         catch(const JournalError& e){failed=true;reason=e.what();error=ERROR_INVALID_DATA;}
          catch(const WireError& e){failed=true;reason=e.what();error=ERROR_INVALID_DATA;}
          catch(...){failed=true;reason="mcp-internal";error=ERROR_UNHANDLED_EXCEPTION;}
 

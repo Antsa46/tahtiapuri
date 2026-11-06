@@ -858,3 +858,64 @@ kuin edellä: brokerin ilmoitus ja paikallinen jälkitila.
 
 Sovelluksen oletusentry, palautus/uudelleenavaus ja riippumaton
 OS-/verkkonäyttö sekä koko FMI/CPU/GPU-koepaketti ovat kesken.
+
+
+## Vapautuksen omistajuusjournal v2
+
+`broker-journal-codec.h` määrittää uuden 1024 tavun tietueen. `TMCJRN2` ja
+versionumero 2 erottavat sen aiemmasta journalista; TMCT/1- ja TMCP/1-
+viestikehykset sekä paketin kuvausskeema pysyvät ennallaan. Vanhaa journalia
+ei muuteta eikä tulkita uuden version poistumisnäytöksi.
+
+| Tavukohta | Kenttä |
+| --- | --- |
+| 0–19 | Magic, versio, koko ja vaihe |
+| 20–47 | Brokerin/Mainin/workerin PID:t sekä Mainin ja workerin FILETIME:t |
+| 48–75 | Generation ja worker-stagen volume/indexHigh/indexLow |
+| 76–79 | Varattu nollatäyte |
+| 80–143 | Paketin digest |
+| 144–503 | Pituusrajatut owner- ja profile-SID:t nollatäytteineen |
+| 504–511 | Brokerin oma FILETIME |
+| 512–523 | Reservationin volume/indexHigh/indexLow |
+| 524–991 | Varattu nollatäyte |
+| 992–1023 | SHA-256 ensimmäisistä 992 tavusta |
+
+Brokerin tunniste tulee sen omasta prosessista ja reservationin tunniste
+jo varmennetusta kansiokahvasta. Historiallisia tunnisteita ei tyhjennetä
+CLEANissa. Tietueen eheys ei yksin todista omistajuutta tai prosessin
+poistumista. Codec tarkistaa vaiheiden kenttäyhdistelmät; niiden sallittu
+siirtymäjärjestys kuuluu edelleen `BrokerJournal`-omistajalle.
+`ProfileCreating` ja `ProcessCreating` säilyvät epävarmoina vaiheina.
+
+`broker-journal-store.h` erottaa tallennusportin: varmennus → kirjoitus →
+flush → takaisinluku → varmennus. Virhe myrkyttää kirjoittajan: seuraavaa
+vaihetta, kirjoitusta tai vanhaa onnistunutta tietuetta ei enää luovuteta.
+Tuotanto käyttää olemassa olevaa BCrypt-SHA-256-funktiota ja säilytettyä
+natiivia tiedostokahvaa. Testien tarkistefunktio on erikseen nimetty
+riippuvuuskorvaus, eikä sen tulosta kuvata kryptografiseksi näytöksi.
+
+Siirrettävä C++-koe läpäisi 55 tavumuoto- ja tallennusvirhetapausta yhdellä
+suorittimella. Se ei ajanut Windows-APIa tai profiilia. Ensimmäinen käännös
+pysähtyi varoitukset virheinä käsitteleviin luettavuuskohtiin; korjattu
+käännös ja testi päättyivät todellisiin exit0-havaintoihin. Windowsin
+kolmen binäärin käännös, pakettitarkistus ja uuden tietueen yhden tapauksen
+oikea broker-koostumiskoe läpäisivät. Testiprosessin ja ulomman ajurin
+exit0:t havaittiin, ja 572 lähde-/pakettipinniä täsmäsivät ajon jälkeen.
+Koe tarkisti broker-PID:n käynnistettyä lasta vasten, stage/reservation-
+tunnisteet Windowsin Node BigIntStats -arvoihin sekä journalin eheyden,
+Main-kontekstin ja MCP-tilakierroksen sulkuineen. Brokerin FILETIME:sta
+varmennettiin vain ei-nolla; sen täsmällinen ulkopuolinen vastaavuus on
+vielä avoin. Kohdistettu integraatiotestien tyyppitarkistus läpäisi.
+Tämä ei vielä hyväksy varauksen vapautusta tai kaatumispalautusta.
+
+Normaalin CLEANin jälkeinen varauksen vapautus tarvitsee erillisen natiivin
+operaation, tuoreet broker-/worker-/Job-/profiilitarkistukset sekä pysyvän
+vapautusaikomuksen poistovaiheiden yli. Mainin boolean tai Node-rm ei
+vapauta varausta. Myös saman Main-omistajan sukupolvien hallinta,
+kaatumispalautus ja sovelluksen restart ovat vielä toteutettavia portteja.
+
+Profiilin SID:n johtaminen ei ole profiilin puuttumistodiste.
+[Microsoftin DeleteAppContainerProfile-sopimus](https://learn.microsoft.com/en-us/windows/win32/api/userenv/nf-userenv-deleteappcontainerprofile)
+kuvaa olemattoman profiilin poiston onnistuvan, mutta epäonnistuminen
+jättää tilan määrittelemättömäksi. Tuleva palautus käsittelee tämän
+rajattuna omistusoperaationa; polkukysely ei korvaa sitä.
