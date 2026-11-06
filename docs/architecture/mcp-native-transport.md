@@ -3,8 +3,9 @@
 Tämä dokumentti omistaa eristettyyn Node-prosessiin vietävän MCP-työntekijän
 viestimuodon ja stream-koosteen. Toteutettu työntekijä on erillinen ehdokas;
 nykyinen `startMcp`-oletusentry ei vaihdu. Natiivi Windows-käynnistäjä,
-resurssipaketin oikeudet, mainin todentaminen ja käyttöjärjestelmätason
-näyttö ovat vielä jatkotyötä. Koko tavoitteen omistaa
+resurssipaketin oikeudet, mainin todentamisen koko käynnistysketju ja
+käyttöjärjestelmätason näyttö ovat vielä jatkotyötä. Todentamisen rajatut
+perusosat kuvataan alla; niitä ei vielä ole kytketty oletuskäynnistykseen. Koko tavoitteen omistaa
 [backendin ja MCP:n eristyspolku](backend-mcp-isolation.md).
 
 ## Vastuut
@@ -216,3 +217,84 @@ latauskoukku esti repositoryn riippuvuuksien käyttämisen; paketin tavut
 varmennettiin ennen ajoa ja sen jälkeen. Koukku ei kuulu toimitettavaan
 pakettiin. Natiivi välittäjä, mainin todentaminen, LPAC ja koko sovelluksen
 verkko-/tiedosto-/elinkaarinäyttö ovat yhä seuraavia portteja.
+
+## Mainin kertakäyttöinen pääsyoikeus ja natiivin vastapään tarkistus
+
+`native-development-admission.ts` on Mainin omistama erillinen ehdokas.
+Omistaja määrittää backendin istunnon ensin ja peruu sen sulussa tai virheessä.
+Pääsyoikeuden myöntäjä ei julkaise tiedostoja, käynnistä prosesseja tai
+osoita niiden poistumista. Nykyinen `DevelopmentHost` ei vielä käytä sitä.
+
+Yksi käynnistyssukupolvi myöntää yhden kertakäyttöisen tunnuksen kerrallaan.
+Tunnus on eri salaisuus kuin backendin istuntotunnus; vanha istuntotunnus
+ei kelpaa vaihtoehtoiseksi autentikoinniksi. Tunnus kulutetaan ja asiakkaan
+paikka varataan synkronisesti ennen backendin liittämistä. Tilat ovat
+`idle → available → attaching → active → detaching → idle`; epävarma
+liittäminen tai irrotus päättää sukupolven `disabled`-tilaan.
+
+Uusi tunnus voidaan myöntää vasta alkuperäisen liittämisen ja sen jälkeisen
+irrotuksen valmistuttua. Aikakatkaistu liittäminen yritetään edelleen
+irrottaa sen oikeasti valmistuttua, mutta myöhäinen onnistuminen ei avaa
+sukupolvea uudelleen. Vanhan asiakkaan myöhäinen vastaus tai aikakatkaisu
+ei saa palautua eikä sulkea korvaavaa asiakasta. Sukupolven yhteisiä keskeneräisten kutsujen
+varauksia on enintään neljä myös asiakkaan vaihtuessa. Varaus vapautuu
+vastauksesta, virheestä tai kolmen sekunnin oletusmääräajasta; vanhan
+asiakkaan irrotus ei vapauta sen keskeneräisiä varauksia. Aikakatkaisu
+ei yksin todista taustalla olevan backend-pyynnön poistumista. Kuljetuksen tavurajat,
+kutsutahti ja tunnisteiden uudelleenkäytön esto kuuluvat tulevalle isännälle.
+
+Main todentaa tässä suunnitelmassa yksityisen käynnistystunnuksen hallinnan.
+Tämä ei ole vastavuoroinen OS-todistus brokerin binääristä tai sen työntekijän
+eristyksestä. Sovelluksen luotettu käynnistäjä ja saman käyttäjän tavallinen
+hallintaympäristö pysyvät luottamusrajan sisällä.
+
+`native-development-bootstrap.ts` ja `main-bootstrap.h` määrittelevät saman
+kiinteän 96 tavun kuvauksen: `TMBOOT1` ja nollatavu, versio ja koko,
+Mainin PID, nollattu varattu kenttä, tarkka 64-bittinen Windows FILETIME,
+16 tavun putkinonce, 16 tavun sukupolvi ja 32 tavun käynnistystunnus.
+Kuvauksessa ei ole vapaata tiedostopolkua, ohjelmaa tai argumentteja.
+FILETIME hankitaan prosessikahvasta, ei JS:n kellosta tai pyöristetystä
+käynnistysajasta. Tarkka Mainin tunnisteen tuottaja on vielä liittämistyötä.
+
+`main-peer.h` avaa vain nonceen perustuvan paikallisen putken. Se tarkistaa
+avatun putken palvelin-PID:n, säilyttää sitä vastaavan elävän prosessikahvan
+ja vertaa tarkkaa käynnistysaikaa ennen kanavan luovuttamista. Tarkistuksen
+virhe estää käytön. Kahvat eivät periydy, ja putki avataan identification-
+tasolla ilman brokerin impersonointioikeutta. Rakentaja ei lähetä tavuja.
+Tarkistus suojaa vanhentuneelta tai väärälle palvelinprosessille osoittavalta
+kuvaukselta; se ei yksin validoi kuvaustiedoston omistajaa tai oikeuksia.
+
+Rajattu Windows-koe rakentuu komennolla:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\integration\mcp\run-native-main-peer.ps1
+```
+
+Koe käyttää synteettistä aineistoa ja oikeaa Windows-putkea. Se varmentaa
+TypeScriptin kanssa yhteisen binäärifixturen, oikean vastapään, väärän PID:n,
+vanhentuneen käynnistysajan ja puuttuvan putken hylkäämisen sekä sen, ettei
+hylätylle vastapäälle lähetetä salaisuutta. Malleja tai eristysprofiileja ei
+käynnistetä eikä Windowsin oikeusasetuksia muuteta. Käännös on sarjallinen,
+matalalla prioriteetilla ja yhdellä suorittimella. Käännöksen aikakatkaisussa
+tehdään rajattu oman prosessipuun sulkuyritys; tämä ei ole Job-eristys eikä
+riippumaton jälkeläisten poistumisen todiste. Epävarmuus tuottaa virheen,
+yksityisen siivousraportin ja estää onnistumiskuitin.
+
+Yksikkötestit kattavat kertakäyttöisyyden, rinnakkaiset lunastukset, hitaat
+liittämiset ja irrotukset, peruutuksen sekä vanhan asiakkaan myöhäiset
+virheet. Integraatiotestit käyttävät oikeaa `DevelopmentService`- ja
+`AssistantService`-logiikkaa: kumpikaan UI/MCP-rooli ei näe eikä peru toisen
+töitä, MCP:n irrotus vapauttaa vain sen työt ja jonossa oleva UI-työ jatkuu.
+Mallivastaukset ovat synteettisiä.
+
+Ennen varsinaista käyttöönottoa puuttuvat edelleen suojatun kuvaustiedoston
+julkaisu ja avatun tiedoston tarkistus, tarkka Main-tunnisteen hankinta,
+autentikointikuittaus ja sen aikarajat, brokerin hallinta- ja työntekijädatan
+erottelu, legacy/native-omistajuuden yhteensovitus sekä työntekijän käynnistys,
+Jobin tyhjeneminen ja oikeuksien siivous. Yksikään tämän osan testi ei
+hyväksy verkkokieltoa tai koko MCP:n OS-eristystä.
+
+Windows-rajapintojen lähteet:
+[GetProcessTimes](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getprocesstimes),
+[GetNamedPipeServerProcessId](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-getnamedpipeserverprocessid) ja
+[CreateFileW](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew).
