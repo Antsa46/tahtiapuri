@@ -626,3 +626,48 @@ valitsee aiemman onnistuneen `run-native-bootstrap.ps1`-ajon run-hakemiston.
 Resepti tarkistaa sen 47 tapauksen kuitin, molemmat apubinäärit ja lähdepinnit,
 ajaa 71 tapauksen sarjan yhdellä suorittimella ja kirjoittaa uuden yksityisen
 kuitin. Puuttuvat ympäristöehdot tai ohitetut tapaukset eivät kelpaa onnistumiseksi.
+
+
+## Jaetut Windowsin omistus- ja sulkutarkistukset
+
+MCP:n natiivibrokerin valmistelu jakaa backendin kanssa kolme pientä
+`packages/windows-runtime/native`-otsaketta. `owner-security.h` tunnistaa
+nykyisen käyttäjän ja omistaa SID-varaukset; se ei myönnä tiedosto-oikeuksia.
+`process-witness.h` tarkistaa aiemmin kirjatun prosessin poistumisen tarkan
+PID:n ja luontiajan avulla. Avaamisen virhekoodi ei yksin todista poistumista:
+varareitti vaatii kokonaisen prosessiluettelon ja siinä myös oman prosessin.
+`owned-job.h` luo tai avaa nimetyn Jobin, tarkistaa omistajan ja täsmällisen
+owner/SYSTEM-ACL:n, rajoitukset ja kahvan periytymättömyyden sekä odottaa
+rajatusti Jobin tyhjenemistä.
+
+Jobin nimi ja käytettävä rajoituspolitiikka tulevat luotetulta omistavalta
+moduulilta, eivät työntekijältä. Backendin ohuet vanhan nimiset portit
+säilyttävät sen nimeämisen, yhden prosessin rajan, yhden suorittimen,
+BelowNormal-prioriteetin, 512 MiB:n prosessimuistirajan ja kill-on-close-säännön.
+Muutoksen yhteydessä natiivibinäärit käännetään uudelleen; vanhojen binäärien
+ABI-yhteensopivuutta ei luvata. Backendin rakennuskuitti sitoo myös nämä
+kolme jaettua lähdeotsaketta.
+
+Backendin tiedostopuu, tiedosto-ACL:t, journalin tilakone, havaintopaikkojen
+siirto ja käyttäjätiedon oikeudet pysyvät backendin omistamina. MCP tarvitsee
+oman resurssipuun, journalin ja TMCT/TMCP-välityksen. Käynnistyskuvauksen
+ACL-sopimusta ei yhdistetä runtime-resurssien ACL-sopimukseen. Tämä irrotus ei
+vapauta Mainin pysyvää varausta eikä vielä todista MCP-työntekijän eristystä.
+
+
+Irrotuksen rajattu Windows-varmennus läpäisi neljä kokonaista testisarjaa:
+aiemmat prosessin palautus-, tiedostopolku- ja havaintopaikkojen siirtotestit
+sekä uusi tyhjien Jobien testi. Viimeinen käyttää vain yhteisiä otsakkeita,
+ei backendin sisäisiä otsakkeita. Se tarkistaa uuden Jobin, nimitörmäyksen,
+oikean palautusavauksen, väärän rajoituspolitiikan, periytyvän kahvan,
+muuttuneen rajan ja viimeisen kahvan sulkeutumisen jälkeisen puuttumisen.
+Backend-broker ja kaikki neljä testiohjelmaa kääntyivät varoitukset virheiksi
+käsittelevällä asetuksella. Kaikkien viiden prosessiajon exit0 havaittiin
+säilytetyistä prosessikahvoista. Varsinaista backend-palvelua ei ajettu.
+
+Ensimmäinen yritys säilyy epäonnistuneena: palautustesti tulosti onnistumisen,
+mutta ylitti testikäynnistimen 15 sekunnin kokonaisrajan; exit0 havaittiin
+vasta siivousvaiheessa. Tarkkaa hidastumisen syytä ei osoitettu. Onnistuneessa
+uusinnassa testiprosessin ulkoraja oli 45 sekuntia. Tuotannon määräaikoja,
+backendin oikeuksia tai oletuskäynnistystä ei muutettu. Lähde- ja
+rakennussyötteiden tarkisteet varmennettiin ajon ympärillä.

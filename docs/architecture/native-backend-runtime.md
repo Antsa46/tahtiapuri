@@ -341,3 +341,13 @@ tilassa ja säilyttää stagingin: sessionRemoved- tai CLEAN-lippuja ei keksitä
 [Havaintopaikkojen sopimus](observing-places.md#vartioitu-siirto-samassa-broker-istunnossa)
 omistaa tiedostojen säilyttämisen ja merkin konfliktisäännöt. Rajattu
 siirtymän näyttö ei sulje koko #10:n alkuperäisiä hyväksymisehtoja.
+
+
+## Jaettujen Windows-apurien omistajuus
+
+Prosessin poistumisen näyttö, nykyisen käyttäjän tunnistus ja nimetty Job
+ovat jaetussa `packages/windows-runtime/native`-moduulissa. Backendin omat
+portit säilyttävät sen tarkat nimet ja rajoituspolitiikan. Journal,
+tiedosto-oikeudet, resurssipuu ja havaintopaikkojen siirto pysyvät backendissä.
+Irrotus edellyttää binäärin uudelleenkäännöstä; tarkempi vastuunjako on
+[MCP-kuljetuksen yhteisten apurien kuvauksessa](mcp-native-transport.md#jaetut-windowsin-omistus--ja-sulkutarkistukset).

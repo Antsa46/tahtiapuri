@@ -150,7 +150,8 @@ function Get-SourcePathSet {
   $script:sourcePaths = [Collections.Generic.List[string]]::new()
   $script:sourceNodes = 0
   foreach ($path in @('scripts/native/build-backend-runtime.ps1', 'scripts/native/collect-backend-runtime.mjs', 'scripts/dev/toolchain.json',
-    'package.json', 'pnpm-lock.yaml', 'tsconfig.base.json', 'packages/windows-runtime/native/common.h')) { $script:sourcePaths.Add($path) }
+    'package.json', 'pnpm-lock.yaml', 'tsconfig.base.json', 'packages/windows-runtime/native/common.h',
+    'packages/windows-runtime/native/owner-security.h', 'packages/windows-runtime/native/process-witness.h', 'packages/windows-runtime/native/owned-job.h')) { $script:sourcePaths.Add($path) }
   foreach ($area in @('apps/backend', 'packages/backend-transport', 'packages/domain', 'packages/validation')) {
     Add-SourceTree ($area + '/src')
     $script:sourcePaths.Add($area + '/package.json'); $script:sourcePaths.Add($area + '/tsconfig.json')

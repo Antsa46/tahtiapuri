@@ -1,22 +1,15 @@
 #pragma once
 #include "backend-wire.h"
+#include "../../../packages/windows-runtime/native/owner-security.h"
 #include <bcrypt.h>
 #include <set>
 #pragma comment(lib,"bcrypt.lib")
 #pragma comment(lib,"userenv.lib")
 #pragma comment(lib,"advapi32.lib")
 namespace backend_runtime {
-struct LocalMemory { void* value=nullptr;~LocalMemory(){if(value)LocalFree(value);} };
-inline std::wstring sidText(PSID sid) {
-    LocalMemory memory; if(!IsValidSid(sid)||!ConvertSidToStringSidW(sid,reinterpret_cast<LPWSTR*>(&memory.value)))throw WinError("sid-text");
-    return static_cast<LPWSTR>(memory.value);
-}
-struct Owner {
-    std::vector<BYTE> user; LocalMemory system;std::wstring text;
-    Owner(){Handle token;if(!OpenProcessToken(GetCurrentProcess(),TOKEN_QUERY,&token.value))throw WinError("owner-token");user=tokenInfo(token.value,TokenUser);text=sidText(sid());
-        if(!ConvertStringSidToSidW(L"S-1-5-18",&system.value))throw WinError("system-sid");}
-    PSID sid() const{return reinterpret_cast<const TOKEN_USER*>(user.data())->User.Sid;}
-};
+using windows_runtime::LocalMemory;
+using windows_runtime::sidText;
+using windows_runtime::Owner;
 inline std::wstring canonicalPath(const std::wstring& value) {
     if(value.size()<4||value.size()>1800||value[0]<L'A'||value[0]>L'Z'||value[1]!=L':'||value[2]!=L'\\'||value.back()==L'\\'||
         value.find(L'/',3)!=std::wstring::npos||value.find(L':',2)!=std::wstring::npos||value.find(L'\0')!=std::wstring::npos)
