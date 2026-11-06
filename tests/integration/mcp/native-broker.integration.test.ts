@@ -1,12 +1,11 @@
 import { expect, it } from "vitest";
-import { constants } from "node:fs";
-import { access, copyFile, lstat, mkdir, open, readFile, readdir, realpath, writeFile } from "node:fs/promises";
+import { access, lstat, readFile, readdir, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { basename, dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { NativeDevelopmentHost, type NativeHostOutcome } from "../../../apps/desktop/src/main/native-development-host.js";
-import { loadNativeMcpHelpers, type NativeMcpHelperPins } from "../../../apps/desktop/src/main/native-mcp-helpers.js";
+import { loadNativeMcpRuntime } from "../../../apps/desktop/src/main/native-mcp-resources.js";
 import { decodeNativeBootstrap } from "../../../apps/desktop/src/main/native-development-bootstrap.js";
 import { childEnvironment } from "../../../apps/desktop/src/main/child-environment.js";
 import type { BackendController } from "../../../apps/desktop/src/main/backend-controller.js";
@@ -21,7 +20,6 @@ const runRoot = process.env.TAHTIAPURI_NATIVE_MCP_RUN_ROOT;
 const enabled = process.platform === "win32" && !!runtimeRoot && !!descriptorDigest && !!runRoot;
 const test = enabled ? it : it.skip;
 const digest = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
-type Pin = { bytes: number; sha256: string };
 type Exit = { code: number | null; signal: NodeJS.Signals | null };
 type Rpc = { jsonrpc: string; id: number; error?: unknown; result?: { tools?: { name: string }[]; structuredContent?: unknown } };
 async function bounded<T>(work: Promise<T>, ms: number, label: string): Promise<T> {
@@ -31,21 +29,6 @@ async function bounded<T>(work: Promise<T>, ms: number, label: string): Promise<
     if (performance.now() >= end) throw new Error(label + " late completion");
     return result;
   } finally { clearTimeout(timer); }
-}
-async function pinned(path: string, pin: Pin, maxBytes: number): Promise<Buffer> {
-  const before = await lstat(path);
-  expect(before.isFile() && !before.isSymbolicLink() && before.nlink === 1).toBe(true);
-  expect(relative(path, await realpath(path))).toBe("");
-  expect(Number.isSafeInteger(pin.bytes) && pin.bytes > 0 && pin.bytes <= maxBytes).toBe(true);
-  expect(pin.sha256).toMatch(/^[a-f0-9]{64}$/); expect(before.size).toBe(pin.bytes);
-  const handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
-  try {
-    const opened = await handle.stat(), bytes = await handle.readFile(), after = await handle.stat(), named = await lstat(path);
-    for (const field of ["dev", "ino", "size", "nlink", "mtimeMs", "ctimeMs"] as const) {
-      expect(opened[field]).toBe(before[field]); expect(after[field]).toBe(opened[field]); expect(named[field]).toBe(after[field]);
-    }
-    expect(digest(bytes)).toBe(pin.sha256); return bytes;
-  } finally { await handle.close(); }
 }
 class McpPeer {
   readonly closed: Promise<Exit>;
@@ -132,22 +115,7 @@ test("round trips real MCP status and Main STOP through the native broker candid
   expect(dirname(runtimeRoot!)).toBe(join(projectRoot, ".artifacts/native/mcp-native/builds"));
   expect(basename(runtimeRoot!)).toMatch(/^build-[a-f0-9]{32}$/);
   expect(descriptorDigest).toMatch(/^[a-f0-9]{64}$/);
-  const descriptorPath = join(runtimeRoot!, "runtime-descriptor.json"), descriptorStat = await lstat(descriptorPath);
-  expect(descriptorStat.size).toBeLessThan(16384);
-  const descriptorBytes = await readFile(descriptorPath); expect(digest(descriptorBytes)).toBe(descriptorDigest);
-  const descriptor = JSON.parse(descriptorBytes.toString("utf8")) as {
-    schema: number; id: string; broker: Pin; helpers: NativeMcpHelperPins; package: { path: string; manifest: string; digest: string };
-  };
-  expect(descriptor.schema).toBe(1); expect(descriptor.id).toBe("tahtiapuri-native-mcp-v1");
-  expect(descriptor.package.path).toBe("package"); expect(descriptor.package.manifest).toBe("runtime-manifest.json");
-  const broker = join(runtimeRoot!, "bin/mcp-broker.exe"); await pinned(broker, descriptor.broker, 4194304);
-  const helpers = await loadNativeMcpHelpers(join(runtimeRoot!, "helpers"), descriptor.helpers);
-  const manifestBytes = await readFile(join(runtimeRoot!, "package/runtime-manifest.json"));
-  expect(digest(manifestBytes)).toBe(descriptor.package.digest);
-  const manifest = JSON.parse(manifestBytes.toString("utf8")) as { files: (Pin & { path: string })[] };
-  const expected = ["licenses/mcp-core-LICENSE.txt", "licenses/mcp-server-LICENSE.txt", "licenses/node-LICENSE.txt",
-    "licenses/zod-LICENSE.txt", "mcp-worker.mjs", "node.exe", "package.json"];
-  expect(manifest.files.map(pin => pin.path).sort()).toEqual(expected);
+  const runtime = await routine(() => loadNativeMcpRuntime({ runtimeRoot: runtimeRoot!, descriptorSha256: descriptorDigest! }, new AbortController().signal), 15000, "runtime-load");
   const control = join(runRoot!, "control"), reservation = join(control, "native-session-reserved");
   let runs = 0;
   const assistant = new AssistantService({ run: async () => { ++runs; return { text: "Synthetic", info: null, error: null }; }, cancel: () => {} });
@@ -163,33 +131,26 @@ test("round trips real MCP status and Main STOP through the native broker candid
     }
     throw new Error("Unexpected development operation");
   };
-  const host = new NativeDevelopmentHost({ development }, control, helpers);
+  const host = new NativeDevelopmentHost({ development }, control, runtime);
   let peer: McpPeer | undefined, outcome: NativeHostOutcome | undefined, exited: Exit | undefined;
   let context: { generation: string; pid: number; creation: string } | undefined;
   let stopping: Promise<NativeHostOutcome> | undefined;
   const requestStop = () => stopping ??= host.stop().then(value => { outcome = value; return value; });
-  let stdinOpenAtMainStop = false, mainStopIssuedByTest = false;
+  let stdinOpenAtMainStop = false, mainStopIssuedByTest = false, workerPresentAtEnabled = false;
   let success = false, original: unknown;
   const cleanupErrors: string[] = []; let phase = "enable";
   try {
     expect(await routine(() => host.setEnabled(true), 35000, "host-enable")).toMatchObject({ ok: true, status: { enabled: true } });
     const launch = await routine(() => readFile(join(control, "main-bootstrap.bin")), 3000, "bootstrap-read"), decoded = decodeNativeBootstrap(launch);
     context = { generation: decoded.ticket.generation, pid: decoded.main.pid, creation: decoded.main.creationTime.toString() }; launch.fill(0);
-    phase = "stage";
-    const stage = join(reservation, "worker"), target = join(stage, "package");
-    for (const directory of [stage, target, join(target, "licenses"), join(stage, "scratch")])
-      await routine(() => mkdir(directory), 3000, "stage-directory");
-    for (const pin of manifest.files) {
-      const source = join(runtimeRoot!, "package", pin.path); await routine(() => pinned(source, pin, 167772160), 15000, "source-pin");
-      await routine(() => copyFile(source, join(target, pin.path), constants.COPYFILE_EXCL), 15000, "stage-copy");
-      await routine(() => pinned(join(target, pin.path), pin, 167772160), 15000, "stage-pin");
-    }
-    await routine(() => copyFile(join(runtimeRoot!, "package/runtime-manifest.json"), join(target, "runtime-manifest.json"), constants.COPYFILE_EXCL), 3000, "manifest-copy");
-    expect((await routine(() => readdir(join(stage, "scratch")), 3000, "scratch-read")).length).toBe(0);
+    // The production Host prepared the entire worker before publishing the
+    // bootstrap. This fixture no longer copies or repairs a worker package.
+    const staged = await routine(() => readdir(reservation), 3000, "prepared-reservation");
+    expect(staged).toEqual(["worker"]); workerPresentAtEnabled = true;
     phase = "spawn";
     // Single descriptor argument, stdio transport, no model or network endpoint.
     if (performance.now() >= routineEnd) throw new Error("No broker spawn after deadline");
-    const child = spawn(broker, [join(control, "main-bootstrap.bin")], {
+    const child = spawn(runtime.broker, [join(control, "main-bootstrap.bin")], {
       cwd: join(runtimeRoot!, "bin"), stdio: ["pipe", "pipe", "pipe"], detached: true, windowsHide: true, env: childEnvironment(process.env),
     });
     peer = new McpPeer(child);
@@ -231,7 +192,7 @@ test("round trips real MCP status and Main STOP through the native broker candid
     expect(journal.readUInt32LE(8)).toBe(1); expect(journal.readUInt32LE(12)).toBe(1024); expect(journal.readUInt32LE(16)).toBe(7);
     expect(journal.readUInt32LE(24)).toBe(context.pid); expect(journal.readBigUInt64LE(32).toString()).toBe(context.creation);
     expect(journal.subarray(48, 64).toString("hex")).toBe(context.generation);
-    expect(journal.subarray(80, 144).toString("ascii")).toBe(descriptor.package.digest);
+    expect(journal.subarray(80, 144).toString("ascii")).toBe(runtime.packageDigest);
     expect(journal.subarray(992).toString("hex")).toBe(digest(journal.subarray(0, 992)));
     if (performance.now() >= routineEnd) throw new Error("No successful predicate after routine deadline");
     phase = "done"; success = true;
@@ -252,7 +213,7 @@ test("round trips real MCP status and Main STOP through the native broker candid
       brokerStderr: Buffer.concat(peer?.stderr ?? []).toString("utf8"), error: original instanceof Error ? original.message : original ? String(original) : null,
       cleanupErrors, evidenceScope: "Functional Node-host/Main-STOP only; broker-reported cleanup and local post-state, no independent OS/network/profile proof",
       fixturePreserved: true, recoveryAttempted: false, inspectorExecuted: false, stdinEndedByTest: false,
-      stdinOpenAtMainStop, mainStopIssuedByTest, stdoutEnded: peer?.stdoutEnded ?? false,
+      stdinOpenAtMainStop, mainStopIssuedByTest, workerPresentAtEnabled, stdoutEnded: peer?.stdoutEnded ?? false,
       terminalSuccessRequires: "One passed Vitest case, actual process exit0, no timeout/cleanup errors; this receipt alone is not terminal success",
     }, null, 2) + "\n", { flag: "wx", signal: receiptAbort.signal }), 3000, "functional-receipt-write"); }
     finally { clearTimeout(receiptTimer); }

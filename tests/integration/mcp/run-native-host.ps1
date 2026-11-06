@@ -53,7 +53,7 @@ foreach ($path in $paths) {
 }
 if ($p.ExitCode -ne 0) { exit $p.ExitCode }
 $result = Get-Content -LiteralPath (Join-Path $outputRoot 'tests.json') -Raw | ConvertFrom-Json
-if (!$result.success -or $result.numPassedTests -ne 71 -or $result.numFailedTests -ne 0 -or $result.numPendingTests -ne 0) { throw 'Incomplete host test result' }
-@{ source=$inputs; passed=71; failed=0; pending=0; identityHelperSha256=$receipt.identityHelperSha256; publicationHelperSha256=$receipt.publicationHelperSha256 } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $outputRoot 'receipt.json') -Encoding UTF8
-Write-Output 'Native Main host integration passed: 71/71'
+if (!$result.success -or $result.numPassedTests -ne 84 -or $result.numFailedTests -ne 0 -or $result.numPendingTests -ne 0) { throw 'Incomplete host test result' }
+@{ source=$inputs; passed=84; failed=0; pending=0; identityHelperSha256=$receipt.identityHelperSha256; publicationHelperSha256=$receipt.publicationHelperSha256 } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $outputRoot 'receipt.json') -Encoding UTF8
+Write-Output 'Native Main host integration passed: 84/84'
 

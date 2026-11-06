@@ -567,7 +567,8 @@ Tämä toteutus ei poista varausta koskaan, myöskään onnistuneen CLEANin
 jälkeen, eikä valitse tilalle uutta satunnaishakemistoa. Brokerin varmennettu
 palautus ja uudelleenavaus ovat erillinen jäljellä oleva toteutusportti.
 
-Avaus etenee varauksesta kuvaustiedoston palautukseen, tarkkaan Main-tunnisteeseen,
+Avaus etenee varauksesta kuvaustiedoston palautukseen, suljetun worker-paketin
+valmisteluun, tarkkaan Main-tunnisteeseen,
 backendin istuntoon, kuuntelevaan putkeen ja julkaisuun. Kaikkien odotusten
 jälkeen tarkistetaan peruutus. Putken kokonaisyhteysraja on neljä;
 kuudestoista hyväksyntä on viimeinen samassa sekunnin laskentaikkunassa.
@@ -624,8 +625,11 @@ Main-isännän julkinen koeresepti on
 `tests/integration/mcp/run-native-host.ps1`. Sen `-BootstrapRun`-argumentti
 valitsee aiemman onnistuneen `run-native-bootstrap.ps1`-ajon run-hakemiston.
 Resepti tarkistaa sen 47 tapauksen kuitin, molemmat apubinäärit ja lähdepinnit,
-ajaa 71 tapauksen sarjan yhdellä suorittimella ja kirjoittaa uuden yksityisen
-kuitin. Puuttuvat ympäristöehdot tai ohitetut tapaukset eivät kelpaa onnistumiseksi.
+ajaa nykyisen 84 tapauksen valinnan yhdellä suorittimella ja kirjoittaa uuden
+yksityisen kuitin. Valinta on 26 Host-, 42 yhteys-, 12 viestikehys-, kaksi
+legacy-isännän ja kaksi apupaketin tapausta. Puuttuvat ympäristöehdot tai
+ohitetut tapaukset eivät kelpaa onnistumiseksi. Aiempi 71/71 on historiallista
+näyttöä; korjatun 84 tapauksen kokonaisreseptin ajoa ei ole tehty tässä muutoksessa.
 
 
 ## Jaetut Windowsin omistus- ja sulkutarkistukset
@@ -804,3 +808,53 @@ paikallinen tiedostojälki eivät ole riippumaton prosessi-, Job-, profiili-
 tai verkkorajan havainto. Electronin oletuspolku, palautus ja uudelleenavaus
 sekä koko FMI/verkko/CPU/GPU-koepaketti tarvitsevat edelleen oman näyttönsä.
 Erillistä karanteeniin joutunutta havaintoapuria ei käytetä tässä kokeessa.
+
+
+## Toimitettavan MCP-paketin valmistelu ennen julkaisua
+
+`native-mcp-resources.ts` lataa Mainin luotetun koostamisen valitseman
+natiivipaketin. Pakollinen `descriptorSha256` annetaan paketin ulkopuolelta;
+kuvaustiedoston oma tarkiste ei kelpaa hyväksymisperusteeksi. Lataus tarkistaa
+sidotun rakennusmanifestin, kiinteän broker-binäärin, kaksi apuria sekä
+worker-paketin kahdeksan tiedostoa. Runtime ei importoi rakennusskriptejä.
+Binääri- ja helper-hakemistojen sekä worker-puun ylimääräinen sisältö,
+linkit, väärät tavut ja yhteensopimaton metadata hylätään.
+
+Main-isännän pakollinen resurssiportti sisältää apurit ja
+`prepareWorker`-toiminnon. Valmistelu suoritetaan ennen Main-tunnistetta,
+backendin asetusta, kuuntelijan avausta ja käynnistyskuvauksen julkaisua.
+Näin ulkoinen MCP-asiakas ei pääse aloittamaan välittäjää keskeneräisestä
+paketista. Pelkät apurit ilman valmisteluriippuvuutta eivät kelpaa portiksi.
+Synteettisen vastapään testeissä valmistelu korvataan eksplisiittisesti;
+oikean brokerin koe käyttää tuotannon lataajaa ja valmistelua.
+
+Valmistelu kirjoittaa vain Mainin uutena luoman kiinteän varauksen
+`worker/package/licenses`- ja `worker/scratch`-puun. Olemassa olevaan kohteeseen
+ei yhdistetä mitään. Hakemistot perivät owner/SYSTEM-oikeudet; niille ei
+aseteta erillistä suojattua ACL:ää tai työntekijän oikeuksia. Broker omistaa
+myöhemmät grantit, profiilin, Jobin, journalin ja työntekijän sulun.
+
+Lähdepaketti tarkistetaan uudelleen ennen valmistelua ja sen lopuksi;
+kopioitu sisältö varmennetaan ennen valmistelun valmistumista. Peruutus ja
+valmistelun 30 sekunnin määräaika estävät seuraavan sivuvaikutuksen myös
+keskeyttämättömän kopioinnin valmistuessa myöhään. Kesken oleva lupaus
+pysyy isännän seurannassa: aikarajan kuluminen ei todista sen loppumista.
+Osittainen worker-puu ja pysyvä varaus säilyvät virheessä. Valmistelutoiminto
+ei poista tiedostoja, käynnistä prosessia tai tee automaattista palautusta.
+
+Rajattu Windows-varmennus läpäisi 43 tapausta: 17 paketinlataajan ja
+valmistelun tiedostokoetta sekä 26 Main-isännän tapausta oikeilla apureilla
+ja synteettisellä broker-vastapäällä. Mukana on myös koko sulkuajan ylittävä
+valmistelulupaus ja myöhäisen valmistumisen esto. Tuotannon desktop-käännös
+sekä integraatio- ja yksikkötestien kohdistetut tyyppitarkistukset läpäisivät.
+
+Oikean brokerin yhden tapauksen koostumiskoe läpäisi tuotantoloaderilla ja
+Mainin valmisteluportilla ilman testin omaa pakettikopiointia. Worker oli
+valmis Mainin avauksen valmistuessa; oikea julkaisutyökalu, MCP-tilakierros
+ja Main-STOP toimivat. Testiprosessien ja ulompien ajurien todelliset exit0:t
+havaittiin ja 570 lähde-/pakettipinniä täsmäsivät ajon jälkeen. Mallia,
+sää-APIa tai karanteeniapuria ei käytetty. Siivouksen näyttöraja on sama
+kuin edellä: brokerin ilmoitus ja paikallinen jälkitila.
+
+Sovelluksen oletusentry, palautus/uudelleenavaus ja riippumaton
+OS-/verkkonäyttö sekä koko FMI/CPU/GPU-koepaketti ovat kesken.

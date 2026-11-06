@@ -9,7 +9,7 @@ import { claimDevelopmentBackend } from "./development-owner.js";
 import { NativeDevelopmentAdmission } from "./native-development-admission.js";
 import { encodeNativeBootstrap, NATIVE_PIPE_PREFIX } from "./native-development-bootstrap.js";
 import { NativeMainConnection, type NativeConnectionOutcome } from "./native-main-connection.js";
-import type { NativeMcpHelpers } from "./native-mcp-helpers.js";
+import type { NativeMcpHostResources } from "./native-mcp-resources.js";
 
 export interface NativeHostOutcome {
   readonly descriptorRemoved: boolean;
@@ -52,9 +52,10 @@ export class NativeDevelopmentHost {
   private bucket = Date.now();
   private readonly file: string;
 
-  constructor(private readonly backend: Backend, private readonly directory: string, private readonly helpers: NativeMcpHelpers) {
+  constructor(private readonly backend: Backend, private readonly directory: string, private readonly resources: NativeMcpHostResources) {
     if (process.platform !== "win32" || !/^[A-Z]:\\/.test(directory) || win32.normalize(directory) !== directory
       || directory.length > 200 || directory === win32.parse(directory).root) throw new Error("Invalid native development directory.");
+    if (typeof resources?.prepareWorker !== "function") throw new Error("Missing native MCP worker preparation.");
     claimDevelopmentBackend(backend);
     this.file = join(directory, "main-bootstrap.bin");
   }
@@ -105,9 +106,13 @@ export class NativeDevelopmentHost {
       await mkdir(join(this.directory, "native-session-reserved")); this.reservationCreated = true; this.alive();
       const entries = await opendir(join(this.directory, "native-session-reserved"));
       try { if (await entries.read()) throw new Error("Native reservation is not empty."); } finally { await entries.close(); }
-      await this.helper(() => this.helpers.operate("recover", this.file, undefined, this.abort.signal));
+      await this.helper(() => this.resources.helpers.operate("recover", this.file, undefined, this.abort.signal));
       this.descriptorState = "absent"; this.alive();
-      const main = await this.helper(() => this.helpers.identity(this.abort.signal)); this.alive();
+      // The descriptor is an executable launch opportunity for an external MCP
+      // client. Finish the fixed package before identity/configure/listen/publish.
+      // Cancellation never abandons this tracked promise or removes partial data.
+      await this.resources.prepareWorker(join(this.directory, "native-session-reserved"), this.abort.signal); this.alive();
+      const main = await this.helper(() => this.resources.helpers.identity(this.abort.signal)); this.alive();
       const epoch = randomBytes(32).toString("hex"), pipeNonce = randomBytes(16).toString("hex");
       // A failed acknowledgement can still mean the backend changed; revoke it.
       this.configuration = Promise.resolve().then(() => {
@@ -132,7 +137,7 @@ export class NativeDevelopmentHost {
       });
       await this.listening; this.alive();
       this.descriptorState = "publishing";
-      this.descriptorWork = this.helper(() => this.helpers.operate("publish", this.file, this.descriptor, this.abort.signal))
+      this.descriptorWork = this.helper(() => this.resources.helpers.operate("publish", this.file, this.descriptor, this.abort.signal))
         .then(() => { this.descriptorState = "published"; }, error => { this.descriptorState = "uncertain"; throw error; });
       // The descriptor may become visible before the publisher exits. A claimed
       // connection must await publication settlement before consuming it.
@@ -153,7 +158,7 @@ export class NativeDevelopmentHost {
           || this.descriptor.subarray(48, 64).toString("hex") !== ticket.generation
           || this.descriptor.subarray(64).toString("hex") !== ticket.token) throw new Error("Native descriptor mismatch.");
         this.descriptorState = "consuming";
-        this.descriptorWork = this.helper(() => this.helpers.operate("consume", this.file, this.descriptor, signal))
+        this.descriptorWork = this.helper(() => this.resources.helpers.operate("consume", this.file, this.descriptor, signal))
           .then(() => { this.descriptorState = "removed"; }, error => { this.descriptorState = "uncertain"; throw error; });
         await this.descriptorWork;
       },
@@ -202,7 +207,7 @@ export class NativeDevelopmentHost {
     await this.descriptorWork?.catch(() => {});
     if (!this.cleanupAbort.signal.aborted && this.helpersSettled && this.descriptorState === "published" && this.descriptor) {
       this.descriptorState = "consuming";
-      try { await this.helper(() => this.helpers.operate("consume", this.file, this.descriptor, this.cleanupAbort.signal)); this.descriptorState = "removed"; }
+      try { await this.helper(() => this.resources.helpers.operate("consume", this.file, this.descriptor, this.cleanupAbort.signal)); this.descriptorState = "removed"; }
       catch { this.descriptorState = "uncertain"; }
     }
     const listenerClosed = await this.bound(listener, 3000) === true;

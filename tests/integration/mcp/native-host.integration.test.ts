@@ -4,6 +4,7 @@ import { createConnection } from "node:net";
 import { access, copyFile, link, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
+import type { NativeMcpHostResources } from "../../../apps/desktop/src/main/native-mcp-resources.js";
 import { NativeDevelopmentHost } from "../../../apps/desktop/src/main/native-development-host.js";
 import { DevelopmentHost } from "../../../apps/desktop/src/main/development-host.js";
 import { loadNativeMcpHelpers, type NativeMcpHelpers, type NativeMcpHelperPins } from "../../../apps/desktop/src/main/native-mcp-helpers.js";
@@ -52,11 +53,14 @@ function backend() {
   cleanups.push(async () => { service.configure(null); assistant.dispose(); });
   return { port: { development }, service, operations };
 }
-async function fixture(custom: NativeMcpHelpers = helpers, root?: string) {
+// These tests use a synthetic broker peer, so worker preparation is explicit
+// test-only substitution. The real broker fixture uses the production loader.
+const syntheticResources = (custom: NativeMcpHelpers, prepareWorker: NativeMcpHostResources["prepareWorker"] = async () => {}): NativeMcpHostResources => ({ helpers: custom, prepareWorker });
+async function fixture(custom: NativeMcpHelpers = helpers, root?: string, prepareWorker?: NativeMcpHostResources["prepareWorker"]) {
   const b = backend(), directory = root ?? await mkdtemp(join(base, "host-"));
   // securePrivateDirectory creates a new child with its required protected ACL.
   const control = join(directory, "control");
-  const host = new NativeDevelopmentHost(b.port, control, custom);
+  const host = new NativeDevelopmentHost(b.port, control, syntheticResources(custom, prepareWorker));
   cleanups.push(async () => { await host.stop(); });
   return { ...b, host, directory, control, file: join(control, "main-bootstrap.bin"), reservation: join(control, "native-session-reserved") };
 }
@@ -150,11 +154,11 @@ test("uncertain publisher exit prevents a second helper operation and preserves 
   expect(calls).toEqual(["recover", "publish"]); await access(f.reservation);
 });
 test("legacy and native hosts cannot share a backend even while disabled or after stop", async () => {
-  const b = backend(), root = join(base, "exclusive"); const host = new NativeDevelopmentHost(b.port, root, helpers);
+  const b = backend(), root = join(base, "exclusive"); const host = new NativeDevelopmentHost(b.port, root, syntheticResources(helpers));
   expect(() => new DevelopmentHost(b.port, root)).toThrow("already has an owner");
-  await host.stop(); expect(() => new NativeDevelopmentHost(b.port, root, helpers)).toThrow("already has an owner");
+  await host.stop(); expect(() => new NativeDevelopmentHost(b.port, root, syntheticResources(helpers))).toThrow("already has an owner");
   const other = backend(); new DevelopmentHost(other.port, root);
-  expect(() => new NativeDevelopmentHost(other.port, root, helpers)).toThrow("already has an owner");
+  expect(() => new NativeDevelopmentHost(other.port, root, syntheticResources(helpers))).toThrow("already has an owner");
 });
 for (const mutation of ["extra", "missing", "bytes", "hash", "hardlink"] as const)
   test("helper package rejects " + mutation, async () => {
@@ -276,5 +280,98 @@ test("terminal stop timeout forbids a late publisher from starting another helpe
     release.resolve(); await opening; await vi.advanceTimersByTimeAsync(0);
     vi.useRealTimers(); await tick(); await tick();
     expect(calls).toEqual(["recover", "publish"]); await access(f.reservation);
+  } finally { vi.useRealTimers(); release.resolve(); await opening; }
+});
+
+
+test("does not publish until the required worker preparation settles", async () => {
+  const entered = gate(), release = gate(), calls: string[] = []; let prepared = false, expectedReservation: string | undefined;
+  const wrapped: NativeMcpHelpers = {
+    identity: async signal => { calls.push("identity"); expect(prepared).toBe(true); return helpers.identity(signal); },
+    operate: async (...args) => { calls.push(args[0]); if (args[0] === "publish") expect(prepared).toBe(true); await helpers.operate(...args); },
+  };
+  const f = await fixture(wrapped, undefined, async (reservation, signal) => {
+    expect(reservation).toBe(expectedReservation); signal.throwIfAborted(); entered.resolve(); await release.promise;
+    signal.throwIfAborted(); prepared = true;
+  });
+  expectedReservation = f.reservation; const opening = f.host.setEnabled(true);
+  try {
+    await entered.promise;
+    expect(calls).toEqual(["recover"]); expect(f.operations).not.toContain("development.configure");
+    await absent(f.file); await absent(join(f.control, "main-bootstrap.pending"));
+    release.resolve(); expect(await opening).toMatchObject({ ok: true, status: { enabled: true } });
+    expect(calls).toEqual(["recover", "identity", "publish"]); await access(f.file);
+  } finally { release.resolve(); await opening; }
+});
+for (const late of ["resolve", "reject"] as const)
+  test("stop during preparation blocks late " + late + " from publishing or configuring", async () => {
+    const entered = gate(), release = gate(), calls: string[] = []; let observedSignal: AbortSignal | undefined;
+    const wrapped: NativeMcpHelpers = {
+      identity: async signal => { calls.push("identity"); return helpers.identity(signal); },
+      operate: async (...args) => { calls.push(args[0]); await helpers.operate(...args); },
+    };
+    const f = await fixture(wrapped, undefined, async (reservation, signal) => {
+      observedSignal = signal; await mkdir(join(reservation, "worker"));
+      await writeFile(join(reservation, "worker/partial.bin"), "partial synthetic stage");
+      entered.resolve(); await release.promise;
+      if (late === "reject") throw new Error("Late synthetic stage failure");
+    });
+    const opening = f.host.setEnabled(true);
+    try {
+      await entered.promise; const closing = f.host.stop();
+      expect(observedSignal?.aborted).toBe(true); release.resolve();
+      expect((await opening).ok).toBe(false);
+      expect(await closing).toMatchObject({ descriptorRemoved: true, listenerClosed: true, reservationCreated: true, reservationReleased: false });
+      expect(calls).toEqual(["recover"]); expect(f.operations).not.toContain("development.configure");
+      await absent(f.file); await absent(join(f.control, "main-bootstrap.pending"));
+      expect(await readFile(join(f.reservation, "worker/partial.bin"), "utf8")).toBe("partial synthetic stage");
+    } finally { release.resolve(); await opening; }
+  });
+test("a failed partial stage is retained and cannot be reopened or bypassed", async () => {
+  let attempts = 0; const calls: string[] = [];
+  const wrapped: NativeMcpHelpers = { identity: helpers.identity, operate: async (...args) => { calls.push(args[0]); await helpers.operate(...args); } };
+  const f = await fixture(wrapped, undefined, async reservation => {
+    ++attempts; await mkdir(join(reservation, "worker")); await writeFile(join(reservation, "worker/partial.bin"), "retained");
+    throw new Error("Synthetic copy failure");
+  });
+  expect((await f.host.setEnabled(true)).ok).toBe(false);
+  expect(await f.host.stop()).toMatchObject({ failed: true, descriptorRemoved: true, reservationCreated: true, reservationReleased: false });
+  expect((await f.host.setEnabled(true)).ok).toBe(false); expect(attempts).toBe(1); expect(calls).toEqual(["recover"]);
+  expect(f.operations).not.toContain("development.configure"); await absent(f.file);
+  expect(await readFile(join(f.reservation, "worker/partial.bin"), "utf8")).toBe("retained");
+  const restarted = await fixture(wrapped, f.directory, async () => { throw new Error("Existing reservation bypassed"); });
+  expect((await restarted.host.setEnabled(true)).ok).toBe(false); expect(calls).toEqual(["recover"]);
+});
+test("an immediate stop never begins worker preparation", async () => {
+  let attempts = 0;
+  const f = await fixture(helpers, undefined, async () => { ++attempts; });
+  const opening = f.host.setEnabled(true), closing = f.host.stop();
+  expect((await opening).ok).toBe(false); await closing;
+  expect(attempts).toBe(0); expect(f.operations).not.toContain("development.configure"); await absent(f.file);
+});
+
+
+test("retains an overdue preparation promise after the full close deadline and never publishes late", async () => {
+  const entered = gate(), release = gate(), calls: string[] = [];
+  const wrapped: NativeMcpHelpers = {
+    identity: async signal => { calls.push("identity"); return helpers.identity(signal); },
+    operate: async (...args) => { calls.push(args[0]); await helpers.operate(...args); },
+  };
+  const f = await fixture(wrapped, undefined, async reservation => {
+    await mkdir(join(reservation, "worker")); await writeFile(join(reservation, "worker/partial.bin"), "overdue stage");
+    entered.resolve(); await release.promise;
+  });
+  const opening = f.host.setEnabled(true);
+  try {
+    await entered.promise; vi.useFakeTimers();
+    const closing = f.host.stop(); await vi.advanceTimersByTimeAsync(30001);
+    const outcome = await closing;
+    expect(outcome).toMatchObject({ failed: true, descriptorRemoved: false, reservationCreated: true, reservationReleased: false });
+    expect(calls).toEqual(["recover"]); expect(f.operations).not.toContain("development.configure");
+    await absent(f.file); await absent(join(f.control, "main-bootstrap.pending"));
+    release.resolve(); expect((await opening).ok).toBe(false); expect(await f.host.stop()).toBe(outcome);
+    expect(calls).toEqual(["recover"]); expect(f.operations).not.toContain("development.configure");
+    expect(await readFile(join(f.reservation, "worker/partial.bin"), "utf8")).toBe("overdue stage");
+    await absent(f.file);
   } finally { vi.useRealTimers(); release.resolve(); await opening; }
 });
