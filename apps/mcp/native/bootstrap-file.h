@@ -37,9 +37,9 @@ inline std::wstring bootstrapPath(const std::wstring& path) {
 }
 struct BootstrapPin {
     Handle handle;bool directory;std::wstring path;BY_HANDLE_FILE_INFORMATION initial={};
-    BootstrapPin(const std::wstring& name,bool dir,DWORD access):directory(dir),path(name) {
+    BootstrapPin(const std::wstring& name,bool dir,DWORD access,DWORD disposition=OPEN_EXISTING):directory(dir),path(name) {
         const auto extended=L"\\\\?\\"+name;
-        handle.value=CreateFileW(extended.c_str(),access,dir?FILE_SHARE_READ|FILE_SHARE_WRITE:FILE_SHARE_READ,nullptr,OPEN_EXISTING,
+        handle.value=CreateFileW(extended.c_str(),access,dir?FILE_SHARE_READ|FILE_SHARE_WRITE:FILE_SHARE_READ,nullptr,disposition,
             FILE_FLAG_OPEN_REPARSE_POINT|(dir?FILE_FLAG_BACKUP_SEMANTICS:0),nullptr);
         if(handle.value==INVALID_HANDLE_VALUE)throw WinError("bootstrap-open");
         initial=inspect();verifyName();DWORD flags=0;
@@ -82,24 +82,43 @@ inline void requireBootstrapAcl(HANDLE file,const BootstrapOwner& owner,bool roo
     }
     if(!seenOwner||!seenSystem)throw WinError("bootstrap-ace-missing",ERROR_INVALID_ACL);
 }
-inline MainBootstrap readMainBootstrapFile(const std::wstring& supplied) {
-    const auto path=bootstrapPath(supplied);const auto leaf=path.find_last_of(L'\\');
-    if(leaf<=3||path.substr(leaf+1)!=L"main-bootstrap.bin")throw WinError("bootstrap-fixed-leaf",ERROR_INVALID_NAME);
-    const auto root=path.substr(0,leaf);BootstrapOwner owner;
+
+// Pins the existing protected root and every ancestor for readers and publishers.
+// Creation of the root remains Main-owned; no code here grants or repairs ACLs.
+struct BootstrapDirectoryGuard {
+    std::wstring path,root;
+    BootstrapOwner owner;
     std::vector<std::unique_ptr<BootstrapPin>> ancestors;
-    ancestors.push_back(std::make_unique<BootstrapPin>(path.substr(0,3),true,FILE_READ_ATTRIBUTES));
-    for(size_t at=3;(at=root.find(L'\\',at))!=std::wstring::npos;++at)
-        ancestors.push_back(std::make_unique<BootstrapPin>(root.substr(0,at),true,FILE_READ_ATTRIBUTES));
-    BootstrapPin directory(root,true,READ_CONTROL|FILE_READ_ATTRIBUTES);requireBootstrapAcl(directory.handle.value,owner,true);
-    BootstrapPin file(path,false,GENERIC_READ|READ_CONTROL|FILE_READ_ATTRIBUTES);requireBootstrapAcl(file.handle.value,owner,false);
+    std::unique_ptr<BootstrapPin> directory;
+    explicit BootstrapDirectoryGuard(const std::wstring& supplied):path(bootstrapPath(supplied)) {
+        const auto leaf=path.find_last_of(L'\\');
+        if(leaf<=3||path.substr(leaf+1)!=L"main-bootstrap.bin")throw WinError("bootstrap-fixed-leaf",ERROR_INVALID_NAME);
+        root=path.substr(0,leaf);
+        ancestors.push_back(std::make_unique<BootstrapPin>(path.substr(0,3),true,FILE_READ_ATTRIBUTES));
+        for(size_t at=3;(at=root.find(L'\\',at))!=std::wstring::npos;++at)
+            ancestors.push_back(std::make_unique<BootstrapPin>(root.substr(0,at),true,FILE_READ_ATTRIBUTES));
+        directory=std::make_unique<BootstrapPin>(root,true,READ_CONTROL|FILE_READ_ATTRIBUTES);
+        verify();
+    }
+    void verify()const {
+        for(const auto& ancestor:ancestors)ancestor->verify();
+        directory->verify();requireBootstrapAcl(directory->handle.value,owner,true);
+    }
+};
+inline std::array<uint8_t,bootstrapBytes> readBootstrapBytes(BootstrapPin& file,const BootstrapOwner& owner) {
+    requireBootstrapAcl(file.handle.value,owner,false);
     const auto info=file.inspect();if(info.nFileSizeHigh||info.nFileSizeLow!=bootstrapBytes)throw WinError("bootstrap-size",ERROR_INVALID_DATA);
+    LARGE_INTEGER zero={};if(!SetFilePointerEx(file.handle.value,zero,nullptr,FILE_BEGIN))throw WinError("bootstrap-read-position");
     std::array<uint8_t,bootstrapBytes> bytes={};DWORD count=0;
     if(!ReadFile(file.handle.value,bytes.data(),static_cast<DWORD>(bytes.size()),&count,nullptr)||count!=bytes.size())throw WinError("bootstrap-read");
-    for(const auto& ancestor:ancestors)ancestor->verify();directory.verify();file.verify();
-    requireBootstrapAcl(directory.handle.value,owner,true);requireBootstrapAcl(file.handle.value,owner,false);
+    file.verify();requireBootstrapAcl(file.handle.value,owner,false);return bytes;
+}
+inline MainBootstrap readMainBootstrapFile(const std::wstring& supplied) {
+    BootstrapDirectoryGuard guard(supplied);
+    BootstrapPin file(guard.path,false,GENERIC_READ|READ_CONTROL|FILE_READ_ATTRIBUTES);
+    auto bytes=readBootstrapBytes(file,guard.owner);guard.verify();
     const auto value=decodeMainBootstrap(bytes.data(),bytes.size());SecureZeroMemory(bytes.data(),bytes.size());
-    // No handles escape. Main may consume/unlink this generation immediately
-    // after authentication; captured bytes cannot select a new filesystem path.
+    // No handles escape. Main may consume/unlink immediately after authentication.
     return value;
 }
 }

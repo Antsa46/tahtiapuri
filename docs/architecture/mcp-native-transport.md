@@ -288,8 +288,8 @@ virheet. Integraatiotestit käyttävät oikeaa `DevelopmentService`- ja
 töitä, MCP:n irrotus vapauttaa vain sen työt ja jonossa oleva UI-työ jatkuu.
 Mallivastaukset ovat synteettisiä.
 
-Ennen varsinaista käyttöönottoa puuttuvat edelleen suojatun kuvaustiedoston
-julkaisu sekä alla toteutettujen lukijan ja Main-tunnisteavun liittäminen,
+Ennen varsinaista käyttöönottoa puuttuvat edelleen alla toteutettujen
+kuvaustiedoston julkaisun, lukijan ja Main-tunnisteavun liittäminen,
 alla kuvatun Main-yhteyskerroksen liittäminen brokeriin, brokerin hallinta- ja työntekijädatan
 erottelu, legacy/native-omistajuuden yhteensovitus sekä työntekijän käynnistys,
 Jobin tyhjeneminen ja oikeuksien siivous. Yksikään tämän osan testi ei
@@ -365,7 +365,7 @@ Yksittäisten testien onnistuminen epäonnistuneen loppusiivouksen yhteydessä
 ei kelpaa läpäisseeksi koesarjaksi. Pitkän polun tuotantotuki ja ensimmäisen
 tunnistekokeen aikarajaylityksen tarkka syy eivät ratkea tällä näytöllä.
 
-Kuvauksen julkaisu, alla kuvatun Main-yhteyskerroksen liittäminen
+Alla kuvatun julkaisijan ja Main-yhteyskerroksen liittäminen
 natiivibrokeriin, apubinäärin paketointi ja koko Electron-liitos ovat
 edelleen jatkotyötä. Näissä kokeissa
 ei käynnistetä mallia tai eristettyä työntekijää eikä kokeilla verkkoa.
@@ -462,9 +462,89 @@ Kolmen uuden ajoitustestin epäonnistunut ajo säilyy erikseen; korjaus
 poisti sulun jälkeen jääneen ajastimen sekä kirjoituspoikkeuksen ja
 callback-virheen peittymisen.
 
-Palvelimen kokonaisyhteysraja, kuvaustiedoston julkaisu ja kaatumispalautus,
+Palvelimen kokonaisyhteysraja, alla kuvatun julkaisun ja palautuksen liitos,
 apubinäärin paketti, natiivibrokerin TMCT-toteutus, työntekijän käynnistys ja
 todellinen siivousnäyttö sekä Electronin oletuspolun liitos puuttuvat vielä.
 Tämä näyttö ei hyväksy LPAC:ia, verkkokieltoa, FMI:tä, GPU:ta tai koko
 minimipakettia. Kuvaustiedoston puuttuminen ei todista vanhan työntekijän
 siivoutumista.
+
+## Suojatun käynnistyskuvauksen julkaisu, kulutus ja palautus
+
+`main-bootstrap.cpp` ja `bootstrap-publication.h` toteuttavat kolme kiinteää
+toimintoa: publish, consume ja recover. Apuprosessi käyttää tavallisen
+käyttäjän oikeuksia; se ei ole eristetty MCP-työntekijä. Kutsujan on ensin
+varmennettava sen ajopaketti. Mainin yhden sovellusinstanssin lukko ja
+apukutsujen sarjallistaminen ovat omistajan velvollisuus.
+
+Apuri ei luo tai korjaa käyttöoikeuksia. Se käyttää samaa omistajan,
+täsmällisen ACL:n, perinnän ja lukittujen polkukahvojen tarkistusta kuin
+lukija. Publish ja consume saavat täsmälleen 96 tavua stdinistä ja vaativat
+sen päättymisen; recover ei hyväksy syötettä. Salaisuutta ei anneta
+argumenteissa, ympäristössä tai diagnostiikassa.
+
+Publish varmistaa kuvauksen Main-prosessin eläväksi tarkan FILETIMEn avulla.
+Se luo vain uuden `main-bootstrap.pending`-tiedoston, kirjoittaa ja huuhtelee
+sen sekä tarkistaa tavut samasta kahvasta. Kahvalla tehtävä nimeäminen
+lopulliseen nimeen ei saa korvata olemassa olevaa tiedostoa. Esi-isien,
+kontrollihakemiston ja tiedoston kahvat säilyvät koko toiminnon ajan.
+Nimeämisen jälkeen tiedoston identiteetti, lopullinen polku, omistaja,
+ACL, koko ja tavut tarkistetaan ennen kahvan sulkua ja onnistumiskuittausta.
+Ennen nimeämistä epäonnistunut toiminto yrittää poistaa vain oman avatun
+välitiedostonsa. Epävarma nimeämisen jälkeinen tulos säilytetään palautusta varten.
+
+Consume avaa lopullisen tiedoston ja vertaa kaikkia 96 tavua odotettuun
+sukupolveen. Väärä kuvaus säilyy koskemattomana. Poisto tehdään tarkistetulla
+kahvalla; onnistuminen vaatii kahvan sulkemisen sekä lopullisen nimen
+todetun puuttumisen. Poistomerkintä tai toisen prosessin vielä auki pitämä
+tiedosto ei riitä onnistumiskuittaukseen.
+
+Recover on käynnistyksen rajattu kuvaustiedostojen palautus. Elävä ja
+tarkkaa käynnistysaikaa vastaava Main estää poiston. Puuttuva PID,
+eri käynnistysaika tai kahvasta todettu prosessin poistuminen sallii
+muuten hyväksytyn vanhan kuvauksen poistamisen. Prosessikyselyn
+käyttöoikeusvirhe ja muut epävarmat tulokset estävät palautuksen.
+Prosessikahva säilyy päätöksen ja poiston ajan.
+
+Varattu välitiedosto saa olla kesken jäänyt. Tunnettujen otsaketavujen
+täytyy täsmätä, koko ei saa ylittää 96 tavua, ja saatavilla oleva kokonainen
+Main-tunniste tarkistetaan. Alle 32 tavusta omistajasukupolvea ei voida
+todentaa: sen poistaminen perustuu varatun kertakäyttöisen välitiedoston
+sopimukseen, omistajan instanssilukkoon ja sarjallistamiseen. Auki oleva
+kirjoittava julkaisukahva estää palautuksen. Muoto-, linkki-, polku- tai
+ACL-virheitä ei korjata eikä tulkita vanhentumiseksi.
+
+Apurin oma viiden sekunnin määräaika kattaa stdin-, tiedosto- ja tulostusodotukset.
+`native-bootstrap-operation.ts` rajaa lapsiympäristön, syötteen ja tulosteet,
+odottaa prosessin todellisen sulkeutumisen ja käyttää kuuden sekunnin
+ulompaa aikarajaa. Peruuttaminen tai aikaraja yrittää pysäyttää lapsen;
+havaitsematon poistuminen palautuu erikseen epävarmana. Kuittauksen
+katoaminen voi tarkoittaa jo tehtyä tiedostomuutosta, joten kutsua ei
+saa toistaa automaattisesti onnistumisen olettamiseksi.
+
+Laajennettu Windows-koe läpäisi kokonaisuudessaan 47/47 tapausta:
+aiemmat 22 lukija-/tunnistetapausta ja 25 julkaisu-/kulutus-/palautustapausta.
+Mukana ovat todellinen Main-kutsusovitin, säilytettävä vanha tiedosto,
+väärä sukupolvi, elävä/poistunut/eri-ikäinen prosessi, kielletty prosessikysely,
+vajaa välitiedosto, ristiriitaiset kahvat, kova linkki, virheellinen syöte,
+jumittunut stdin ja kadonnut tulostekuittaus. Lisäksi 12 sovittimen
+yksikkötestiä ja kohdistetut tyyppitarkistukset läpäisivät.
+Rakennuskuitti sitoo 16 lähdesyötettä ja kolme koebinääriä.
+
+Kaksi epäonnistunutta yritystä säilyvät erillisinä: testin valmistelun
+aikarajaylitys sekä 44/47-tuloksen suhteellisen nimeämiskutsun virhe 87.
+Ensimmäisen tarkkaa syytä ei tunneta. Nimeäminen korjattiin absoluuttiseen
+laajennettuun polkuun; kahvalukkoja tai korvaamiskieltoa ei poistettu.
+Testin valmistelulle annettiin erillinen pidempi määräaika; tuotannon
+apurin aikarajat säilyivät ennallaan.
+
+Tämä palautus todistaa vain kuvaustiedostojen tilanteen. Se ei todista
+vanhan brokerin, työntekijän tai Jobin siivousta eikä valtuuta uuden
+istunnon avaamista. Julkaisun omistajaliitos, varmennettu apupaketti,
+natiivibrokeri ja koko sovelluksen OS-/verkko-/FMI-/CPU-/GPU-näyttö ovat
+edelleen jatkotyötä.
+
+Windows-sopimukset:
+[FILE_RENAME_INFO](https://learn.microsoft.com/en-us/windows/win32/api/winbase/ns-winbase-file_rename_info),
+[SetFileInformationByHandle](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-setfileinformationbyhandle) ja
+[OpenProcess](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-openprocess).
