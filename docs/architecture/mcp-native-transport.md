@@ -481,8 +481,24 @@ apukutsujen sarjallistaminen ovat omistajan velvollisuus.
 Apuri ei luo tai korjaa käyttöoikeuksia. Se käyttää samaa omistajan,
 täsmällisen ACL:n, perinnän ja lukittujen polkukahvojen tarkistusta kuin
 lukija. Publish ja consume saavat täsmälleen 96 tavua stdinistä ja vaativat
-sen päättymisen; recover ei hyväksy syötettä. Salaisuutta ei anneta
+sen päättymisen. Recoverin uusi lähdesopimus vaatii täsmälleen kahdeksan
+ASCII-tavua THREC001 ja EOF:n; se lukee enintään 9 tavua ja hylkää tyhjän,
+osittaisen, väärän tai ylimääräisen syötteen ennen palautuksen tiedostokutsuja.
+Kehys ei ole salaisuus. Täydellisen kehyksen jälkeen katkennut putki voi
+edelleen olla EOF eikä peruuta jo toimitettua valtuutta. Sama alkuperäinen
+viiden sekunnin watchdog kattaa myös syötteen odotuksen. Salaisuutta ei anneta
 argumenteissa, ympäristössä tai diagnostiikassa.
+
+Muutos on käännetty sovelluspakettiin. Mainin kuljetus- ja valvontalogiikan
+56 mocktapausta sekä uuden paketin 13 recover-CLI-tapausta läpäisivät.
+Koe erotti tyhjät, osittaiset, väärät, ylimääräiset ja ilman EOF:ää jääneet
+syötteet hyväksytyistä kehyksistä ja varmisti kaikkien omien lasten sulun.
+Aiemmat paketit käyttävät tyhjää EOF:ää; niitä ei saa kytkeä uuden
+säievalvojan recover-pyyntöihin. Varsinainen launch-worker ja sovelluskytkentä
+ovat tekemättä. Ensimmäisen raportittoman CLI-epäonnistumisen tuntemattomat
+havainnot ja viiveen syy säilyvät avoimina.
+Valvojan integraatioportit ja koesarjan tarkat näyttörajat omistaa
+[natiiviapurien käynnistysvalvoja](native-launch-supervisor.md).
 
 Publish varmistaa kuvauksen Main-prosessin eläväksi tarkan FILETIMEn avulla.
 Se luo vain uuden `main-bootstrap.pending`-tiedoston, kirjoittaa ja huuhtelee

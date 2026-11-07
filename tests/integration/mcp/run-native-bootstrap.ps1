@@ -63,6 +63,7 @@ foreach ($path in @($root, $out, $vcvars, $source, $binary, $object, $wrapper, $
 $inputs = @('apps/mcp/native/main-bootstrap.h','apps/mcp/native/main-peer.h','packages/windows-runtime/native/common.h',
   'apps/mcp/native/bootstrap-file.h','apps/mcp/native/main-identity.cpp',
   'apps/mcp/native/bootstrap-publication.h','apps/mcp/native/main-bootstrap.cpp','apps/desktop/src/main/native-bootstrap-operation.ts',
+  'apps/desktop/src/main/native-recovery-grant.ts',
   'tests/integration/mcp/native-publication.integration.test.ts',
   'tests/integration/mcp/native-bootstrap-probe.cpp','tests/integration/mcp/run-native-bootstrap.ps1',
   'tests/integration/mcp/native-bootstrap.integration.test.ts','apps/desktop/src/main/native-main-identity.ts',

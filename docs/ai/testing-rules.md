@@ -81,6 +81,42 @@ Paketoidun sovelluksen käynnistys-, sammutus- ja uudelleenkäynnistyskoe
 suunnitellaan erilliseksi toimituksen tarkistukseksi. Se ei korvaudu
 lähdekoodin E2E-ajolla eikä vaadi tuotannon suojausten löysentämistä.
 
+## Natiivikomponenttien testien ajaminen Nodesta
+
+Node/Vitest omistaa kokeen ohjauksen ja rajatut tiedostohavainnot. Kun
+koe tarvitsee natiivin muutoksen, se kutsuu sovelluksen olemassa olevaa,
+pakettiin sidottua CLI-operaatiota. Natiivia toteutusta ei kirjoiteta
+JavaScript-kopioksi testejä varten eikä tuotannon rajapintaan lisätä
+yleistä testikomentoa. Erillistä natiivia tarkistusohjelmaa ei tehdä
+pelkkää tilan tai lokitietueen lukemista varten.
+
+Yhteinen havaintoapu säilyy `tests/support/`-puussa. Se lukee kiinteän
+sallitun tavumäärän samasta kahvasta, tarkistaa tiedoston havainnot ennen
+lukua ja sen jälkeen sekä sulkee kahvan myös virheessä. Tietueen eheys ja
+vertailtavat kontekstikentät erotetaan käyttöjärjestelmän oikeusnäytöstä.
+Mockilla havaittu muutos tai tiedoston eheä checksum ei todista Windowsin
+ACL:ää, tokenia, Jobia, delete-sharingia tai prosessin päättymistä.
+
+Oikeat tiedosto- ja prosessikokeet, deterministiset I/O-mocktestit ja
+ajamatta jääneet natiivitapaukset raportoidaan erikseen. Vanha tapaus
+merkitään korvatuksi vasta vastaavan oraakkelin ja toteutuneen näytön
+perusteella. Sovelluksen prosessirajoja tai hyväksymisehtoja ei väljennetä
+testiajurin vaihdon yhteydessä. Kokeet eivät käytä oikeaa käyttäjäaineistoa.
+
+Natiivin recover-CLI-koesarjan yhteinen omistaja säilyttää alkuperäisen
+operaatiolupauksen, keskeneräisen tiedostotyön ja palautuneen lapsikahvan myös
+testikehyksen aikakatkaisussa. Sen afterAll sulkee uuden työn portin ensin,
+havainnoi vain jo omistettuja töitä ja kirjoittaa erillisen loppukuitin.
+Myöhäinen sulku ei muuta alkuperäistä epäonnistumista onnistumiseksi.
+Ajamaton, aikakatkaistu ja ilman loppukuittia jäänyt tapaus erotetaan
+läpäisystä. Toteutuksen ja näytön omistaa
+[natiiviapurien käynnistysvalvoja](../architecture/native-launch-supervisor.md#node-koesarjan-omistus-ja-protokollan-ajonäyttö).
+
+Sekä Node että mahdolliset sen käynnistämät viralliset työkalut kuuluvat
+lähde- ja työkalupinneihin. Mahdollisuuksien mukaan työkalu käynnistetään
+suoraan, jotta todellinen prosessikahva ja poistuminen voidaan havaita.
+Testiapurit ja kokeiden raportit eivät kuulu toimitettavaan sovellukseen.
+
 ## Ensimmäinen tekninen hyväksymiskoe
 
 Käyttäjä valitsi 3.11.2026 rajatun mallikokeen ennen koko käyttöliittymän

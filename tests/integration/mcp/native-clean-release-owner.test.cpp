@@ -4,6 +4,9 @@
 #include "../../../apps/mcp/native/broker-clean-release.h"
 #include <cstdio>
 #include <iostream>
+#include <atomic>
+#include <exception>
+#include <thread>
 
 namespace {
 using namespace mcp_runtime;
@@ -28,6 +31,8 @@ void close(Handle& handle){const auto raw=handle.value;handle.value=nullptr;chec
 struct Processes final:windows_runtime::ProcessWitnessApi {
     enum class Fault{None,BrokerIdentity,WorkerIdentity,LiveBroker,LiveWorker,MissingSelf,RecordedPresent,SnapshotAbsent};
     Fault fault=Fault::None;unsigned opened=0,closed=0,snapshots=0;size_t position=0;
+    uint64_t lastTick=0,firstWaitTick=0;DWORD firstWaitBudget=0;unsigned waits=0;
+    uint64_t tick()override{lastTick=GetTickCount64();return lastTick;}
     static constexpr DWORD broker=0x70000001,worker=0x70000002;
     static constexpr uint64_t brokerTime=101,workerTime=202;
     HANDLE openProcess(DWORD pid)override{
@@ -39,7 +44,8 @@ struct Processes final:windows_runtime::ProcessWitnessApi {
         if(value==reinterpret_cast<HANDLE>(uintptr_t(11)))return brokerTime+(fault==Fault::BrokerIdentity?1:0);
         check(value==reinterpret_cast<HANDLE>(uintptr_t(12)),"unexpected-process-handle");return workerTime+(fault==Fault::WorkerIdentity?1:0);
     }
-    DWORD wait(HANDLE value,DWORD)override{
+    DWORD wait(HANDLE value,DWORD milliseconds)override{
+        if(waits++==0){firstWaitTick=lastTick;firstWaitBudget=milliseconds;}
         if((value==reinterpret_cast<HANDLE>(uintptr_t(11))&&fault==Fault::LiveBroker)
            ||(value==reinterpret_cast<HANDLE>(uintptr_t(12))&&fault==Fault::LiveWorker))return WAIT_TIMEOUT;
         return WAIT_OBJECT_0;
@@ -180,6 +186,38 @@ void run(const std::wstring& parent){
         fails([&]{if(operation==0)prepareBrokerSession(f.path,f.bootstrap);else if(operation==1)sealBrokerSession(f.path,f.bootstrap);else if(operation==2){std::array<uint8_t,96> bytes={};constexpr uint8_t magic[8]={'T','M','B','O','O','T','1',0};std::copy_n(magic,8,bytes.data());wirePut32(bytes.data()+8,1);wirePut32(bytes.data()+12,96);wirePut32(bytes.data()+16,f.bootstrap.main.pid);journalPut64(bytes.data()+24,f.bootstrap.main.creationTime);std::copy(f.bootstrap.pipeNonce.begin(),f.bootstrap.pipeNonce.end(),bytes.begin()+32);std::copy(f.bootstrap.generation.begin(),f.bootstrap.generation.end(),bytes.begin()+48);std::copy(f.bootstrap.launchToken.begin(),f.bootstrap.launchToken.end(),bytes.begin()+64);publishBrokerSession(f.path,bytes);}else if(operation==3){BootstrapDirectoryGuard control(f.path);BrokerSessionAdmission admission(control,f.bootstrap,GetTickCount64()+5000);}else releasePristineBrokerSession(f.path,f.bootstrap,GetTickCount64()+5000);},"mcp-session-release-present");});
     scenario("expired-deadline-cannot-start",[&]{Fixture f(parent);fails([&]{f.release({},GetTickCount64()-1);},"mcp-session-lease-timeout");f.unchanged();});
     scenario("deadline-after-intent-before-first-delete",[&]{Fixture f(parent);bool reached=false;fails([&]{f.release([&](size_t at){if(at==0){reached=true;Sleep(600);}},GetTickCount64()+500);},"mcp-session-lease-timeout");check(reached,"deadline-boundary-not-reached");check(read<1024>(f.journalPath)==f.originalJournal,"late-authority-deleted-journal");requireBootstrapAbsent(f.root+L"\\"+sessionCleanReleasedLeaf);f.processes.balanced();f.release();f.completed();});
+    scenario("held-lease-times-out-without-intent-or-deletion",[&]{
+        Fixture f(parent);BootstrapDirectoryGuard control(f.path);NativeSessionLease held(control,false);
+        fails([&]{f.release({},GetTickCount64()+150);},"mcp-session-lease-timeout");
+        f.unchanged();check(f.processes.opened==0,"process-proof-started-before-lease");
+        held.close();f.release();f.completed();
+    });
+    scenario("delayed-lease-close-preserves-original-process-budget",[&]{
+        Fixture f(parent);Handle ready(CreateEventW(nullptr,TRUE,FALSE,nullptr)),beginClose(CreateEventW(nullptr,TRUE,FALSE,nullptr));
+        check(ready.value&&beginClose.value,"test-lease-events");
+        std::exception_ptr failure;std::atomic<uint64_t> closeStarted{0};
+        std::thread holder([&]{
+            try{
+                BootstrapDirectoryGuard control(f.path);NativeSessionLease held(control,false);
+                check(SetEvent(ready.value)!=FALSE,"test-lease-ready");
+                check(WaitForSingleObject(beginClose.value,3000)==WAIT_OBJECT_0,"test-lease-close-gate");
+                Sleep(150);closeStarted.store(GetTickCount64());held.close();
+            }catch(...){failure=std::current_exception();SetEvent(ready.value);}
+        });
+        struct Join{std::thread& thread;HANDLE gate;~Join(){SetEvent(gate);if(thread.joinable())thread.join();}} join{holder,beginClose.value};
+        check(WaitForSingleObject(ready.value,1000)==WAIT_OBJECT_0,"test-lease-ready-timeout");
+        // An actual share violation proves the fixture holds the common lease.
+        bool contended=false;
+        try{BootstrapDirectoryGuard control(f.path);NativeSessionLease probe(control,false);probe.close();}
+        catch(const WinError& error){if(error.code!=ERROR_SHARING_VIOLATION)throw;contended=true;}
+        check(contended,"test-lease-not-held");const auto deadline=GetTickCount64()+2000;
+        check(SetEvent(beginClose.value)!=FALSE,"test-lease-close-start");f.release({},deadline);
+        holder.join();if(failure)std::rethrow_exception(failure);
+        check(closeStarted.load()!=0&&f.processes.firstWaitTick>=closeStarted.load(),"process-proof-before-lease-close");
+        check(f.processes.firstWaitBudget>0&&f.processes.firstWaitBudget<2000,"lease-time-not-spent");
+        check(f.processes.firstWaitTick+f.processes.firstWaitBudget==deadline,"process-budget-was-reset");
+        f.completed();f.processes.balanced();
+    });
     scenario("fixed-record-size-leaf-boundary",[&]{Fixture f(parent);BootstrapDirectoryGuard control(f.path);fails([&]{NativeCleanIntentRecord wrong(control,sessionReleaseLeaf,true,GetTickCount64()+5000);},"mcp-release-record-leaf");fails([&]{NativeReleaseRecord wrong(control,sessionCleanReleaseLeaf,true,GetTickCount64()+5000);},"mcp-release-record-leaf");f.unchanged();});
 }
 }

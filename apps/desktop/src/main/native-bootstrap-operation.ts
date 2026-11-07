@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { createNativeRecoveryGrant } from "./native-recovery-grant.js";
 import { requireNativeOperationDeadline } from "./native-operation-deadline.js";
 import { win32 } from "node:path";
 import { childEnvironment } from "./child-environment.js";
@@ -24,7 +25,7 @@ export function runNativeBootstrapOperation(helper: string, operation: NativeBoo
   try { requireNativeOperationDeadline(deadline); } catch (error) { return Promise.reject(error); }
   if (signal?.aborted) return Promise.reject(new NativeBootstrapProcessError(true));
   // Copy before asynchronous work; later caller mutation cannot change the descriptor.
-  const input = bytes ? Buffer.from(bytes) : Buffer.alloc(0);
+  const input = bytes ? Buffer.from(bytes) : createNativeRecoveryGrant();
   return new Promise<void>((resolve, reject) => {
     let child: ReturnType<typeof spawn>;
     try {

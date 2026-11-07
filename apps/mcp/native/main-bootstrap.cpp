@@ -19,19 +19,22 @@ public:
     }
     ~Deadline(){SetEvent(stopped_.value);if(thread_.joinable())thread_.join();}
 };
-std::array<uint8_t,mcp_runtime::bootstrapBytes> input(bool expected) {
-    std::array<uint8_t,mcp_runtime::bootstrapBytes+1> bytes={};size_t used=0;
+template<size_t Size>
+std::array<uint8_t,Size> input() {
+    // Read at most expected+1 bytes. The extra byte rejects trailing input;
+    // complete expected bytes still require EOF within the original watchdog.
+    std::array<uint8_t,Size+1> bytes={};size_t used=0;
     for(;;) {
         DWORD count=0;
         const BOOL ok=ReadFile(GetStdHandle(STD_INPUT_HANDLE),bytes.data()+used,static_cast<DWORD>(bytes.size()-used),&count,nullptr);
         if(!ok) { if(GetLastError()==ERROR_BROKEN_PIPE)break;throw WinError("bootstrap-stdin"); }
         if(!count)break;
         used+=count;
-        if(used==bytes.size()||(!expected&&used))throw WinError("bootstrap-input-size",ERROR_INVALID_DATA);
+        if(used==bytes.size())throw WinError("bootstrap-input-size",ERROR_INVALID_DATA);
     }
-    if(used!=(expected?mcp_runtime::bootstrapBytes:0))throw WinError("bootstrap-input-size",ERROR_INVALID_DATA);
-    std::array<uint8_t,mcp_runtime::bootstrapBytes> result={};
-    if(expected)std::copy_n(bytes.data(),result.size(),result.data());
+    if(used!=Size)throw WinError("bootstrap-input-size",ERROR_INVALID_DATA);
+    std::array<uint8_t,Size> result={};
+    std::copy_n(bytes.data(),result.size(),result.data());
     SecureZeroMemory(bytes.data(),bytes.size());return result;
 }
 }
@@ -42,11 +45,19 @@ int wmain(int argc,wchar_t** argv) {
         const std::wstring mode=argv[1];
         if(mode!=L"--publish"&&mode!=L"--consume"&&mode!=L"--recover")return 64;
         deadline=std::make_unique<Deadline>();
-        auto bytes=input(mode!=L"--recover");
-        if(mode==L"--publish")mcp_runtime::publishMainBootstrap(argv[2],bytes);
-        else if(mode==L"--consume")mcp_runtime::consumeMainBootstrap(argv[2],bytes);
-        else mcp_runtime::recoverMainBootstrap(argv[2]);
-        SecureZeroMemory(bytes.data(),bytes.size());
+        if(mode==L"--recover") {
+            // Empty/broken stdin cannot grant recovery. A complete public frame
+            // followed by broken pipe is still a delivered grant, not revocation.
+            constexpr std::array<uint8_t,8> expected={'T','H','R','E','C','0','0','1'};
+            const auto grant=input<expected.size()>();
+            if(grant!=expected)throw WinError("bootstrap-recovery-grant",ERROR_INVALID_DATA);
+            mcp_runtime::recoverMainBootstrap(argv[2]);
+        } else {
+            auto bytes=input<mcp_runtime::bootstrapBytes>();
+            if(mode==L"--publish")mcp_runtime::publishMainBootstrap(argv[2],bytes);
+            else mcp_runtime::consumeMainBootstrap(argv[2],bytes);
+            SecureZeroMemory(bytes.data(),bytes.size());
+        }
         emit(mode==L"--publish"?"published":mode==L"--consume"?"consumed":"descriptor-absent");
         return 0;
     } catch(const WinError& error) {

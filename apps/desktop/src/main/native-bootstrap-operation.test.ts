@@ -4,13 +4,16 @@ import type { PassThrough, Writable } from "node:stream";
 const state = vi.hoisted(() => ({ current: undefined as undefined | {
   child: EventEmitter & { stdin: Writable; stdout: PassThrough; stderr: PassThrough; kill: ReturnType<typeof vi.fn> };
   file: string; args: string[]; options: { env: NodeJS.ProcessEnv; stdio: string[]; windowsHide: boolean }; input: Buffer[];
-}, onSpawn: undefined as (() => void) | undefined }));
+}, onSpawn: undefined as (() => void) | undefined, failAfter: undefined as number | undefined }));
 vi.mock("node:child_process", async () => {
   const { EventEmitter } = await import("node:events"), { PassThrough, Writable } = await import("node:stream");
   return { spawn: (file: string, args: string[], options: NonNullable<typeof state.current>["options"]) => {
     const input: Buffer[] = [];
     const child = Object.assign(new EventEmitter(), { kill: vi.fn(() => true), stdout: new PassThrough(), stderr: new PassThrough(),
-      stdin: new Writable({ write(chunk, _encoding, callback) { input.push(Buffer.from(chunk)); callback(); } }) });
+      stdin: new Writable({ write(chunk, _encoding, callback) {
+        input.push(Buffer.from(state.failAfter === undefined ? chunk : chunk.subarray(0, state.failAfter)));
+        callback(state.failAfter === undefined ? undefined : new Error("Synthetic partial/complete input failure"));
+      } }) });
     state.current = { child, file, args, options, input }; state.onSpawn?.(); return child;
   } };
 });
@@ -21,7 +24,7 @@ const helper = "C:\\synthetic\\main-bootstrap.exe", file = "C:\\synthetic\\contr
 const bytes = () => encodeNativeBootstrap({ main: { pid: process.pid, creationTime: 1n }, pipeNonce: "11".repeat(16),
   ticket: { generation: "22".repeat(16), token: "33".repeat(32) } });
 const tick = () => new Promise<void>(resolve => setImmediate(resolve));
-afterEach(() => { state.current?.child.stdin.destroy(); state.current?.child.stdout.destroy(); state.current?.child.stderr.destroy(); state.current = undefined; state.onSpawn = undefined; vi.useRealTimers(); });
+afterEach(() => { state.current?.child.stdin.destroy(); state.current?.child.stdout.destroy(); state.current?.child.stderr.destroy(); state.current = undefined; state.onSpawn = undefined; state.failAfter = undefined; vi.useRealTimers(); });
 test("sends copied bytes only through stdin with fixed arguments and a stripped environment", async () => {
   const input = bytes(), original = Buffer.from(input), done = runNativeBootstrapOperation(helper, "publish", file, input);
   input.fill(0); const c = state.current!;
@@ -104,4 +107,35 @@ test("a synchronous late spawn receives no authority bytes and still needs actua
     let settled = false; void result.then(() => { settled = true; }); await Promise.resolve(); expect(settled).toBe(false);
     current.child.emit("close", 1); expect(await result).toMatchObject({ exitVerified: true });
   } finally { clock.mockRestore(); }
+});
+
+test("recover sends its exact public grant followed by EOF and still requires actual close", async () => {
+  const result = runNativeBootstrapOperation(helper, "recover", file), current = state.current!;
+  expect(Buffer.concat(current.input)).toEqual(Buffer.from("THREC001", "ascii"));
+  expect(current.child.stdin.writableEnded).toBe(true);
+  current.child.stdout.write("descriptor-absent\n"); current.child.emit("close", 0); await result;
+});
+test("a late recover launch withholds the grant and preserves the close requirement", async () => {
+  let now = performance.now(); const deadline = now + 1000;
+  const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
+  state.onSpawn = () => { now = deadline + 1; };
+  const result = runNativeBootstrapOperation(helper, "recover", file, undefined, undefined, deadline).catch(error => error);
+  try {
+    expect(state.current!.input).toEqual([]);
+    expect(state.current!.child.stdin.destroyed).toBe(true);
+    state.current!.child.emit("close", 1);
+    expect(await result).toMatchObject({ exitVerified: true });
+  } finally { clock.mockRestore(); }
+});
+
+for (const delivered of [1, 7, 8]) test("recover input failure after " + delivered + " captured bytes remains failure", async () => {
+  // This is transport failure evidence, not native rollback/side-effect proof.
+  // After all eight bytes the native recovery may already have been authorized.
+  state.failAfter = delivered;
+  const result = runNativeBootstrapOperation(helper, "recover", file).catch(error => error), current = state.current!;
+  await tick();
+  expect(Buffer.concat(current.input)).toEqual(Buffer.from("THREC001").subarray(0, delivered));
+  current.child.stdout.write("descriptor-absent\n"); current.child.emit("close", 0);
+  expect(await result).toMatchObject({ exitVerified: true });
+  expect(current.child.kill).toHaveBeenCalled();
 });

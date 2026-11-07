@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { access, lstat, readFile, readdir, writeFile } from "node:fs/promises";
+import { observeNativeRecord } from "../../support/mcp/native-record-observation.js";
 import { createHash } from "node:crypto";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -89,6 +90,7 @@ async function bounded<T>(work: Promise<T>, ms: number, label: string): Promise<
     throw error;
   } finally { clearTimeout(timer); }
 }
+
 class McpPeer {
   readonly closed: Promise<Exit>;
   readonly events: string[] = [];
@@ -190,14 +192,23 @@ test("round trips real MCP status and Main STOP through the native broker candid
     }
     throw new Error("Unexpected development operation");
   };
-  const host = new NativeDevelopmentHost({ development }, control, runtime);
   let peer: McpPeer | undefined, outcome: NativeHostOutcome | undefined, exited: Exit | undefined;
+  const mainReleaseRequests: { operation: "release-clean" | "release-pristine"; brokerCloseAlreadyObserved: boolean }[] = [];
+  const host = new NativeDevelopmentHost({ development }, control, { ...runtime, session: async (...args) => {
+    if (args[0] === "release-clean" || args[0] === "release-pristine") {
+      if (mainReleaseRequests.length >= 1) throw new Error("More than one Main release request");
+      mainReleaseRequests.push({ operation: args[0], brokerCloseAlreadyObserved: peer?.observedClose ?? false });
+    }
+    // Observe only. No wait for broker exit or source read is inserted here.
+    return runtime.session(...args);
+  } });
   let context: { generation: string; pid: number; creation: string; descriptorDigest: string } | undefined;
   let stopping: Promise<NativeHostOutcome> | undefined;
   const requestStop = () => stopping ??= host.stop().then(value => { outcome = value; return value; });
   let stdinOpenAtMainStop = false, mainStopIssuedByTest = false, workerPresentAtEnabled = false;
   let success = false, original: unknown;
   let releaseBootstrap: Buffer | undefined, cleanReleased = false;
+  let journalSnapshotClosedBeforeStop = false;
   const cleanupErrors: string[] = []; let phase = "enable";
   const rejectedPeers: McpPeer[] = [];
   const rejectBroker = async (file: string, stage: string, code: number) => {
@@ -234,7 +245,8 @@ test("round trips real MCP status and Main STOP through the native broker candid
     const stageStat = await routine(() => lstat(join(reservation, "worker"), { bigint: true }), 3000, "stage-identity");
     const reservationStat = await routine(() => lstat(reservation, { bigint: true }), 3000, "reservation-identity");
     const sessionPath = join(control, "native-session.bin"), leasePath = join(control, "native-session.lease");
-    const ready = await routine(() => readFile(sessionPath), 3000, "ready-session");
+    const readySnapshot = await routine(() => observeNativeRecord(sessionPath, "session"), 3000, "ready-session-snapshot");
+    const ready = readySnapshot.bytes, sessionIdentity = readySnapshot.stat;
     expect(ready.length).toBe(1024); expect(ready.subarray(0, 8).equals(Buffer.from([84, 77, 67, 83, 69, 83, 49, 0]))).toBe(true);
     expect(ready.readUInt32LE(8)).toBe(1); expect(ready.readUInt32LE(12)).toBe(1024); expect(ready.readUInt32LE(16)).toBe(1);
     expect(ready.readUInt32LE(20)).toBe(context.pid); expect(ready.readBigUInt64LE(24).toString()).toBe(context.creation);
@@ -285,13 +297,42 @@ test("round trips real MCP status and Main STOP through the native broker candid
     expect(stdinOpenAtMainStop).toBe(true); expect(peer.observedClose).toBe(false);
     await expect(routine(() => readFile(leasePath), 3000, "exclusive-lease-read")).rejects.toMatchObject({ code: "EBUSY" });
     await expect(routine(() => readFile(sessionPath), 3000, "exclusive-session-read")).rejects.toMatchObject({ code: "EBUSY" });
+    phase = "running-journal-snapshot";
+    const journalPath = join(reservation, "broker-journal.bin");
+    const runningSnapshot = await routine(() => observeNativeRecord(journalPath, "journal"), 3000, "running-journal-snapshot");
+    // observeNativeRecord's finally closed its read-only handle before this promise
+    // resolves. No retained reader can turn Host retirement into delete-pending.
+    journalSnapshotClosedBeforeStop = true;
+    const runningJournal = runningSnapshot.bytes, journalIdentity = runningSnapshot.stat;
+    expect(runningJournal.subarray(0, 8).equals(Buffer.from([84, 77, 67, 74, 82, 78, 50, 0]))).toBe(true);
+    expect(runningJournal.readUInt32LE(8)).toBe(2); expect(runningJournal.readUInt32LE(12)).toBe(1024); expect(runningJournal.readUInt32LE(16)).toBe(5);
+    expect(runningJournal.readUInt32LE(20)).toBe(peer.child.pid); expect(runningJournal.readBigUInt64LE(504)).toBeGreaterThan(0n);
+    expect(runningJournal.readUInt32LE(28)).toBeGreaterThan(0); expect(runningJournal.readBigUInt64LE(40)).toBeGreaterThan(0n);
+    expect(BigInt(runningJournal.readUInt32LE(64))).toBe(stageStat.dev);
+    expect((BigInt(runningJournal.readUInt32LE(68)) << 32n) | BigInt(runningJournal.readUInt32LE(72))).toBe(stageStat.ino);
+    expect(BigInt(runningJournal.readUInt32LE(512))).toBe(reservationStat.dev);
+    expect((BigInt(runningJournal.readUInt32LE(516)) << 32n) | BigInt(runningJournal.readUInt32LE(520))).toBe(reservationStat.ino);
+    expect(runningJournal.readUInt32LE(24)).toBe(context.pid); expect(runningJournal.readBigUInt64LE(32).toString()).toBe(context.creation);
+    expect(runningJournal.subarray(48, 64).toString("hex")).toBe(context.generation);
+    expect(runningJournal.subarray(80, 144).toString("ascii")).toBe(runtime.packageDigest);
+    expect(runningJournal.subarray(992).toString("hex")).toBe(digest(runningJournal.subarray(0, 992)));
+    // Expected records are explicitly DERIVED from observed READY/Running.
+    // The journal's broker FILETIME is not an independent identity observation.
+    const derivedAdmitted = Buffer.from(ready); derivedAdmitted.writeUInt32LE(2, 16);
+    derivedAdmitted.writeUInt32LE(runningJournal.readUInt32LE(20), 96);
+    derivedAdmitted.writeBigUInt64LE(runningJournal.readBigUInt64LE(504), 104);
+    createHash("sha256").update(derivedAdmitted.subarray(0, 992)).digest().copy(derivedAdmitted, 992);
+    const derivedCleanJournal = Buffer.from(runningJournal); derivedCleanJournal.writeUInt32LE(7, 16);
+    createHash("sha256").update(derivedCleanJournal.subarray(0, 992)).digest().copy(derivedCleanJournal, 992);
+    await routine(() => writeFile(join(runRoot!, "ready-session-preimage.bin"), ready, { flag: "wx" }), 3000, "ready-preimage-evidence");
+    await routine(() => writeFile(join(runRoot!, "running-journal-preimage.bin"), runningJournal, { flag: "wx" }), 3000, "running-preimage-evidence");
     peer.events.push("main-stop"); phase = "main-stop";
     [outcome, exited] = await routine(() => {
       mainStopIssuedByTest = true; return Promise.all([requestStop(), peer!.closed]);
     }, 35000, "main-stop-and-exit");
     expect(exited).toEqual({ code: 0, signal: null }); peer.assertComplete();
     expect(outcome).toEqual({ descriptorRemoved: true, helperExitVerified: true, backendRevoked: true,
-      listenerClosed: true, brokerCleanupReported: true, reservationCreated: true, reservationReleased: false, failed: false });
+      listenerClosed: true, brokerCleanupReported: true, reservationCreated: true, reservationReleased: true, failed: false });
     const stopIndex = peer.events.indexOf("main-stop"), stdinCloseIndex = peer.events.indexOf("stdin-close");
     expect(peer.events.indexOf("broker-close")).toBeGreaterThan(stopIndex);
     // Stdin must stay open until STOP. Its optional close callback need not
@@ -299,52 +340,24 @@ test("round trips real MCP status and Main STOP through the native broker candid
     expect(stdinCloseIndex < 0 || stdinCloseIndex > stopIndex).toBe(true);
     expect(operations.slice(-2)).toEqual(["development.detach", "development.configure"]);
     expect(service.status()).toMatchObject({ ok: true, status: { enabled: false, connected: false } });
-    phase = "post-exit-journal";
+    phase = "automatic-clean-poststate";
     await expect(routine(() => access(join(control, "main-bootstrap.bin")), 3000, "descriptor-absence")).rejects.toMatchObject({ code: "ENOENT" });
-    expect((await routine(() => readdir(reservation), 3000, "reservation-read")).sort()).toEqual(["broker-journal.bin"]);
-    const journalPath = join(reservation, "broker-journal.bin");
-    const journalStat = await routine(() => lstat(journalPath), 3000, "journal-stat");
-    expect(journalStat.isFile() && !journalStat.isSymbolicLink() && journalStat.nlink === 1).toBe(true);
-    expect(journalStat.size).toBe(1024);
-    const journal = await routine(() => readFile(journalPath), 3000, "journal-read");
-    expect(journal.length).toBe(1024); expect(journal.subarray(0, 8).equals(Buffer.from([84, 77, 67, 74, 82, 78, 50, 0]))).toBe(true);
-    expect(journal.readUInt32LE(8)).toBe(2); expect(journal.readUInt32LE(12)).toBe(1024); expect(journal.readUInt32LE(16)).toBe(7);
-    expect(journal.readUInt32LE(20)).toBe(peer.child.pid); expect(journal.readBigUInt64LE(504)).toBeGreaterThan(0n);
-    expect(BigInt(journal.readUInt32LE(64))).toBe(stageStat.dev);
-    expect((BigInt(journal.readUInt32LE(68)) << 32n) | BigInt(journal.readUInt32LE(72))).toBe(stageStat.ino);
-    expect(BigInt(journal.readUInt32LE(512))).toBe(reservationStat.dev);
-    expect((BigInt(journal.readUInt32LE(516)) << 32n) | BigInt(journal.readUInt32LE(520))).toBe(reservationStat.ino);
-    expect(journal.readUInt32LE(24)).toBe(context.pid); expect(journal.readBigUInt64LE(32).toString()).toBe(context.creation);
-    expect(journal.subarray(48, 64).toString("hex")).toBe(context.generation);
-    expect(journal.subarray(80, 144).toString("ascii")).toBe(runtime.packageDigest);
-    expect(journal.subarray(992).toString("hex")).toBe(digest(journal.subarray(0, 992)));
-    if (performance.now() >= routineEnd) throw new Error("No successful predicate after routine deadline");
-    const admitted = await routine(() => readFile(sessionPath), 3000, "admitted-session");
-    expect(admitted.readUInt32LE(16)).toBe(2); expect(admitted.readUInt32LE(96)).toBe(peer.child.pid);
-    expect(admitted.readBigUInt64LE(104)).toBeGreaterThan(0n);
-    expect(admitted.subarray(384, 416).toString("hex")).toBe(context.descriptorDigest);
-    expect(admitted.subarray(992).equals(createHash("sha256").update(admitted.subarray(0, 992)).digest())).toBe(true);
-    expect((await routine(() => readFile(leasePath), 3000, "released-lease")).equals(leaseHeader)).toBe(true);
-    phase = "native-clean-release";
-    const journalIdentity = await routine(() => lstat(journalPath, { bigint: true }), 3000, "source-journal-identity");
-    const sessionIdentity = await routine(() => lstat(sessionPath, { bigint: true }), 3000, "source-session-identity");
-    // Actual broker close was already observed. Native code independently
-    // applies its recorded broker/worker exit policy and named Job check.
-    await routine(deadline => runtime.session("release-clean", join(control, "main-bootstrap.bin"), releaseBootstrap!,
-      caseAbort.signal, deadline), 7000, "native-clean-release");
+    expect(mainReleaseRequests).toHaveLength(1); expect(mainReleaseRequests[0]!.operation).toBe("release-clean");
+    expect(journalSnapshotClosedBeforeStop).toBe(true);
     await expect(routine(() => access(reservation), 3000, "released-reservation-absence")).rejects.toMatchObject({ code: "ENOENT" });
-    expect((await routine(() => readFile(sessionPath), 3000, "preserved-admitted-session")).equals(admitted)).toBe(true);
+    const admittedSnapshot = await routine(() => observeNativeRecord(sessionPath, "session"), 3000, "preserved-admitted-session");
+    const admitted = admittedSnapshot.bytes;
+    expect(admitted.equals(derivedAdmitted)).toBe(true);
+    expect(admittedSnapshot.stat.dev).toBe(sessionIdentity.dev); expect(admittedSnapshot.stat.ino).toBe(sessionIdentity.ino);
     expect((await routine(() => readFile(leasePath), 3000, "preserved-original-lease")).equals(leaseHeader)).toBe(true);
     expect((await routine(() => readdir(control), 3000, "clean-control-shape")).sort()).toEqual([
       "native-session-clean-release.bin", "native-session-clean-released.bin", "native-session.bin", "native-session.lease",
     ].sort());
     const intentPath = join(control, "native-session-clean-release.bin"), completionPath = join(control, "native-session-clean-released.bin");
-    const intentStat = await routine(() => lstat(intentPath, { bigint: true }), 3000, "clean-intent-stat");
-    const doneStat = await routine(() => lstat(completionPath, { bigint: true }), 3000, "clean-completion-stat");
-    expect(intentStat.isFile() && !intentStat.isSymbolicLink() && intentStat.nlink === 1n && intentStat.size === 2048n).toBe(true);
-    expect(doneStat.isFile() && !doneStat.isSymbolicLink() && doneStat.nlink === 1n && doneStat.size === 1024n).toBe(true);
-    const intent = await routine(() => readFile(intentPath), 3000, "clean-intent-read");
-    const done = await routine(() => readFile(completionPath), 3000, "clean-completion-read");
+    const intentSnapshot = await routine(() => observeNativeRecord(intentPath, "clean-intent"), 3000, "clean-intent-snapshot");
+    const doneSnapshot = await routine(() => observeNativeRecord(completionPath, "clean-completion"), 3000, "clean-completion-snapshot");
+    const intentStat = intentSnapshot.stat;
+    const intent = intentSnapshot.bytes, done = doneSnapshot.bytes;
     const fileId = (bytes: Buffer, at: number, stat: { dev: bigint; ino: bigint }) => {
       expect(BigInt(bytes.readUInt32LE(at))).toBe(stat.dev);
       expect((BigInt(bytes.readUInt32LE(at + 4)) << 32n) | BigInt(bytes.readUInt32LE(at + 8))).toBe(stat.ino);
@@ -354,9 +367,9 @@ test("round trips real MCP status and Main STOP through the native broker candid
     expect(intent.subarray(20, 32).equals(Buffer.alloc(12))).toBe(true);
     expect(intent.subarray(32, 448).equals(admitted.subarray(0, 416))).toBe(true);
     expect(intent.subarray(448, 480).toString("hex")).toBe(digest(admitted)); fileId(intent, 480, sessionIdentity);
-    expect(intent.subarray(492, 524).toString("hex")).toBe(digest(journal)); fileId(intent, 524, journalIdentity); fileId(intent, 536, intentStat);
+    expect(intent.subarray(492, 524).toString("hex")).toBe(digest(derivedCleanJournal)); fileId(intent, 524, journalIdentity); fileId(intent, 536, intentStat);
     expect(intent.subarray(548, 992).equals(Buffer.alloc(444))).toBe(true);
-    expect(intent.subarray(992, 2016).equals(journal)).toBe(true);
+    expect(intent.subarray(992, 2016).equals(derivedCleanJournal)).toBe(true);
     expect(intent.subarray(2016).toString("hex")).toBe(digest(intent.subarray(0, 2016)));
     expect(done.subarray(0, 8).equals(Buffer.from([84, 77, 67, 67, 76, 68, 49, 0]))).toBe(true);
     expect(done.readUInt32LE(8)).toBe(1); expect(done.readUInt32LE(12)).toBe(1024);
@@ -366,7 +379,7 @@ test("round trips real MCP status and Main STOP through the native broker candid
     expect(done.readUInt32LE(84)).toBe(context.pid); expect(done.readBigUInt64LE(88).toString()).toBe(context.creation);
     expect(done.subarray(96, 112).toString("hex")).toBe(context.generation);
     expect(done.subarray(112, 144).toString("hex")).toBe(digest(admitted));
-    expect(done.subarray(144, 176).toString("hex")).toBe(digest(journal)); fileId(done, 176, journalIdentity);
+    expect(done.subarray(144, 176).toString("hex")).toBe(digest(derivedCleanJournal)); fileId(done, 176, journalIdentity);
     expect(done.readUInt32LE(188)).toBe(1); expect(done.subarray(192, 992).equals(Buffer.alloc(800))).toBe(true);
     expect(done.subarray(992).toString("hex")).toBe(digest(done.subarray(0, 992)));
     await routine(deadline => runtime.session("release-clean", join(control, "main-bootstrap.bin"), releaseBootstrap!,
@@ -393,7 +406,8 @@ test("round trips real MCP status and Main STOP through the native broker candid
       success: success && cleanupErrors.length === 0, phase, context, outcome, exit: exited, forced: peer?.forced ?? false, brokerCloseObserved: peer?.observedClose ?? false,
       operations, invocations, engineRunCalls: runs, events: peer?.events ?? [], replies: peer?.replies ?? [],
       brokerStderr: Buffer.concat(peer?.stderr ?? []).toString("utf8"), error: original instanceof Error ? original.message : original ? String(original) : null,
-      cleanupErrors, cleanReleased, evidenceScope: "Functional Node-host/Main-STOP plus package-bound native admitted retirement and same-completion retry after actual broker close; fresh recorded-process/Job policy, no complete profile-storage/network/default-Electron/rearm acceptance",
+      cleanupErrors, cleanReleased, journalSnapshotClosedBeforeStop, mainReleaseRequests,
+      evidenceScope: "Functional Node-host/Main-STOP with automatic package-bound admitted retirement; same-completion retry after stop. READY/Running preimages observed before STOP; expected ADMITTED/CLEAN explicitly derived, broker FILETIME only producer-observed. Fresh native process/Job policy; no full profile-storage/network/default-Electron/rearm acceptance. Release-request versus Node-close timing is not native lease-contention proof.",
       fixturePreserved: true, recoveryAttempted: false, inspectorExecuted: false, stdinEndedByTest: false,
       nativeRejections: rejectedPeers.map(rejected => ({ actualClose: rejected.observedClose, forced: rejected.forced,
         stderr: Buffer.concat(rejected.stderr).toString("utf8") })),

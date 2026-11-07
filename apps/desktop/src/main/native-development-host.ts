@@ -10,6 +10,7 @@ import { NativeDevelopmentAdmission } from "./native-development-admission.js";
 import { encodeNativeBootstrap, NATIVE_PIPE_PREFIX } from "./native-development-bootstrap.js";
 import { NativeMainConnection, type NativeConnectionOutcome } from "./native-main-connection.js";
 import type { NativeMcpHostResources } from "./native-mcp-resources.js";
+import { assessNativeMcpRelease } from "./native-mcp-release-policy.js";
 
 export interface NativeHostOutcome {
   readonly descriptorRemoved: boolean;
@@ -23,10 +24,10 @@ export interface NativeHostOutcome {
 }
 type Backend = Pick<BackendController, "development">;
 const unavailable = (): DevelopmentResult => ({ ok: false, code: "ENGINE_UNAVAILABLE" });
-/** One-shot host. Only the pinned native release-pristine operation may release
- * a sealed, never-admitted reservation. Persistent session/intent/lease records
- * remain. Reopening needs the later generation/recovery protocol; a new Host or
- * backend alias is never a rearm mechanism. Caller owns the Electron lock. */
+/** One-shot host. Fixed native release operations decide whether a pristine or
+ * admitted-clean reservation may retire. Persistent ownership records remain.
+ * Reopening needs the later generation/recovery protocol; a new Host or backend
+ * alias is never a rearm mechanism. Caller owns the Electron lock. */
 export class NativeDevelopmentHost {
   private attempted = false;
   private closing = false;
@@ -106,7 +107,7 @@ export class NativeDevelopmentHost {
     try {
       await this.helper(() => securePrivateDirectory(this.directory, this.abort.signal)); this.alive();
       // A fixed CREATE_NEW reservation fences crashes. Only the explicit
-      // native pristine-release path in close() may remove it. Opening never
+      // native release paths in close() may remove it. Opening never
       // repairs, deletes or bypasses an existing reservation.
       await mkdir(join(this.directory, "native-session-reserved")); this.reservationCreated = true; this.alive();
       const entries = await opendir(join(this.directory, "native-session-reserved"));
@@ -222,17 +223,21 @@ export class NativeDevelopmentHost {
       catch { this.descriptorState = "uncertain"; }
     }
     const listenerClosed = await this.bound(listener, 3000) === true;
-    const outcomes = [...this.outcomes, ...stopped];
-    const brokerCleanupReported = outcomes.some(outcome => outcome.authenticated && outcome.brokerCleanupReported);
+    const release = assessNativeMcpRelease([...this.outcomes, ...stopped]);
+    const brokerCleanupReported = release.brokerCleanupReported;
+    this.failed ||= release.failed;
     const descriptorRemoved = this.descriptorState === "absent" || this.descriptorState === "removed";
     let reservationReleased = false;
-    // The owner does not infer pristine state from a missing CLEAN report.
-    // Native code decides READY vs ADMITTED atomically under the common lease.
+    const releaseOperation = release.operation;
+    // A complete terminal outcome selects only a fixed request. Native code
+    // still decides READY versus ADMITTED/CLEAN under the original lease and
+    // fresh process/Job checks. Neither missing CLEAN nor failure downgrades
+    // an admitted generation to pristine, and no mode is attempted as fallback.
     if (this.cleanupWithinBudget() && !this.failed && this.sessionSealed && this.reservationCreated
       && descriptorRemoved && this.descriptor && this.helpersSettled && detached && revoked && listenerClosed
-      && !outcomes.some(outcome => outcome.authenticated || outcome.failed)) {
+      && releaseOperation) {
       try {
-        await this.helper(() => this.resources.session("release-pristine", this.file, this.descriptor!, this.cleanupAbort.signal, this.cleanupDeadline));
+        await this.helper(() => this.resources.session(releaseOperation, this.file, this.descriptor!, this.cleanupAbort.signal, this.cleanupDeadline));
         if (!this.cleanupWithinBudget()) throw new Error("Native release exceeded cleanup deadline.");
         reservationReleased = true;
       } catch { this.failed = true; }
@@ -241,7 +246,7 @@ export class NativeDevelopmentHost {
     return Object.freeze({ descriptorRemoved, helperExitVerified: this.helpersSettled, backendRevoked: revoked,
       listenerClosed, brokerCleanupReported, reservationCreated: this.reservationCreated, reservationReleased,
       failed: this.failed || !detached || !revoked || !listenerClosed || this.attempted && !descriptorRemoved || !this.helpersSettled
-        || outcomes.some(outcome => outcome.failed) });
+        || release.failed });
   }
   private bound<T>(work: Promise<T>, milliseconds: number, absolute?: number): Promise<T | undefined> {
     return new Promise(resolve => {

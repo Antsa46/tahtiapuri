@@ -7,6 +7,7 @@ import { randomUUID } from "node:crypto";
 import { securePrivateDirectory } from "../../../apps/desktop/src/main/private-directory.js";
 import { queryNativeMainIdentity } from "../../../apps/desktop/src/main/native-main-identity.js";
 import { encodeNativeBootstrap } from "../../../apps/desktop/src/main/native-development-bootstrap.js";
+import { createNativeRecoveryGrant } from "../../../apps/desktop/src/main/native-recovery-grant.js";
 import { runNativeBootstrapOperation } from "../../../apps/desktop/src/main/native-bootstrap-operation.js";
 
 const execute = promisify(execFile);
@@ -74,7 +75,7 @@ test("wrong expected bytes cannot consume another token", async () => {
 });
 test("live Main blocks stale recovery and keeps its descriptor", async () => {
   const f = await setup(); await writeFile(f.file, bytes, { flag: "wx" });
-  const result = await raw("--recover", f.file, Buffer.alloc(0)); expect(result.code).toBe(1); expect(result.stderr).toContain("main-live");
+  const result = await raw("--recover", f.file, createNativeRecoveryGrant()); expect(result.code).toBe(1); expect(result.stderr).toContain("main-live");
   expect(await readFile(f.file)).toEqual(bytes);
 });
 test("different creation time is stale even while that PID is live", async () => {
@@ -95,7 +96,7 @@ test("an exited Main is stale even while an external process handle retains the 
     'if(!$p.WaitForExit(3000)){throw "Synthetic child deadline"}; ' +
     '$psi=[Diagnostics.ProcessStartInfo]::new(); $psi.FileName=$env:TAHTIAPURI_TEST_HELPER; $psi.Arguments="--recover " + [char]34 + $env:TAHTIAPURI_TEST_PATH + [char]34; ' +
     '$psi.UseShellExecute=$false; $psi.CreateNoWindow=$true; $psi.RedirectStandardInput=$true; $psi.RedirectStandardOutput=$true; $psi.RedirectStandardError=$true; ' +
-    '$h=[Diagnostics.Process]::Start($psi); $null=$h.Handle; $h.StandardInput.Close(); if(!$h.WaitForExit(7000)){ $h.Kill(); throw "Helper deadline" }; ' +
+    '$h=[Diagnostics.Process]::Start($psi); $null=$h.Handle; $grant=[Text.Encoding]::ASCII.GetBytes("THREC001"); $h.StandardInput.BaseStream.Write($grant,0,$grant.Length); $h.StandardInput.Close(); if(!$h.WaitForExit(7000)){ $h.Kill(); throw "Helper deadline" }; ' +
     '$h.WaitForExit(); if($h.ExitCode -ne 0 -or $h.StandardOutput.ReadToEnd() -ne ("descriptor-absent" + [char]10) -or $h.StandardError.ReadToEnd() -ne ""){throw "Recovery failed"}; ' +
     '$p.Dispose(); $h.Dispose(); [Console]::Write("passed")', f.file,
     { TAHTIAPURI_TEST_BYTES: bytes.toString("base64"), TAHTIAPURI_TEST_HELPER: helper! });
@@ -107,16 +108,16 @@ for (const size of [0, 8, 31]) test("recovers reserved valid incomplete scratch 
 });
 test("preserves a complete pending identity while its Main is live", async () => {
   const f = await setup(); await writeFile(f.pending, bytes, { flag: "wx" });
-  expect((await raw("--recover", f.file, Buffer.alloc(0))).code).toBe(1); expect(await readFile(f.pending)).toEqual(bytes);
+  expect((await raw("--recover", f.file, createNativeRecoveryGrant())).code).toBe(1); expect(await readFile(f.pending)).toEqual(bytes);
 });
 for (const content of [Buffer.from("wrong"), Buffer.alloc(97)]) test("preserves malformed or oversized reserved scratch: " + content.length, async () => {
   const f = await setup(); await writeFile(f.pending, content, { flag: "wx" });
-  expect((await raw("--recover", f.file, Buffer.alloc(0))).code).toBe(1); expect(await readFile(f.pending)).toEqual(content);
+  expect((await raw("--recover", f.file, createNativeRecoveryGrant())).code).toBe(1); expect(await readFile(f.pending)).toEqual(content);
 });
 test("an open publisher-style writer blocks scratch recovery", async () => {
   const f = await setup(); await writeFile(f.pending, bytes.subarray(0, 8));
   const writer = await open(f.pending, "r+");
-  try { expect((await raw("--recover", f.file, Buffer.alloc(0))).code).toBe(1); }
+  try { expect((await raw("--recover", f.file, createNativeRecoveryGrant())).code).toBe(1); }
   finally { await writer.close(); }
   expect(await readFile(f.pending)).toEqual(bytes.subarray(0, 8));
   await runNativeBootstrapOperation(helper!, "recover", f.file); await absent(f.pending);
@@ -124,7 +125,7 @@ test("an open publisher-style writer blocks scratch recovery", async () => {
 test("hardlinks are preserved rather than consumed or recovered", async () => {
   const f = await setup(); await writeFile(f.file, bytes); await link(f.file, join(f.directory, "alias.bin"));
   expect((await raw("--consume", f.file, bytes)).code).toBe(1);
-  expect((await raw("--recover", f.file, Buffer.alloc(0))).code).toBe(1);
+  expect((await raw("--recover", f.file, createNativeRecoveryGrant())).code).toBe(1);
   expect(await readFile(f.file)).toEqual(bytes);
 });
 for (const size of [95, 97]) test("rejects stdin length before creating scratch: " + size, async () => {
@@ -147,7 +148,7 @@ test("consumption acknowledgement failure does not restore a consumed descriptor
 });
 test("does not recover a malformed final descriptor", async () => {
   const f = await setup(); const malformed = Buffer.alloc(96); await writeFile(f.file, malformed);
-  expect((await raw("--recover", f.file, Buffer.alloc(0))).code).toBe(1); expect(await readFile(f.file)).toEqual(malformed);
+  expect((await raw("--recover", f.file, createNativeRecoveryGrant())).code).toBe(1); expect(await readFile(f.file)).toEqual(malformed);
 });
 test("does not create or repair an unprotected root", async () => {
   const directory = join(base, randomUUID()); await mkdir(directory);
@@ -158,7 +159,7 @@ test("does not create or repair an unprotected root", async () => {
 test("access-denied process query is not treated as a stale descriptor", async () => {
   const f = await setup(), uncertain = Buffer.from(bytes); uncertain.writeUInt32LE(4, 16);
   await writeFile(f.file, uncertain);
-  const result = await raw("--recover", f.file, Buffer.alloc(0));
+  const result = await raw("--recover", f.file, createNativeRecoveryGrant());
   expect(result.code).toBe(1); expect(result.stderr).toContain("bootstrap-main-open:5");
   expect(await readFile(f.file)).toEqual(uncertain);
 });

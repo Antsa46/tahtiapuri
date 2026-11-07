@@ -130,7 +130,7 @@ inline void releaseCleanBrokerSession(const std::wstring& path,const MainBootstr
     const NativeReleaseRecordIo& completionIo=windowsReleaseRecordIo(),
     windows_runtime::ProcessWitnessApi& processes=windows_runtime::windowsProcessWitnessApi()){
     if(!deadline)throw WinError("mcp-clean-release-deadline",ERROR_INVALID_PARAMETER);
-    requireSessionBudget(deadline);requirePublishingMain(bootstrap);BootstrapDirectoryGuard control(path);NativeSessionLease lease(control,false);
+    requireSessionBudget(deadline);requirePublishingMain(bootstrap);BootstrapDirectoryGuard control(path);NativeSessionLease lease(control,false,deadline,&bootstrap);
     requireNoPristineBrokerRelease(control);
     BootstrapPin state(control.root+L"\\"+sessionRecordLeaf,false,GENERIC_READ|READ_CONTROL|FILE_READ_ATTRIBUTES,OPEN_EXISTING,0);
     requireBootstrapAcl(state.handle.value,control.owner,false);

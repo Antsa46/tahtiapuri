@@ -88,7 +88,7 @@ async function peer(file: string) {
   };
   return { socket, frames, send, next, closed, hello: () => send(ControlKind.hello, bytes.subarray(48)) };
 }
-test("joins real helpers, protected descriptor, local pipe and backend; CLEAN retains the recovery reservation", async () => {
+test("joins descriptor helpers, local pipe and backend; CLEAN requests native retirement", async () => {
   const f = await fixture(); expect(await f.host.setEnabled(true)).toMatchObject({ ok: true, status: { enabled: true } });
   const client = await peer(f.file); client.hello(); expect((await client.next()).kind).toBe(ControlKind.accept);
   await absent(f.file); expect(f.service.status()).toMatchObject({ status: { connected: true } });
@@ -96,7 +96,7 @@ test("joins real helpers, protected descriptor, local pipe and backend; CLEAN re
   expect((await client.next()).kind).toBe(ControlKind.response);
   const stopped = f.host.stop(); expect((await client.next()).kind).toBe(ControlKind.stop); client.send(ControlKind.clean);
   expect(await stopped).toMatchObject({ failed: false, descriptorRemoved: true, helperExitVerified: true,
-    backendRevoked: true, listenerClosed: true, brokerCleanupReported: true, reservationCreated: true, reservationReleased: false });
+    backendRevoked: true, listenerClosed: true, brokerCleanupReported: true, reservationCreated: true, reservationReleased: true });
   await access(f.reservation); expect(f.operations.slice(-2)).toEqual(["development.detach", "development.configure"]);
   expect((await f.host.setEnabled(true)).ok).toBe(false);
   const restarted = await fixture(helpers, f.directory);
@@ -479,7 +479,7 @@ for (const verified of [true, false])
     expect(await f.host.stop()).toBe(result); expect((await f.host.setEnabled(true)).ok).toBe(false);
     expect(calls.filter(value => value === "release-pristine")).toHaveLength(1); await access(f.reservation);
   });
-test("an authenticated peer is never classified as pristine, even after CLEAN", async () => {
+test("an authenticated peer requests only native clean release after CLEAN", async () => {
   const calls: string[] = [];
   const f = await fixture(helpers, undefined, undefined, async (operation, file, bytes, signal) => {
     calls.push(operation); if (operation === "publish") await helpers.operate("publish", file, bytes, signal);
@@ -487,8 +487,9 @@ test("an authenticated peer is never classified as pristine, even after CLEAN", 
   await f.host.setEnabled(true); const client = await peer(f.file);
   client.hello(); expect((await client.next()).kind).toBe(ControlKind.accept);
   const closing = f.host.stop(); expect((await client.next()).kind).toBe(ControlKind.stop); client.send(ControlKind.clean);
-  expect(await closing).toMatchObject({ failed: false, reservationReleased: false, brokerCleanupReported: true });
-  expect(calls).not.toContain("release-pristine"); await access(f.reservation);
+  expect(await closing).toMatchObject({ failed: false, reservationReleased: true, brokerCleanupReported: true });
+  expect(calls.filter(value => value === "release-clean")).toHaveLength(1);
+  expect(calls).not.toContain("release-pristine"); await access(f.reservation); // Synthetic port, no deletion.
 });
 test("a release completing after the whole stop deadline never upgrades its result", async () => {
   const entered = gate(), release = gate(), calls: string[] = []; let releaseSignal: AbortSignal | undefined;
@@ -530,5 +531,95 @@ test("a consume settling after the stop deadline cannot dispatch pristine releas
     release.resolve(); const result = await closing;
     expect(result).toMatchObject({ failed: true, reservationReleased: false }); expect(releaseCalls).toBe(0);
     expect(await f.host.stop()).toBe(result); await access(f.reservation);
+  } finally { restore?.(); release.resolve(); await closing; }
+});
+
+test("clean release follows descriptor removal, closed listener, backend revoke and one stop", async () => {
+  const calls: string[] = []; let f!: Awaited<ReturnType<typeof fixture>>, input: Buffer | undefined;
+  let reentered: ReturnType<NativeDevelopmentHost["stop"]> | undefined, forwardedDeadline: number | undefined;
+  f = await fixture(helpers, undefined, undefined, async (operation, file, bytes, signal, deadline) => {
+    calls.push(operation); signal.throwIfAborted();
+    if (operation === "publish") { await helpers.operate("publish", file, bytes, signal); return; }
+    if (operation !== "release-clean") return;
+    forwardedDeadline = deadline; reentered = f.host.stop(); await absent(file);
+    expect(f.service.status()).toMatchObject({ status: { enabled: false, connected: false } });
+    expect(f.operations.at(-1)).toBe("development.configure"); expect(signal.aborted).toBe(false);
+    const decoded = decodeNativeBootstrap(bytes), socket = createConnection(NATIVE_PIPE_PREFIX + decoded.pipeNonce);
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => { socket.destroy(); reject(new Error("Listener refusal deadline")); }, 1000);
+        socket.once("connect", () => { clearTimeout(timer); socket.destroy(); reject(new Error("Listener still accepts during clean release")); });
+        socket.once("error", () => { clearTimeout(timer); resolve(); });
+      });
+    } finally { socket.destroy(); }
+    input = bytes; expect(bytes.some(byte => byte !== 0)).toBe(true);
+  });
+  await f.host.setEnabled(true); const client = await peer(f.file);
+  client.hello(); expect((await client.next()).kind).toBe(ControlKind.accept);
+  const closing = f.host.stop(); expect((await client.next()).kind).toBe(ControlKind.stop); client.send(ControlKind.clean);
+  const result = await closing;
+  expect(reentered).toBe(closing); expect(f.host.stop()).toBe(closing);
+  expect(result).toMatchObject({ failed: false, reservationReleased: true, helperExitVerified: true });
+  expect(forwardedDeadline).toBeTypeOf("number"); expect(forwardedDeadline!).toBeGreaterThan(performance.now());
+  expect(calls).toEqual(["prepare", "seal", "publish", "release-clean"]);
+  expect(input?.every(byte => byte === 0)).toBe(true); expect((await f.host.setEnabled(true)).ok).toBe(false);
+});
+for (const verified of [true, false])
+  test("failed clean release never falls back or rearms: " + verified, async () => {
+    const calls: string[] = [];
+    const f = await fixture(helpers, undefined, undefined, async (operation, file, bytes, signal) => {
+      calls.push(operation); if (operation === "publish") await helpers.operate("publish", file, bytes, signal);
+      if (operation === "release-clean") throw new NativeBootstrapProcessError(verified);
+    });
+    await f.host.setEnabled(true); const client = await peer(f.file);
+    client.hello(); expect((await client.next()).kind).toBe(ControlKind.accept);
+    const closing = f.host.stop(); expect((await client.next()).kind).toBe(ControlKind.stop); client.send(ControlKind.clean);
+    expect(await closing).toMatchObject({ failed: true, reservationReleased: false, helperExitVerified: verified });
+    expect(f.host.stop()).toBe(closing); expect((await f.host.setEnabled(true)).ok).toBe(false);
+    expect(calls.filter(value => value === "release-clean")).toHaveLength(1); expect(calls).not.toContain("release-pristine");
+    await access(f.reservation);
+  });
+test("an authenticated close without CLEAN dispatches neither release kind", async () => {
+  const calls: string[] = [];
+  const f = await fixture(helpers, undefined, undefined, async (operation, file, bytes, signal) => {
+    calls.push(operation); if (operation === "publish") await helpers.operate("publish", file, bytes, signal);
+  });
+  await f.host.setEnabled(true); const client = await peer(f.file);
+  client.hello(); expect((await client.next()).kind).toBe(ControlKind.accept);
+  const closing = f.host.stop(); expect((await client.next()).kind).toBe(ControlKind.stop); client.socket.destroy();
+  expect(await closing).toMatchObject({ failed: true, reservationReleased: false, brokerCleanupReported: false });
+  expect(calls.filter(value => value.startsWith("release-"))).toEqual([]); await access(f.reservation);
+});
+test("concurrent stop waits for one clean release request", async () => {
+  const entered = gate(), release = gate(), calls: string[] = [];
+  const f = await fixture(helpers, undefined, undefined, async (operation, file, bytes, signal) => {
+    calls.push(operation); if (operation === "publish") await helpers.operate("publish", file, bytes, signal);
+    if (operation === "release-clean") { entered.resolve(); await release.promise; }
+  });
+  await f.host.setEnabled(true); const client = await peer(f.file);
+  client.hello(); expect((await client.next()).kind).toBe(ControlKind.accept);
+  const first = f.host.stop(); expect((await client.next()).kind).toBe(ControlKind.stop); client.send(ControlKind.clean);
+  try {
+    await entered.promise; expect(f.host.stop()).toBe(first); let settled = false; void first.then(() => { settled = true; });
+    await tick(); expect(settled).toBe(false); release.resolve();
+    expect(await first).toMatchObject({ failed: false, reservationReleased: true });
+    expect(calls.filter(value => value === "release-clean")).toHaveLength(1); expect(calls).not.toContain("release-pristine");
+  } finally { release.resolve(); await first; }
+});
+test("late clean release never upgrades the shared stop result", async () => {
+  const entered = gate(), release = gate(), calls: string[] = []; let releaseSignal: AbortSignal | undefined;
+  const f = await fixture(helpers, undefined, undefined, async (operation, file, bytes, signal) => {
+    calls.push(operation); if (operation === "publish") await helpers.operate("publish", file, bytes, signal);
+    if (operation === "release-clean") { releaseSignal = signal; entered.resolve(); await release.promise; }
+  });
+  await f.host.setEnabled(true); const client = await peer(f.file);
+  client.hello(); expect((await client.next()).kind).toBe(ControlKind.accept);
+  const started = performance.now(), closing = f.host.stop(); expect((await client.next()).kind).toBe(ControlKind.stop); client.send(ControlKind.clean);
+  let restore: (() => void) | undefined;
+  try {
+    await entered.promise; const clock = vi.spyOn(performance, "now").mockReturnValue(started + 60000); restore = () => { clock.mockRestore(); };
+    release.resolve(); const result = await closing; expect(result).toMatchObject({ failed: true, reservationReleased: false });
+    expect(releaseSignal?.aborted).toBe(true); expect(f.host.stop()).toBe(closing);
+    expect(calls.filter(value => value === "release-clean")).toHaveLength(1); expect(calls).not.toContain("release-pristine");
   } finally { restore?.(); release.resolve(); await closing; }
 });
