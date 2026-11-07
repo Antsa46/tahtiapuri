@@ -911,11 +911,11 @@ varmennettiin vain ei-nolla; sen täsmällinen ulkopuolinen vastaavuus on
 vielä avoin. Kohdistettu integraatiotestien tyyppitarkistus läpäisi.
 Tämä ei vielä hyväksy varauksen vapautusta tai kaatumispalautusta.
 
-Normaalin CLEANin jälkeinen varauksen vapautus tarvitsee erillisen natiivin
-operaation, tuoreet broker-/worker-/Job-/profiilitarkistukset sekä pysyvän
-vapautusaikomuksen poistovaiheiden yli. Mainin boolean tai Node-rm ei
-vapauta varausta. Myös saman Main-omistajan sukupolvien hallinta,
-kaatumispalautus ja sovelluksen restart ovat vielä toteutettavia portteja.
+Normaalin CLEANin jälkeisen erillisen natiivivapautuksen sopimuksen ja
+profiilitarkistuksen näyttörajan omistaa [liittyneen sessionin vapautus](mcp-clean-release.md).
+Mainin boolean tai Node-rm ei vapauta varausta. Saman Main-omistajan
+sukupolvien hallinta, kaatumispalautus ja sovelluksen restart ovat vielä
+toteutettavia portteja.
 
 Profiilin SID:n johtaminen ei ole profiilin puuttumistodiste.
 [Microsoftin DeleteAppContainerProfile-sopimus](https://learn.microsoft.com/en-us/windows/win32/api/userenv/nf-userenv-deleteappcontainerprofile)
@@ -1004,7 +1004,7 @@ verrataan vielä sessioniin ennen journalin luontia, ja Mainin elossaolo
 tarkistetaan resurssien avaamisen molemmin puolin. Worker ei peri leasea
 tai session-kahvaa. Worker/process/Job, journal, resurssit ja Main-peer
 suljetaan ennen session-kahvaa ja viimeisenä leasea. Leasen saaminen ei
-yksin todista brokerin poistumista; tuleva vapautus tarvitsee tuoreen
+yksin todista brokerin poistumista; natiivi vapautus tarvitsee tuoreen
 PID/FILETIME- ja poistumishavainnon.
 
 ## Session-perustan todennettu näyttö ja rajat
@@ -1051,10 +1051,11 @@ mallia ei ajettu. Brokerin FILETIME:sta varmennettiin vain ei-nolla,
 ja siivousnäyttö koostui brokerin raportista ja paikallisesta jälkitilasta.
 Tämä ei ole riippumaton prosessi-/Job-/profiili-/verkkorajan hyväksyntä.
 
-BROKER_ADMITTED-varauksen vapautus, saman Mainin uudelleenavaus ja
-kaatumispalautus puuttuvat edelleen. Session-tietue ei yksin anna
-poistovaltuutta; koskaan liittymättömän sessionin erillinen pristine-polku
-kuvataan seuraavaksi.
+BROKER_ADMITTED-varauksen erillisen vapautuksen omistaa
+[liittyneen sessionin natiivivapautus](mcp-clean-release.md). Saman Mainin
+uudelleenavaus ja kaatumispalautus puuttuvat edelleen. Session-tietue ei yksin
+anna poistovaltuutta; koskaan liittymättömän sessionin pristine-polku kuvataan
+seuraavaksi.
 Oletuskoostaminen ja koko sovelluksen riippumaton OS/FMI/CPU/GPU-näyttö
 eivät tule hyväksytyiksi tällä perustalla.
 
@@ -1164,5 +1165,7 @@ Koko julkista 97 tapauksen Host-reseptiä ei ajettu tässä tarkistuksessa;
 sen prerequisite on hyväksytty nykyiseen lähteeseen sidottu bootstrap-kuitti.
 Node-koostumiskoe ei ole Electronin oletusentryn E2E eikä riippumaton
 OS-/verkko-/Job-/profiilinäyttö. CLEAN on edelleen brokerin ilmoitus.
-Release-clean, saman Mainin uusi generation ja kaatumispalautus sekä
-koko minimipaketin FMI-/CPU-/GPU- ja oikeusrajat jäävät jatkotyöksi.
+Liittyneen sessionin erillisen release-clean-polun sopimuksen ja sen
+nykyisen näytön omistaa [natiivi vapautus](mcp-clean-release.md). Saman Mainin
+uusi generation, kaatumispalautus sekä koko minimipaketin FMI-/CPU-/GPU- ja
+oikeusrajat jäävät jatkotyöksi.

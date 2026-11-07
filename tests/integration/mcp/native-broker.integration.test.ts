@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { access, lstat, readFile, readdir, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { basename, dirname, join, resolve } from "node:path";
@@ -14,6 +14,16 @@ import { DevelopmentService } from "../../../apps/backend/src/modules/developmen
 import { AssistantService } from "../../../apps/backend/src/modules/assistant/application/assistant-service.js";
 import { isDevelopmentIdentity, isDevelopmentInvocation } from "@tahtiapuri/validation/development";
 
+const traceState = vi.hoisted(() => ({ trace: undefined as ReturnType<typeof import("./native-process-trace.js").createNativeProcessTrace> | undefined }));
+vi.mock("node:child_process", async importOriginal => {
+  const actual = await importOriginal<typeof import("node:child_process")>();
+  const { createNativeProcessTrace } = await import("./native-process-trace.js");
+  traceState.trace = createNativeProcessTrace(); return traceState.trace.wrap(actual);
+});
+const trace = traceState.trace!;
+let traceScope = trace.current(), traceSequence = 0, blockedBeforeStart = false;
+let traceAbort = new AbortController(), tracePending = new Set<Promise<unknown>>();
+
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const runtimeRoot = process.env.TAHTIAPURI_NATIVE_MCP_RUNTIME_ROOT;
 const descriptorDigest = process.env.TAHTIAPURI_NATIVE_MCP_RUNTIME_DIGEST;
@@ -22,6 +32,50 @@ const enabled = process.platform === "win32" && !!runtimeRoot && !!descriptorDig
 const test = enabled ? it : it.skip;
 let functionalTainted = false;
 const digest = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
+beforeEach(() => {
+  blockedBeforeStart = functionalTainted; traceScope = trace.begin(); traceAbort = new AbortController(); tracePending = new Set<Promise<unknown>>();
+});
+afterEach(async () => {
+  if (!enabled) return;
+  const scope = traceScope, controller = traceAbort, pending = tracePending;
+  const deadline = performance.now() + 6000, failures: string[] = [];
+  trace.note(scope, "cleanup-request", "functional-case"); controller.abort();
+  const requested = new Set<ReturnType<typeof trace.children>[number]["child"]>();
+  for (;;) {
+    const children = trace.children(scope), unclosed = children.filter(owned => !owned.record.observedClose);
+    if (!pending.size && !unclosed.length) break;
+    if (performance.now() >= deadline) { failures.push("Owned cleanup deadline exceeded"); break; }
+    // Pending verification may create a child after a previous iteration.
+    // Re-read the owned handle list; never search or kill by process name/PID.
+    for (const owned of unclosed) {
+      if (requested.has(owned.child)) continue;
+      if (performance.now() >= deadline) break;
+      requested.add(owned.child);
+      try { owned.child.kill(); } catch { failures.push("Owned child termination request failed"); }
+    }
+    const remaining = deadline - performance.now();
+    if (remaining <= 0) { failures.push("Owned cleanup deadline exceeded"); break; }
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      await Promise.race([
+        new Promise<void>(resolve => { timer = setTimeout(resolve, Math.min(20, remaining)); }),
+        ...[...pending].map(value => value.then(() => undefined, () => undefined)),
+        ...unclosed.map(owned => owned.closed),
+      ]);
+    } finally { clearTimeout(timer); }
+  }
+  const children = trace.children(scope), allChildClosesKnown = children.every(owned => owned.record.observedClose);
+  const killRequests = scope.events.filter(event => event.event === "kill-request").length;
+  if (performance.now() >= deadline) failures.push("Owned cleanup ended after deadline");
+  if (requested.size || killRequests || !allChildClosesKnown || scope.overflow || scope.uncertain || failures.length || pending.size) functionalTainted = true;
+  const receipt = { scope, children: trace.records(scope), allChildClosesKnown, forcedCleanupRequests: requested.size, killRequests,
+    cleanupErrors: failures, pendingOperations: pending.size, blockedByPriorCase: blockedBeforeStart };
+  try {
+    await bounded(writeFile(join(runRoot!, "functional-process-case-" + (++traceSequence) + ".json"), JSON.stringify(receipt, null, 2) + "\n", { flag: "wx" }), 3000, "trace-receipt");
+  } catch (error) { functionalTainted = true; throw error; }
+  expect(failures).toEqual([]); expect(requested.size).toBe(0); expect(killRequests).toBe(0); expect(allChildClosesKnown).toBe(true);
+  expect(scope.overflow).toBe(false); expect(scope.uncertain).toBe(false); expect(pending.size).toBe(0);
+}, 12000);
 type Exit = { code: number | null; signal: NodeJS.Signals | null };
 type Rpc = { jsonrpc: string; id: number; error?: unknown; result?: { tools?: { name: string }[]; structuredContent?: unknown } };
 async function bounded<T>(work: Promise<T>, ms: number, label: string): Promise<T> {
@@ -110,18 +164,17 @@ class McpPeer {
 test("round trips real MCP status and Main STOP through the native broker candidate", async () => {
   functionalTainted = true;
   const routineEnd = performance.now() + 80000;
-  const routine = <T>(work: () => Promise<T>, cap: number, label: string): Promise<T> => {
-    const remaining = routineEnd - performance.now();
-    if (remaining <= 0) return Promise.reject(new Error("Functional routine deadline"));
-    return bounded(work(), Math.min(cap, remaining), label);
-  };
+  const caseScope = traceScope, caseAbort = traceAbort, pending = tracePending;
+  const routine = <T>(work: (deadline: number) => Promise<T>, cap: number, label: string): Promise<T> =>
+    trace.within(caseScope, work, cap, label, { end: routineEnd, controller: caseAbort, pending,
+      taint: () => { functionalTainted = true; } });
   expect(resolve(runRoot!)).toBe(runRoot); expect(resolve(runtimeRoot!)).toBe(runtimeRoot);
   expect(dirname(runRoot!)).toBe(join(projectRoot, ".artifacts/tests/native-mcp-runtime"));
   expect(basename(runRoot!)).toMatch(/^run-[a-f0-9]{32}$/);
   expect(dirname(runtimeRoot!)).toBe(join(projectRoot, ".artifacts/native/mcp-native/builds"));
   expect(basename(runtimeRoot!)).toMatch(/^build-[a-f0-9]{32}$/);
   expect(descriptorDigest).toMatch(/^[a-f0-9]{64}$/);
-  const runtime = await routine(() => loadNativeMcpRuntime({ runtimeRoot: runtimeRoot!, descriptorSha256: descriptorDigest! }, new AbortController().signal), 15000, "runtime-load");
+  const runtime = await routine(() => loadNativeMcpRuntime({ runtimeRoot: runtimeRoot!, descriptorSha256: descriptorDigest! }, caseAbort.signal), 15000, "runtime-load");
   const control = join(runRoot!, "control"), reservation = join(control, "native-session-reserved");
   let runs = 0;
   const assistant = new AssistantService({ run: async () => { ++runs; return { text: "Synthetic", info: null, error: null }; }, cancel: () => {} });
@@ -144,6 +197,7 @@ test("round trips real MCP status and Main STOP through the native broker candid
   const requestStop = () => stopping ??= host.stop().then(value => { outcome = value; return value; });
   let stdinOpenAtMainStop = false, mainStopIssuedByTest = false, workerPresentAtEnabled = false;
   let success = false, original: unknown;
+  let releaseBootstrap: Buffer | undefined, cleanReleased = false;
   const cleanupErrors: string[] = []; let phase = "enable";
   const rejectedPeers: McpPeer[] = [];
   const rejectBroker = async (file: string, stage: string, code: number) => {
@@ -158,11 +212,11 @@ test("round trips real MCP status and Main STOP through the native broker candid
   try {
     phase = "generic-publication-bypass";
     const bypassControl = join(runRoot!, "bypass-control"), bypassFile = join(bypassControl, "main-bootstrap.bin");
-    await routine(() => securePrivateDirectory(bypassControl), 6000, "bypass-control");
-    const main = await routine(() => runtime.helpers.identity(), 6000, "bypass-identity");
+    await routine(() => securePrivateDirectory(bypassControl, caseAbort.signal), 6000, "bypass-control");
+    const main = await routine(() => runtime.helpers.identity(caseAbort.signal), 6000, "bypass-identity");
     const bypass = encodeNativeBootstrap({ main, pipeNonce: "11".repeat(16), ticket: { generation: "22".repeat(16), token: "33".repeat(32) } });
     try {
-      await routine(() => runtime.helpers.operate("publish", bypassFile, bypass), 6000, "generic-publish");
+      await routine(deadline => runtime.helpers.operate("publish", bypassFile, bypass, caseAbort.signal, deadline), 6000, "generic-publish");
       await rejectBroker(bypassFile, "mcp-session-lease-open", 2);
       expect((await routine(() => readFile(bypassFile), 3000, "bypass-descriptor")).equals(bypass)).toBe(true);
       for (const name of ["native-session.lease", "native-session.bin", "native-session-reserved"])
@@ -172,6 +226,7 @@ test("round trips real MCP status and Main STOP through the native broker candid
     expect(await routine(() => host.setEnabled(true), 35000, "host-enable")).toMatchObject({ ok: true, status: { enabled: true } });
     const launch = await routine(() => readFile(join(control, "main-bootstrap.bin")), 3000, "bootstrap-read"), decoded = decodeNativeBootstrap(launch);
     context = { generation: decoded.ticket.generation, pid: decoded.main.pid, creation: decoded.main.creationTime.toString(), descriptorDigest: digest(launch) };
+    releaseBootstrap = Buffer.from(launch);
     // The production Host prepared the entire worker before publishing the
     // bootstrap. This fixture no longer copies or repairs a worker package.
     const staged = await routine(() => readdir(reservation), 3000, "prepared-reservation");
@@ -198,16 +253,16 @@ test("round trips real MCP status and Main STOP through the native broker candid
     phase = "wrong-descriptor-binding";
     const foreign = Buffer.from(launch); foreign[32] = foreign[32]! ^ 1;
     try {
-      await routine(() => runtime.helpers.operate("consume", join(control, "main-bootstrap.bin"), launch), 6000, "consume-original");
-      await routine(() => runtime.helpers.operate("publish", join(control, "main-bootstrap.bin"), foreign), 6000, "publish-foreign");
+      await routine(deadline => runtime.helpers.operate("consume", join(control, "main-bootstrap.bin"), launch, caseAbort.signal, deadline), 6000, "consume-original");
+      await routine(deadline => runtime.helpers.operate("publish", join(control, "main-bootstrap.bin"), foreign, caseAbort.signal, deadline), 6000, "publish-foreign");
       await rejectBroker(join(control, "main-bootstrap.bin"), "mcp-session-context", 5);
       expect((await routine(() => readFile(sessionPath), 3000, "unchanged-ready")).equals(ready)).toBe(true);
       await expect(routine(() => access(join(reservation, "broker-journal.bin")), 3000, "no-rejected-journal")).rejects.toMatchObject({ code: "ENOENT" });
       expect(operations).not.toContain("development.attach");
       // Only a known rejected child exit and unchanged READY allow restoring
       // this test's original descriptor. No ambiguous state is repaired.
-      await routine(() => runtime.helpers.operate("consume", join(control, "main-bootstrap.bin"), foreign), 6000, "consume-foreign");
-      await routine(() => runtime.session("publish", join(control, "main-bootstrap.bin"), launch, new AbortController().signal), 7000, "publish-original");
+      await routine(deadline => runtime.helpers.operate("consume", join(control, "main-bootstrap.bin"), foreign, caseAbort.signal, deadline), 6000, "consume-foreign");
+      await routine(deadline => runtime.session("publish", join(control, "main-bootstrap.bin"), launch, caseAbort.signal, deadline), 7000, "publish-original");
     } finally { launch.fill(0); foreign.fill(0); }
     phase = "spawn";
     // Single descriptor argument, stdio transport, no model or network endpoint.
@@ -270,7 +325,55 @@ test("round trips real MCP status and Main STOP through the native broker candid
     expect(admitted.subarray(384, 416).toString("hex")).toBe(context.descriptorDigest);
     expect(admitted.subarray(992).equals(createHash("sha256").update(admitted.subarray(0, 992)).digest())).toBe(true);
     expect((await routine(() => readFile(leasePath), 3000, "released-lease")).equals(leaseHeader)).toBe(true);
-    phase = "done"; success = true;
+    phase = "native-clean-release";
+    const journalIdentity = await routine(() => lstat(journalPath, { bigint: true }), 3000, "source-journal-identity");
+    const sessionIdentity = await routine(() => lstat(sessionPath, { bigint: true }), 3000, "source-session-identity");
+    // Actual broker close was already observed. Native code independently
+    // applies its recorded broker/worker exit policy and named Job check.
+    await routine(deadline => runtime.session("release-clean", join(control, "main-bootstrap.bin"), releaseBootstrap!,
+      caseAbort.signal, deadline), 7000, "native-clean-release");
+    await expect(routine(() => access(reservation), 3000, "released-reservation-absence")).rejects.toMatchObject({ code: "ENOENT" });
+    expect((await routine(() => readFile(sessionPath), 3000, "preserved-admitted-session")).equals(admitted)).toBe(true);
+    expect((await routine(() => readFile(leasePath), 3000, "preserved-original-lease")).equals(leaseHeader)).toBe(true);
+    expect((await routine(() => readdir(control), 3000, "clean-control-shape")).sort()).toEqual([
+      "native-session-clean-release.bin", "native-session-clean-released.bin", "native-session.bin", "native-session.lease",
+    ].sort());
+    const intentPath = join(control, "native-session-clean-release.bin"), completionPath = join(control, "native-session-clean-released.bin");
+    const intentStat = await routine(() => lstat(intentPath, { bigint: true }), 3000, "clean-intent-stat");
+    const doneStat = await routine(() => lstat(completionPath, { bigint: true }), 3000, "clean-completion-stat");
+    expect(intentStat.isFile() && !intentStat.isSymbolicLink() && intentStat.nlink === 1n && intentStat.size === 2048n).toBe(true);
+    expect(doneStat.isFile() && !doneStat.isSymbolicLink() && doneStat.nlink === 1n && doneStat.size === 1024n).toBe(true);
+    const intent = await routine(() => readFile(intentPath), 3000, "clean-intent-read");
+    const done = await routine(() => readFile(completionPath), 3000, "clean-completion-read");
+    const fileId = (bytes: Buffer, at: number, stat: { dev: bigint; ino: bigint }) => {
+      expect(BigInt(bytes.readUInt32LE(at))).toBe(stat.dev);
+      expect((BigInt(bytes.readUInt32LE(at + 4)) << 32n) | BigInt(bytes.readUInt32LE(at + 8))).toBe(stat.ino);
+    };
+    expect(intent.subarray(0, 8).equals(Buffer.from([84, 77, 67, 67, 76, 83, 49, 0]))).toBe(true);
+    expect(intent.readUInt32LE(8)).toBe(1); expect(intent.readUInt32LE(12)).toBe(2048); expect(intent.readUInt32LE(16)).toBe(1);
+    expect(intent.subarray(20, 32).equals(Buffer.alloc(12))).toBe(true);
+    expect(intent.subarray(32, 448).equals(admitted.subarray(0, 416))).toBe(true);
+    expect(intent.subarray(448, 480).toString("hex")).toBe(digest(admitted)); fileId(intent, 480, sessionIdentity);
+    expect(intent.subarray(492, 524).toString("hex")).toBe(digest(journal)); fileId(intent, 524, journalIdentity); fileId(intent, 536, intentStat);
+    expect(intent.subarray(548, 992).equals(Buffer.alloc(444))).toBe(true);
+    expect(intent.subarray(992, 2016).equals(journal)).toBe(true);
+    expect(intent.subarray(2016).toString("hex")).toBe(digest(intent.subarray(0, 2016)));
+    expect(done.subarray(0, 8).equals(Buffer.from([84, 77, 67, 67, 76, 68, 49, 0]))).toBe(true);
+    expect(done.readUInt32LE(8)).toBe(1); expect(done.readUInt32LE(12)).toBe(1024);
+    expect(done.subarray(16, 48).toString("hex")).toBe(digest(intent)); fileId(done, 48, intentStat);
+    expect(done.subarray(60, 72).equals(admitted.subarray(48, 60))).toBe(true);
+    expect(done.subarray(72, 84).equals(admitted.subarray(84, 96))).toBe(true);
+    expect(done.readUInt32LE(84)).toBe(context.pid); expect(done.readBigUInt64LE(88).toString()).toBe(context.creation);
+    expect(done.subarray(96, 112).toString("hex")).toBe(context.generation);
+    expect(done.subarray(112, 144).toString("hex")).toBe(digest(admitted));
+    expect(done.subarray(144, 176).toString("hex")).toBe(digest(journal)); fileId(done, 176, journalIdentity);
+    expect(done.readUInt32LE(188)).toBe(1); expect(done.subarray(192, 992).equals(Buffer.alloc(800))).toBe(true);
+    expect(done.subarray(992).toString("hex")).toBe(digest(done.subarray(0, 992)));
+    await routine(deadline => runtime.session("release-clean", join(control, "main-bootstrap.bin"), releaseBootstrap!,
+      caseAbort.signal, deadline), 7000, "same-clean-completion-retry");
+    expect((await routine(() => readFile(completionPath), 3000, "same-clean-completion")).equals(done)).toBe(true);
+    expect((await routine(() => readFile(intentPath), 3000, "same-clean-intent")).equals(intent)).toBe(true);
+    cleanReleased = true; phase = "done"; success = true;
   } catch (error) { original = error; }
   finally {
     try { const alreadyRequested = !!stopping; outcome ??= await bounded(requestStop(), alreadyRequested ? 1000 : 35000, "cleanup-host-stop"); } catch (error) { cleanupErrors.push(String(error)); }
@@ -280,17 +383,17 @@ test("round trips real MCP status and Main STOP through the native broker candid
     for (const rejected of rejectedPeers) {
       try { await rejected.stopOwned(); } catch (error) { cleanupErrors.push(String(error)); }
     }
-    service.configure(null); assistant.dispose();
+    releaseBootstrap?.fill(0); service.configure(null); assistant.dispose();
     functionalTainted ||= !!original || !success || cleanupErrors.length !== 0 || !!peer?.forced || !peer?.observedClose;
-    // Preserve every fixture, including a successful journal. No recovery or
-    // recursive removal is allowed to turn uncertain ownership into success.
+    // Preserve control/session/lease/intent/completion evidence. Only the
+    // package-bound fixed release operation may retire reservation data.
     const receiptAbort = new AbortController();
     const receiptTimer = setTimeout(() => receiptAbort.abort(), 3000);
     try { await bounded(writeFile(join(runRoot!, "functional-result.json"), JSON.stringify({
       success: success && cleanupErrors.length === 0, phase, context, outcome, exit: exited, forced: peer?.forced ?? false, brokerCloseObserved: peer?.observedClose ?? false,
       operations, invocations, engineRunCalls: runs, events: peer?.events ?? [], replies: peer?.replies ?? [],
       brokerStderr: Buffer.concat(peer?.stderr ?? []).toString("utf8"), error: original instanceof Error ? original.message : original ? String(original) : null,
-      cleanupErrors, evidenceScope: "Functional Node-host/Main-STOP only; broker-reported cleanup and local post-state, no independent OS/network/profile proof",
+      cleanupErrors, cleanReleased, evidenceScope: "Functional Node-host/Main-STOP plus package-bound native admitted retirement and same-completion retry after actual broker close; fresh recorded-process/Job policy, no complete profile-storage/network/default-Electron/rearm acceptance",
       fixturePreserved: true, recoveryAttempted: false, inspectorExecuted: false, stdinEndedByTest: false,
       nativeRejections: rejectedPeers.map(rejected => ({ actualClose: rejected.observedClose, forced: rejected.forced,
         stderr: Buffer.concat(rejected.stderr).toString("utf8") })),
@@ -310,17 +413,10 @@ test("production Host disable releases a sealed never-admitted session", async (
   if (functionalTainted) throw new Error("Earlier functional case did not complete safely");
   functionalTainted = true;
   const end = performance.now() + 80000;
-  const step = <T>(work: () => Promise<T>, cap: number, label: string): Promise<T> => {
-    const limit = Math.min(end, performance.now() + cap);
-    if (performance.now() >= limit) return Promise.reject(new Error("Pristine functional deadline"));
-    return bounded(Promise.resolve().then(() => {
-      if (performance.now() >= limit) throw new Error(label + " dispatch deadline");
-      return work();
-    }), limit - performance.now(), label).then(value => {
-      if (performance.now() >= limit) throw new Error(label + " late completion");
-      return value;
-    });
-  };
+  const caseScope = traceScope, caseAbort = traceAbort, pending = tracePending;
+  const step = <T>(work: (deadline: number) => Promise<T>, cap: number, label: string): Promise<T> =>
+    trace.within(caseScope, work, cap, label, { end, controller: caseAbort, pending,
+      taint: () => { functionalTainted = true; } });
   expect(resolve(runRoot!)).toBe(runRoot); expect(resolve(runtimeRoot!)).toBe(runtimeRoot);
   expect(dirname(runRoot!)).toBe(join(projectRoot, ".artifacts/tests/native-mcp-runtime"));
   expect(basename(runRoot!)).toMatch(/^run-[a-f0-9]{32}$/);
@@ -334,7 +430,7 @@ test("production Host disable releases a sealed never-admitted session", async (
     for (const key of ["dev", "ino", "size", "nlink", "mtimeNs", "ctimeNs"] as const) expect(after[key]).toBe(before[key]);
     return { bytes, id: after };
   }, 3000, "pristine-fixed-readback");
-  const runtime = await step(() => loadNativeMcpRuntime({ runtimeRoot: runtimeRoot!, descriptorSha256: descriptorDigest! }, new AbortController().signal), 15000, "pristine-runtime");
+  const runtime = await step(() => loadNativeMcpRuntime({ runtimeRoot: runtimeRoot!, descriptorSha256: descriptorDigest! }, caseAbort.signal), 15000, "pristine-runtime");
   const control = join(runRoot!, "pristine-control"), file = join(control, "main-bootstrap.bin"), operations: string[] = [];
   let engineRuns = 0;
   const assistant = new AssistantService({ run: async () => { ++engineRuns; return { text: "Synthetic", info: null, error: null }; }, cancel: () => {} });

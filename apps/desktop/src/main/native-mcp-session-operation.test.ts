@@ -79,15 +79,6 @@ test("validates mode, fixed leaf, exact bytes and Main PID before spawning", asy
   expect(state.current).toBeUndefined();
 });
 
-test("release-pristine requires its own receipt and actual close", async () => {
-  const input = bytes(), expected = Buffer.from(input);
-  const done = runNativeMcpSessionOperation(helper, "release-pristine", file, input);
-  input.fill(0); const current = state.current!;
-  expect(current.args).toEqual(["--release-pristine", file]); expect(Buffer.concat(current.input)).toEqual(expected);
-  let settled = false; void done.then(() => { settled = true; });
-  current.child.stdout.write("session-released\n"); await tick(); expect(settled).toBe(false);
-  current.child.emit("close", 0); await done;
-});
 test("a publish receipt does not acknowledge release-pristine", async () => {
   const done = runNativeMcpSessionOperation(helper, "release-pristine", file, bytes()).catch(error => error);
   state.current!.child.stdout.write("published\n"); state.current!.child.emit("close", 0);
@@ -120,3 +111,20 @@ test("a synchronous late spawn receives no authority bytes and still needs actua
     current.child.emit("close", 1); expect(await result).toMatchObject({ exitVerified: true });
   } finally { clock.mockRestore(); }
 });
+
+for (const operation of ["release-pristine", "release-clean"] as const) {
+  test(operation + " requires its distinct receipt and actual close", async () => {
+    const input = bytes(), expected = Buffer.from(input);
+    const done = runNativeMcpSessionOperation(helper, operation, file, input);
+    input.fill(0); const current = state.current!;
+    expect(current.args).toEqual(["--" + operation, file]); expect(Buffer.concat(current.input)).toEqual(expected);
+    let settled = false; void done.then(() => { settled = true; });
+    current.child.stdout.write(operation === "release-clean" ? "session-clean-released\n" : "session-released\n");
+    await tick(); expect(settled).toBe(false); current.child.emit("close", 0); await done;
+  });
+  test(operation + " rejects the other release kind receipt", async () => {
+    const done = runNativeMcpSessionOperation(helper, operation, file, bytes()).catch(error => error);
+    state.current!.child.stdout.write(operation === "release-clean" ? "session-released\n" : "session-clean-released\n");
+    state.current!.child.emit("close", 0); expect(await done).toMatchObject({ exitVerified: true });
+  });
+}

@@ -35,7 +35,12 @@ inline ProcessWitnessApi& windowsProcessWitnessApi(){static ProcessWitnessApi ap
 class TerminationBudget {
     ProcessWitnessApi& api;uint64_t end;
 public:
-    explicit TerminationBudget(ProcessWitnessApi& native):api(native),end(native.tick()+5000){}
+    // The default preserves the backend's5s policy. A native caller can cap
+    // every witness with its already-running absolute operation deadline.
+    explicit TerminationBudget(ProcessWitnessApi& native,uint64_t absoluteDeadline=UINT64_MAX):api(native),end(native.tick()){
+        const auto ownEnd=end+std::min<uint64_t>(5000,UINT64_MAX-end);
+        end=std::min(ownEnd,absoluteDeadline);
+    }
     uint64_t deadline() const{return end;}
     void check(){if(api.tick()>=end)throw WinError("termination-deadline",ERROR_TIMEOUT);}
     DWORD remaining(){check();auto t=api.tick();if(t>=end)throw WinError("termination-deadline",ERROR_TIMEOUT);return static_cast<DWORD>(end-t);}

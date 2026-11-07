@@ -1,5 +1,6 @@
 #pragma once
 #include "broker-session-store.h"
+#include <initializer_list>
 #include "broker-journal.h"
 #include "bootstrap-publication.h"
 
@@ -8,11 +9,13 @@ inline constexpr wchar_t sessionLeaseLeaf[]=L"native-session.lease";
 inline constexpr wchar_t sessionRecordLeaf[]=L"native-session.bin";
 inline constexpr wchar_t sessionReleaseLeaf[]=L"native-session-release.bin";
 inline constexpr wchar_t sessionReleasedLeaf[]=L"native-session-released.bin";
+inline constexpr wchar_t sessionCleanReleaseLeaf[]=L"native-session-clean-release.bin";
+inline constexpr wchar_t sessionCleanReleasedLeaf[]=L"native-session-clean-released.bin";
 // Presence, including a malformed record or a non-file entry, fences every
 // old generation. Only the owning release/rearm protocol may interpret it.
-inline void requireNoBrokerRelease(BootstrapDirectoryGuard& control){
+inline void requireBrokerReleaseLeavesAbsent(BootstrapDirectoryGuard& control,std::initializer_list<const wchar_t*> leaves){
     control.verify();
-    for(const auto* leaf:{sessionReleaseLeaf,sessionReleasedLeaf}){
+    for(const auto* leaf:leaves){
         const auto path=L"\\\\?\\"+control.root+L"\\"+leaf;
         const DWORD attributes=GetFileAttributesW(path.c_str());
         if(attributes!=INVALID_FILE_ATTRIBUTES)throw WinError("mcp-session-release-present",ERROR_ACCESS_DENIED);
@@ -20,6 +23,15 @@ inline void requireNoBrokerRelease(BootstrapDirectoryGuard& control){
         if(error!=ERROR_FILE_NOT_FOUND)throw WinError("mcp-session-release-uncertain",error);
     }
     control.verify();
+}
+inline void requireNoBrokerRelease(BootstrapDirectoryGuard& control){
+    requireBrokerReleaseLeavesAbsent(control,{sessionReleaseLeaf,sessionReleasedLeaf,sessionCleanReleaseLeaf,sessionCleanReleasedLeaf});
+}
+inline void requireNoPristineBrokerRelease(BootstrapDirectoryGuard& control){
+    requireBrokerReleaseLeavesAbsent(control,{sessionReleaseLeaf,sessionReleasedLeaf});
+}
+inline void requireNoCleanBrokerRelease(BootstrapDirectoryGuard& control){
+    requireBrokerReleaseLeavesAbsent(control,{sessionCleanReleaseLeaf,sessionCleanReleasedLeaf});
 }
 inline JournalFileIdentity sessionFileIdentity(const BY_HANDLE_FILE_INFORMATION& info){
     return {info.dwVolumeSerialNumber,info.nFileIndexHigh,info.nFileIndexLow};

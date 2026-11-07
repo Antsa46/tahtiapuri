@@ -69,7 +69,8 @@ Lue tehtävän mukaan:
 - stdio-MCP:n käynnistys tai Codex-isännän erillinen käyttöönotto:
   [MCP-kehitysyhteyden käyttö](docs/development/mcp.md) sekä
   [MCP:n stream-koostaminen ja rajat](docs/experiments/mcp-stream-composition.md) sekä
-  [MCP-työntekijän kaksikanavainen kuljetus ja natiivipaketti](docs/architecture/mcp-native-transport.md)
+  [MCP-työntekijän kaksikanavainen kuljetus ja natiivipaketti](docs/architecture/mcp-native-transport.md) sekä
+  [liittyneen MCP-sessionin vapautus](docs/architecture/mcp-clean-release.md)
 - toiminnallinen muutos, testit, testien sijainti tai paketointi:
   [testausohje](docs/ai/testing-rules.md)
 

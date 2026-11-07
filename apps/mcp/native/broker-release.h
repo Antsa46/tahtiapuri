@@ -39,35 +39,39 @@ inline std::array<const RuntimePin*,brokerReleaseFiles> releaseCompiledPins(){
     for(const auto* pin:pins)if(!pin)throw WinError("mcp-release-compiled-pins",ERROR_INVALID_DATA);
     return pins;
 }
-class NativeReleaseRecord {
-    BootstrapDirectoryGuard& control;std::unique_ptr<BootstrapPin> file;bool fresh;const NativeReleaseRecordIo& io;
+template<size_t Size> class FixedReleaseRecord {
+    static_assert(Size==brokerJournalBytes||Size==2048,"unsupported-fixed-release-record-size");
+    using RecordBytes=std::array<uint8_t,Size>;
+    BootstrapDirectoryGuard& control;std::unique_ptr<BootstrapPin> file;bool fresh;const FixedReleaseRecordIo<Size>& io;
     static std::unique_ptr<BootstrapPin> open(BootstrapDirectoryGuard& guard,const wchar_t* leaf,bool create,uint64_t deadline){
-        if(!leaf||(std::wstring(leaf)!=sessionReleaseLeaf&&std::wstring(leaf)!=sessionReleasedLeaf))
-            throw WinError("mcp-release-record-leaf",ERROR_INVALID_NAME);
+        const auto name=leaf?std::wstring(leaf):std::wstring();
+        const bool allowed=Size==2048?name==sessionCleanReleaseLeaf:
+            name==sessionReleaseLeaf||name==sessionReleasedLeaf||name==sessionCleanReleasedLeaf;
+        if(!allowed)throw WinError("mcp-release-record-leaf",ERROR_INVALID_NAME);
         guard.verify();const auto path=guard.root+L"\\"+leaf;requireSessionBudget(deadline);
         return std::make_unique<BootstrapPin>(path,false,GENERIC_READ|GENERIC_WRITE|READ_CONTROL|FILE_READ_ATTRIBUTES,create?CREATE_NEW:OPEN_EXISTING,0);
     }
 public:
-    NativeReleaseRecord(BootstrapDirectoryGuard& guard,const wchar_t* leaf,bool create,uint64_t deadline,
-        const NativeReleaseRecordIo& recordIo=windowsReleaseRecordIo()):control(guard),
+    FixedReleaseRecord(BootstrapDirectoryGuard& guard,const wchar_t* leaf,bool create,uint64_t deadline,
+        const FixedReleaseRecordIo<Size>& recordIo=windowsFixedReleaseRecordIo<Size>()):control(guard),
         file(open(guard,leaf,create,deadline)),fresh(create),io(recordIo){verify();}
     void verify(){
         if(!file)throw WinError("mcp-release-record-closed",ERROR_INVALID_STATE);
         control.verify();file->verify();requireBootstrapAcl(file->handle.value,control.owner,false);
     }
     JournalFileIdentity identity()const{return sessionFileIdentity(file->initial);}
-    JournalBytes read(){
+    RecordBytes read(){
         verify();const auto before=file->inspect();
-        if(before.nFileSizeHigh||before.nFileSizeLow!=1024)throw WinError("mcp-release-record-length",ERROR_INVALID_DATA);
+        if(before.nFileSizeHigh||before.nFileSizeLow!=Size)throw WinError("mcp-release-record-length",ERROR_INVALID_DATA);
         if(!io.seek(file->handle.value))throw WinError("mcp-release-seek");
-        JournalBytes bytes={};DWORD count=0;
+        RecordBytes bytes={};DWORD count=0;
         if(!io.read(file->handle.value,bytes,count))throw WinError("mcp-release-read");
         if(count!=bytes.size())throw WinError("mcp-release-read-count",ERROR_READ_FAULT);
         const auto after=file->inspect();
-        if(after.nFileSizeHigh||after.nFileSizeLow!=1024)throw WinError("mcp-release-record-length",ERROR_INVALID_DATA);
+        if(after.nFileSizeHigh||after.nFileSizeLow!=Size)throw WinError("mcp-release-record-length",ERROR_INVALID_DATA);
         verify();return bytes;
     }
-    void writeNew(const JournalBytes& bytes,uint64_t deadline=0){
+    void writeNew(const RecordBytes& bytes,uint64_t deadline=0){
         verify();const auto initial=file->inspect();
         if(!fresh||initial.nFileSizeHigh||initial.nFileSizeLow)throw WinError("mcp-release-create-once",ERROR_INVALID_STATE);
         DWORD count=0;requireSessionBudget(deadline);fresh=false;
@@ -84,13 +88,15 @@ public:
     }
     // A prior failed flush may have left complete bytes. A retry must establish
     // durability again, never infer it merely from a valid checksum.
-    void durable(const JournalBytes& bytes,uint64_t deadline=0){
+    void durable(const RecordBytes& bytes,uint64_t deadline=0){
         verify();requireSessionBudget(deadline);if(!io.flush(file->handle.value))throw WinError("mcp-release-flush");
         if(read()!=bytes)throw WinError("mcp-release-readback",ERROR_INVALID_DATA);
         requireSessionBudget(deadline);
     }
     void close(){verify();closeBootstrapHandle(*file);file.reset();}
 };
+using NativeReleaseRecord=FixedReleaseRecord<brokerJournalBytes>;
+using NativeCleanIntentRecord=FixedReleaseRecord<2048>;
 class NativePristineInventory {
     BootstrapDirectoryGuard& control;
     std::array<std::wstring,brokerReleaseTargets> paths;
@@ -183,6 +189,7 @@ inline void releasePristineBrokerSession(const std::wstring& path,const MainBoot
     const NativeReleaseRecordIo& intentIo=windowsReleaseRecordIo(),const NativeReleaseRecordIo& completionIo=windowsReleaseRecordIo()){
     if(!deadline)throw WinError("mcp-release-deadline",ERROR_INVALID_PARAMETER);
     requireSessionBudget(deadline);requirePublishingMain(bootstrap);BootstrapDirectoryGuard control(path);NativeSessionLease lease(control,false);
+    requireNoCleanBrokerRelease(control);
     NativeSessionFile state(control,lease,false);const auto session=state.load();requireSessionContext(session,control,lease,bootstrap);
     if(session.phase!=SessionPhase::Ready)throw WinError("mcp-release-not-pristine",ERROR_INVALID_STATE);
     const auto sessionBytes=encodeBrokerSession(session,journalDigest);

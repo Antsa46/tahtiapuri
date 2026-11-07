@@ -1,4 +1,4 @@
-# Compile-only MCP package. Does not install, select or launch a runtime.
+﻿# Compile-only MCP package. Does not install, select or launch a runtime.
 param(
  [Parameter(Mandatory=$true)][ValidatePattern('^build-[a-f0-9]{32}$')][string]$WorkerBuild,
  [Parameter(Mandatory=$true)][ValidatePattern('^[a-f0-9]{64}$')][string]$WorkerDigest
@@ -48,6 +48,8 @@ $sourcePaths=@(
  'apps/mcp/native/broker-relay.h',
  'apps/mcp/native/broker-resources.h',
  'apps/mcp/native/broker-session-codec.h',
+ 'apps/mcp/native/broker-clean-release-codec.h',
+ 'apps/mcp/native/broker-clean-release.h',
  'apps/mcp/native/broker-release-codec.h',
  'apps/mcp/native/broker-release-io.h',
  'apps/mcp/native/broker-release.h',

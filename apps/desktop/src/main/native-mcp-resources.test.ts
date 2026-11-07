@@ -141,7 +141,7 @@ it("reverifies the bound broker before every native owner operation", async () =
   const bytes = encodeNativeBootstrap({ main: { pid: process.pid, creationTime: 1n }, pipeNonce: "11".repeat(16),
     ticket: { generation: "22".repeat(16), token: "33".repeat(32) } });
   try {
-    for (const operation of ["prepare", "seal", "publish", "release-pristine"] as const)
+    for (const operation of ["prepare", "seal", "publish", "release-pristine", "release-clean"] as const)
       await expect(runtime.session(operation, join(f.root, "control/main-bootstrap.bin"), bytes, signal())).rejects.toThrow("rejected");
   } finally { bytes.fill(0); }
   expect(processGuard.attempts()).toBe(0);

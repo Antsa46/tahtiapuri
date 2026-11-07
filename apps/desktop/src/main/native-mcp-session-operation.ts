@@ -6,14 +6,14 @@ import { decodeNativeBootstrap, NATIVE_BOOTSTRAP_BYTES } from "./native-developm
 
 import { NativeBootstrapProcessError } from "./native-bootstrap-operation.js";
 
-export type NativeMcpSessionOperation = "prepare" | "seal" | "publish" | "release-pristine";
+export type NativeMcpSessionOperation = "prepare" | "seal" | "publish" | "release-pristine" | "release-clean";
 /** Fixed package-bound owner modes. Success requires actual child close, exact
  * receipt and empty stderr; ambiguous exit blocks later native operations. */
 export function runNativeMcpSessionOperation(broker: string, operation: NativeMcpSessionOperation, file: string,
   bytes: Buffer, signal?: AbortSignal, deadline?: number): Promise<void> {
   const canonical = (path: string, leaf: string) => /^[A-Z]:\\/.test(path) && win32.normalize(path) === path && win32.basename(path) === leaf;
   if (process.platform !== "win32" || !canonical(broker, "mcp-broker.exe") || !canonical(file, "main-bootstrap.bin")
-    || !["prepare", "seal", "publish", "release-pristine"].includes(operation)) return Promise.reject(new Error("Invalid native MCP session configuration."));
+    || !["prepare", "seal", "publish", "release-pristine", "release-clean"].includes(operation)) return Promise.reject(new Error("Invalid native MCP session configuration."));
   if (!Buffer.isBuffer(bytes) || bytes.length !== NATIVE_BOOTSTRAP_BYTES)
     return Promise.reject(new Error("Invalid native MCP session input."));
   try {
@@ -38,7 +38,7 @@ export function runNativeMcpSessionOperation(broker: string, operation: NativeMc
     const finish = (exitVerified: boolean, code?: number | null) => {
       if (finished) return;
       finished = true; clearTimeout(timer); signal?.removeEventListener("abort", onAbort); input.fill(0);
-      const expected = operation === "prepare" ? "session-prepared\n" : operation === "seal" ? "session-sealed\n" : operation === "release-pristine" ? "session-released\n" : "published\n";
+      const expected = operation === "prepare" ? "session-prepared\n" : operation === "seal" ? "session-sealed\n" : operation === "release-pristine" ? "session-released\n" : operation === "release-clean" ? "session-clean-released\n" : "published\n";
       if (!exitVerified || failed || signal?.aborted || performance.now() >= exitDeadline
         || code !== 0 || stderrBytes || !stdout.equals(Buffer.from(expected)))
         reject(new NativeBootstrapProcessError(exitVerified));

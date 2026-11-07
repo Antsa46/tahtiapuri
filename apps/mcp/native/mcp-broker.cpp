@@ -1,7 +1,7 @@
 #include "broker-worker.h"
 #include "broker-relay.h"
 #include "main-peer.h"
-#include "broker-release.h"
+#include "broker-clean-release.h"
 #include <cstdio>
 
 namespace {
@@ -40,11 +40,12 @@ int sessionHelper(const std::wstring& mode,const std::wstring& path){
         if(mode==L"--prepare")prepareBrokerSession(path,bootstrap);
         else if(mode==L"--seal")sealBrokerSession(path,bootstrap);
         else if(mode==L"--release-pristine")releasePristineBrokerSession(path,bootstrap,deadline);
+        else if(mode==L"--release-clean")releaseCleanBrokerSession(path,bootstrap,deadline);
         else publishBrokerSession(path,bytes);
         SecureZeroMemory(bytes.data(),bytes.size());
         // Every session/resource/lease handle has closed before this receipt.
         requireSessionBudget(deadline);
-        emit(mode==L"--prepare"?"session-prepared":mode==L"--seal"?"session-sealed":mode==L"--release-pristine"?"session-released":"published");return 0;
+        emit(mode==L"--prepare"?"session-prepared":mode==L"--seal"?"session-sealed":mode==L"--release-pristine"?"session-released":mode==L"--release-clean"?"session-clean-released":"published");return 0;
     }catch(const WinError& e){
         SecureZeroMemory(bytes.data(),bytes.size());fprintf(stderr,"%s:%lu\n",e.what(),e.code);return 1;
     }catch(...){SecureZeroMemory(bytes.data(),bytes.size());fputs("mcp-session-helper-invalid\n",stderr);return 1;}
@@ -54,7 +55,7 @@ int wmain(int argc,wchar_t** argv){
     using namespace mcp_runtime;
     if(argc==3){
         const std::wstring mode=argv[1];
-        if(mode!=L"--prepare"&&mode!=L"--seal"&&mode!=L"--publish"&&mode!=L"--release-pristine")return 64;
+        if(mode!=L"--prepare"&&mode!=L"--seal"&&mode!=L"--publish"&&mode!=L"--release-pristine"&&mode!=L"--release-clean")return 64;
         return sessionHelper(mode,argv[2]);
     }
     // Normal client mode: only the fixed descriptor, never a worker/policy path.

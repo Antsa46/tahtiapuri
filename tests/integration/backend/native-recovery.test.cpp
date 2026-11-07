@@ -218,6 +218,43 @@ void commitCases(){
     rejected([&]{cleanupCurrent(journal,api);},"cleanup-commit-failure-accepted");
     check(at(events,"job-proof")<at(events,"write-TERMINATING")&&count(events,"restore")==0&&count(events,"delete-profile")==0&&count(events,"delete-session")==0&&count(events,"write-CLEAN")==0,"failed-advance-still-terminates-before-restore");
 }
+void explicitDeadlineCases(){
+    {
+        Events events;NativeWitness native(events);TerminationBudget budget(native);
+        check(budget.deadline()==6000&&budget.remaining()==5000,"default-budget-policy");
+    }
+    {
+        Events events;NativeWitness native(events);TerminationBudget budget(native,1250);
+        check(budget.deadline()==1250&&budget.remaining()==250,"owner-cap");native.time=1249;
+        check(budget.remaining()==1,"cap-does-not-restart");native.time=1250;
+        rejected([&]{budget.check();},"expired-cap-check");rejected([&]{budget.remaining();},"expired-cap-remaining");
+    }
+    {
+        Events events;NativeWitness native(events);TerminationBudget budget(native,900);
+        rejected([&]{proveRecordedProcessExit(native,budget,42,native.identity);},"expired-before-process-open");
+        check(events.empty(),"expired-cap-made-os-call");
+    }
+    {
+        Events events;NativeWitness native(events);TerminationBudget budget(native,20000);
+        check(budget.deadline()==6000&&budget.remaining()==5000,"owner-cap-cannot-extend-default");
+    }
+    {
+        Events events;NativeWitness native(events);native.perCall=100;TerminationBudget budget(native,1400);
+        proveRecordedProcessExit(native,budget,42,native.identity);
+        check(native.lastWait==200&&budget.deadline()==1400,"wait-uses-remaining-shared-cap");
+        rejected([&]{proveRecordedProcessExit(native,budget,42,native.identity);},"second-witness-restarted-budget");
+        check(count(events,"open-process")==1&&count(events,"wait")==1,"second-witness-opened-after-deadline");
+    }
+    {
+        Events events;NativeWitness native(events);native.delayed="open-process";TerminationBudget budget(native,1250);
+        rejected([&]{proveRecordedProcessExit(native,budget,42,native.identity);},"slow-open-escaped-cap");
+        check(count(events,"identity")==0&&count(events,"wait")==0&&count(events,"close-process")==1,"slow-open-did-more-work-or-lost-handle");
+    }
+    {
+        Events events;NativeWitness native(events);native.time=UINT64_MAX-4;TerminationBudget budget(native);
+        check(budget.deadline()==UINT64_MAX&&budget.remaining()==4,"budget-addition-wrapped");
+    }
+}
 void launchOrder(){
     Events events;MemoryJournal store(events,fixture());Journal journal(context,store);events.clear();
     rejected([&]{journal.advance(Phase::Running);},"running-before-recorded");
@@ -234,7 +271,7 @@ void launchOrder(){
 }
 }
 int wmain(){
-    try{parserCases();witnessCases();commitCases();launchOrder();emit("{\"passed\":true,\"suite\":\"native-process-witness-v1\"}");return 0;}
+    try{parserCases();witnessCases();explicitDeadlineCases();commitCases();launchOrder();emit("{\"passed\":true,\"suite\":\"native-process-witness-v1\"}");return 0;}
     catch(const WinError& error){emit("{\"passed\":false,\"stage\":\""+std::string(error.what())+"\",\"error\":"+std::to_string(error.code)+"}");return 1;}
     catch(...){emit("{\"passed\":false,\"stage\":\"unexpected-exception\"}");return 1;}
 }
