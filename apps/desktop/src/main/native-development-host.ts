@@ -18,14 +18,15 @@ export interface NativeHostOutcome {
   readonly listenerClosed: boolean;
   readonly brokerCleanupReported: boolean;
   readonly reservationCreated: boolean;
-  readonly reservationReleased: false;
+  readonly reservationReleased: boolean;
   readonly failed: boolean;
 }
 type Backend = Pick<BackendController, "development">;
 const unavailable = (): DevelopmentResult => ({ ok: false, code: "ENGINE_UNAVAILABLE" });
-/** One-shot host. The fixed persistent reservation is NEVER removed here, even
- * after CLEAN. Reopening needs the future independently verified broker recovery.
- * Caller owns the Electron single-instance lock and fixed private directory. */
+/** One-shot host. Only the pinned native release-pristine operation may release
+ * a sealed, never-admitted reservation. Persistent session/intent/lease records
+ * remain. Reopening needs the later generation/recovery protocol; a new Host or
+ * backend alias is never a rearm mechanism. Caller owns the Electron lock. */
 export class NativeDevelopmentHost {
   private attempted = false;
   private closing = false;
@@ -44,6 +45,8 @@ export class NativeDevelopmentHost {
   private readonly connections = new Map<Socket, NativeMainConnection>();
   private readonly outcomes: NativeConnectionOutcome[] = [];
   private reservationCreated = false;
+  private sessionSealed = false;
+  private cleanupDeadline = 0;
   private epochConfigured = false;
   private revocation: Promise<boolean> | undefined;
   private helpersSettled = true;
@@ -78,10 +81,11 @@ export class NativeDevelopmentHost {
     // can synchronously re-enter stop().
     let resolveStop!: (outcome: NativeHostOutcome) => void;
     this.stopping = new Promise(resolve => { resolveStop = resolve; });
+    this.cleanupDeadline = performance.now() + 30000;
     this.closing = true; this.accepting = false; this.abort.abort();
     void this.admission?.disable();
     for (const connection of this.connections.values()) void connection.stop();
-    void this.bound(this.close(), 30000).then(result => {
+    void this.bound(this.close(), 30000, this.cleanupDeadline).then(result => {
       if (!result) this.cleanupAbort.abort();
       resolveStop(result ?? Object.freeze({
       descriptorRemoved: false, helperExitVerified: false, backendRevoked: false, listenerClosed: false,
@@ -101,8 +105,9 @@ export class NativeDevelopmentHost {
   private async open(): Promise<void> {
     try {
       await this.helper(() => securePrivateDirectory(this.directory, this.abort.signal)); this.alive();
-      // A fixed CREATE_NEW reservation survives crashes and every normal close.
-      // An existing reservation is never repaired, deleted or bypassed.
+      // A fixed CREATE_NEW reservation fences crashes. Only the explicit
+      // native pristine-release path in close() may remove it. Opening never
+      // repairs, deletes or bypasses an existing reservation.
       await mkdir(join(this.directory, "native-session-reserved")); this.reservationCreated = true; this.alive();
       const entries = await opendir(join(this.directory, "native-session-reserved"));
       try { if (await entries.read()) throw new Error("Native reservation is not empty."); } finally { await entries.close(); }
@@ -118,7 +123,8 @@ export class NativeDevelopmentHost {
       this.descriptor = encodeNativeBootstrap({ main, pipeNonce, ticket });
       await this.helper(() => this.resources.session("prepare", this.file, this.descriptor!, this.abort.signal)); this.alive();
       await this.resources.prepareWorker(join(this.directory, "native-session-reserved"), this.abort.signal); this.alive();
-      await this.helper(() => this.resources.session("seal", this.file, this.descriptor!, this.abort.signal)); this.alive();
+      await this.helper(() => this.resources.session("seal", this.file, this.descriptor!, this.abort.signal));
+      this.sessionSealed = true; this.alive();
       // A failed acknowledgement can still mean the backend changed; revoke it.
       this.configuration = Promise.resolve().then(() => {
         this.alive(); this.epochConfigured = true;
@@ -184,6 +190,10 @@ export class NativeDevelopmentHost {
     })().catch(() => false);
     return this.revocation;
   }
+  private cleanupWithinBudget(): boolean {
+    if (!this.cleanupDeadline || performance.now() >= this.cleanupDeadline) this.cleanupAbort.abort();
+    return !this.cleanupAbort.signal.aborted;
+  }
   private async close(): Promise<NativeHostOutcome> {
     this.accepting = false;
     // Listener and backend revocation must not wait behind descriptor I/O.
@@ -206,26 +216,40 @@ export class NativeDevelopmentHost {
     const detached = await detachedWork;
     const revoked = await revokedWork;
     await this.descriptorWork?.catch(() => {});
-    if (!this.cleanupAbort.signal.aborted && this.helpersSettled && this.descriptorState === "published" && this.descriptor) {
+    if (this.cleanupWithinBudget() && this.helpersSettled && this.descriptorState === "published" && this.descriptor) {
       this.descriptorState = "consuming";
-      try { await this.helper(() => this.resources.helpers.operate("consume", this.file, this.descriptor, this.cleanupAbort.signal)); this.descriptorState = "removed"; }
+      try { await this.helper(() => this.resources.helpers.operate("consume", this.file, this.descriptor, this.cleanupAbort.signal, this.cleanupDeadline)); this.descriptorState = "removed"; }
       catch { this.descriptorState = "uncertain"; }
     }
     const listenerClosed = await this.bound(listener, 3000) === true;
     const outcomes = [...this.outcomes, ...stopped];
     const brokerCleanupReported = outcomes.some(outcome => outcome.authenticated && outcome.brokerCleanupReported);
     const descriptorRemoved = this.descriptorState === "absent" || this.descriptorState === "removed";
+    let reservationReleased = false;
+    // The owner does not infer pristine state from a missing CLEAN report.
+    // Native code decides READY vs ADMITTED atomically under the common lease.
+    if (this.cleanupWithinBudget() && !this.failed && this.sessionSealed && this.reservationCreated
+      && descriptorRemoved && this.descriptor && this.helpersSettled && detached && revoked && listenerClosed
+      && !outcomes.some(outcome => outcome.authenticated || outcome.failed)) {
+      try {
+        await this.helper(() => this.resources.session("release-pristine", this.file, this.descriptor!, this.cleanupAbort.signal, this.cleanupDeadline));
+        if (!this.cleanupWithinBudget()) throw new Error("Native release exceeded cleanup deadline.");
+        reservationReleased = true;
+      } catch { this.failed = true; }
+    }
     this.descriptor?.fill(0);
     return Object.freeze({ descriptorRemoved, helperExitVerified: this.helpersSettled, backendRevoked: revoked,
-      listenerClosed, brokerCleanupReported, reservationCreated: this.reservationCreated, reservationReleased: false,
+      listenerClosed, brokerCleanupReported, reservationCreated: this.reservationCreated, reservationReleased,
       failed: this.failed || !detached || !revoked || !listenerClosed || this.attempted && !descriptorRemoved || !this.helpersSettled
         || outcomes.some(outcome => outcome.failed) });
   }
-  private bound<T>(work: Promise<T>, milliseconds: number): Promise<T | undefined> {
+  private bound<T>(work: Promise<T>, milliseconds: number, absolute?: number): Promise<T | undefined> {
     return new Promise(resolve => {
-      let settled = false;
-      const finish = (value?: T) => { if (!settled) { settled = true; clearTimeout(timer); resolve(value); } };
-      const timer = setTimeout(() => finish(), milliseconds);
+      let settled = false; const deadline = Math.min(performance.now() + milliseconds, absolute ?? Infinity);
+      const finish = (value?: T) => {
+        if (!settled) { settled = true; clearTimeout(timer); resolve(performance.now() >= deadline ? undefined : value); }
+      };
+      const timer = setTimeout(() => finish(), Math.max(0, deadline - performance.now()));
       void work.then(finish, () => finish());
     });
   }

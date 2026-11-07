@@ -1,7 +1,7 @@
 #include "broker-worker.h"
 #include "broker-relay.h"
 #include "main-peer.h"
-#include "broker-session.h"
+#include "broker-release.h"
 #include <cstdio>
 
 namespace {
@@ -32,17 +32,19 @@ struct SessionHelperInput {
 };
 int sessionHelper(const std::wstring& mode,const std::wstring& path){
     // Fixed package-bound owner operations, not a second worker entry point.
-    BrokerWatchdog watchdog;watchdog.deadline.store(clockNow()+5000);
+    const auto deadline=clockNow()+5000;BrokerWatchdog watchdog;watchdog.deadline.store(deadline);
     SessionHelperInput input;std::array<uint8_t,bootstrapBytes> bytes={};
     try{
         bytes=input.read();auto bootstrap=decodeMainBootstrap(bytes.data(),bytes.size());
         struct TicketGuard{std::array<uint8_t,32>& token;~TicketGuard(){SecureZeroMemory(token.data(),token.size());}} ticketGuard{bootstrap.launchToken};
         if(mode==L"--prepare")prepareBrokerSession(path,bootstrap);
         else if(mode==L"--seal")sealBrokerSession(path,bootstrap);
+        else if(mode==L"--release-pristine")releasePristineBrokerSession(path,bootstrap,deadline);
         else publishBrokerSession(path,bytes);
         SecureZeroMemory(bytes.data(),bytes.size());
         // Every session/resource/lease handle has closed before this receipt.
-        emit(mode==L"--prepare"?"session-prepared":mode==L"--seal"?"session-sealed":"published");return 0;
+        requireSessionBudget(deadline);
+        emit(mode==L"--prepare"?"session-prepared":mode==L"--seal"?"session-sealed":mode==L"--release-pristine"?"session-released":"published");return 0;
     }catch(const WinError& e){
         SecureZeroMemory(bytes.data(),bytes.size());fprintf(stderr,"%s:%lu\n",e.what(),e.code);return 1;
     }catch(...){SecureZeroMemory(bytes.data(),bytes.size());fputs("mcp-session-helper-invalid\n",stderr);return 1;}
@@ -52,7 +54,7 @@ int wmain(int argc,wchar_t** argv){
     using namespace mcp_runtime;
     if(argc==3){
         const std::wstring mode=argv[1];
-        if(mode!=L"--prepare"&&mode!=L"--seal"&&mode!=L"--publish")return 64;
+        if(mode!=L"--prepare"&&mode!=L"--seal"&&mode!=L"--publish"&&mode!=L"--release-pristine")return 64;
         return sessionHelper(mode,argv[2]);
     }
     // Normal client mode: only the fixed descriptor, never a worker/policy path.

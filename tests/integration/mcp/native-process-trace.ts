@@ -3,7 +3,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { win32 } from "node:path";
 import { promisify } from "node:util";
 
-type Detail = { pid?: number; code?: number | null; signal?: string | null; failureClass?: string; exitVerified?: boolean; delivered?: boolean };
+type Detail = { pid?: number; code?: number | null; signal?: string | null; failureClass?: string; exitVerified?: boolean; delivered?: boolean; deadlineMs?: number };
 type Event = Detail & { atMs: number; event: string; operation: string; call?: number };
 export type ProcessTraceScope = { id: number; events: Event[]; overflow: boolean; uncertain: boolean };
 type Owned = {
@@ -49,6 +49,23 @@ export function createNativeProcessTrace() {
       let done!: () => void;
       const closed = new Promise<void>(resolve => { done = resolve; });
       owned.get(scope)!.push({ child, closed, record });
+      // Record method entry/return and actual pipe close only. Never inspect
+      // arguments, lengths or contents of the authority bytes.
+      const input = child.stdin;
+      if (input) {
+        for (const method of ["write", "end"] as const) {
+          const original = input[method];
+          Object.defineProperty(input, method, { configurable: true, writable: true,
+            value: function (this: unknown, ...args: unknown[]) {
+              note(scope, "stdin-" + method + "-enter", operation, {}, call);
+              try {
+                const result = Reflect.apply(original, this, args);
+                note(scope, "stdin-" + method + "-return", operation, {}, call); return result;
+              } catch (error) { note(scope, "stdin-" + method + "-throw", operation, failure(error), call); throw error; }
+            } });
+        }
+        input.once("close", () => note(scope, "stdin-close", operation, {}, call));
+      }
       child.once("spawn", () => note(scope, "child-spawn", operation, { pid: child.pid! }, call));
       child.once("error", error => note(scope, "child-error", operation, failure(error), call));
       child.once("exit", (code, signal) => note(scope, "child-exit", operation, { code, signal }, call));
@@ -100,15 +117,16 @@ export function createNativeProcessTrace() {
     }
     return { ...actual, spawn: traced(actual.spawn, "spawn"), execFile: traced(actual.execFile, "execFile") };
   }
-  async function within<T>(scope: ProcessTraceScope, work: () => Promise<T>, cap: number, operation: string,
+  async function within<T>(scope: ProcessTraceScope, work: (deadline: number) => Promise<T>, cap: number, operation: string,
     state: { end: number; controller: AbortController; pending: Set<Promise<unknown>>; taint: () => void }): Promise<T> {
-    note(scope, "operation-requested", operation);
-    const remaining = state.end - performance.now();
-    if (remaining <= 0) throw new Error(operation + " before-start deadline");
-    const limit = performance.now() + Math.min(cap, remaining);
+    const now = performance.now(), limit = Math.min(state.end, now + cap);
+    // Keep the deadline on the existing event so bounded filesystem tracing
+    // does not spend an additional record for every operation.
+    note(scope, "operation-requested", operation, { deadlineMs: limit - started });
+    if (state.end <= now) throw new Error(operation + " before-start deadline");
     const actual = Promise.resolve().then(() => {
       if (performance.now() >= limit) throw new Error(operation + " dispatch deadline");
-      return context.run(scope, work);
+      return context.run(scope, () => work(limit));
     });
     state.pending.add(actual);
     void actual.then(() => { state.pending.delete(actual); note(scope, "operation-resolved", operation); }, error => {

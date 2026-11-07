@@ -4,14 +4,14 @@ import type { PassThrough, Writable } from "node:stream";
 const state = vi.hoisted(() => ({ current: undefined as undefined | {
   child: EventEmitter & { stdin: Writable; stdout: PassThrough; stderr: PassThrough; kill: ReturnType<typeof vi.fn> };
   file: string; args: string[]; options: { env: NodeJS.ProcessEnv; stdio: string[]; windowsHide: boolean }; input: Buffer[];
-} }));
+}, onSpawn: undefined as (() => void) | undefined }));
 vi.mock("node:child_process", async () => {
   const { EventEmitter } = await import("node:events"), { PassThrough, Writable } = await import("node:stream");
   return { spawn: (file: string, args: string[], options: NonNullable<typeof state.current>["options"]) => {
     const input: Buffer[] = [];
     const child = Object.assign(new EventEmitter(), { kill: vi.fn(() => true), stdout: new PassThrough(), stderr: new PassThrough(),
       stdin: new Writable({ write(chunk, _encoding, callback) { input.push(Buffer.from(chunk)); callback(); } }) });
-    state.current = { child, file, args, options, input }; return child;
+    state.current = { child, file, args, options, input }; state.onSpawn?.(); return child;
   } };
 });
 import { runNativeMcpSessionOperation } from "./native-mcp-session-operation.js";
@@ -21,7 +21,7 @@ const helper = "C:\\synthetic\\mcp-broker.exe", file = "C:\\synthetic\\control\\
 const bytes = () => encodeNativeBootstrap({ main: { pid: process.pid, creationTime: 1n }, pipeNonce: "11".repeat(16),
   ticket: { generation: "22".repeat(16), token: "33".repeat(32) } });
 const tick = () => new Promise<void>(resolve => setImmediate(resolve));
-afterEach(() => { state.current?.child.stdin.destroy(); state.current?.child.stdout.destroy(); state.current?.child.stderr.destroy(); state.current = undefined; vi.useRealTimers(); });
+afterEach(() => { state.current?.child.stdin.destroy(); state.current?.child.stdout.destroy(); state.current?.child.stderr.destroy(); state.current = undefined; state.onSpawn = undefined; vi.useRealTimers(); });
 test("sends copied bytes only through stdin with fixed arguments and a stripped environment", async () => {
   const input = bytes(), original = Buffer.from(input), done = runNativeMcpSessionOperation(helper, "publish", file, input);
   input.fill(0); const c = state.current!;
@@ -77,4 +77,46 @@ test("validates mode, fixed leaf, exact bytes and Main PID before spawning", asy
     () => runNativeMcpSessionOperation(helper, "recover" as never, file, bytes()),
   ]) await expect(call()).rejects.toThrow();
   expect(state.current).toBeUndefined();
+});
+
+test("release-pristine requires its own receipt and actual close", async () => {
+  const input = bytes(), expected = Buffer.from(input);
+  const done = runNativeMcpSessionOperation(helper, "release-pristine", file, input);
+  input.fill(0); const current = state.current!;
+  expect(current.args).toEqual(["--release-pristine", file]); expect(Buffer.concat(current.input)).toEqual(expected);
+  let settled = false; void done.then(() => { settled = true; });
+  current.child.stdout.write("session-released\n"); await tick(); expect(settled).toBe(false);
+  current.child.emit("close", 0); await done;
+});
+test("a publish receipt does not acknowledge release-pristine", async () => {
+  const done = runNativeMcpSessionOperation(helper, "release-pristine", file, bytes()).catch(error => error);
+  state.current!.child.stdout.write("published\n"); state.current!.child.emit("close", 0);
+  expect(await done).toMatchObject({ exitVerified: true });
+});
+
+test("an expired owner deadline never starts a child", async () => {
+  await expect(runNativeMcpSessionOperation(helper, "release-pristine", file, bytes(), undefined, performance.now() - 1)).rejects.toMatchObject({ exitVerified: true });
+  expect(state.current).toBeUndefined();
+});
+test("a verified child close after its owner deadline still rejects", async () => {
+  const deadline = performance.now() + 1000;
+  const result = runNativeMcpSessionOperation(helper, "release-pristine", file, bytes(), undefined, deadline).catch(error => error);
+  const clock = vi.spyOn(performance, "now").mockReturnValue(deadline + 1);
+  try {
+    state.current!.child.stdout.write("session-released\n"); state.current!.child.emit("close", 0);
+    expect(await result).toMatchObject({ exitVerified: true });
+  } finally { clock.mockRestore(); }
+});
+
+test("a synchronous late spawn receives no authority bytes and still needs actual close", async () => {
+  let now = performance.now(); const deadline = now + 1000;
+  const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
+  state.onSpawn = () => { now = deadline + 1; };
+  const result = runNativeMcpSessionOperation(helper, "release-pristine", file, bytes(), undefined, deadline).catch(error => error);
+  try {
+    const current = state.current!; expect(current.input).toEqual([]);
+    expect(current.child.kill).toHaveBeenCalledTimes(1); expect(current.child.stdin.destroyed).toBe(true);
+    let settled = false; void result.then(() => { settled = true; }); await Promise.resolve(); expect(settled).toBe(false);
+    current.child.emit("close", 1); expect(await result).toMatchObject({ exitVerified: true });
+  } finally { clock.mockRestore(); }
 });

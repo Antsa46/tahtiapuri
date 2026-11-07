@@ -6,6 +6,21 @@
 namespace mcp_runtime {
 inline constexpr wchar_t sessionLeaseLeaf[]=L"native-session.lease";
 inline constexpr wchar_t sessionRecordLeaf[]=L"native-session.bin";
+inline constexpr wchar_t sessionReleaseLeaf[]=L"native-session-release.bin";
+inline constexpr wchar_t sessionReleasedLeaf[]=L"native-session-released.bin";
+// Presence, including a malformed record or a non-file entry, fences every
+// old generation. Only the owning release/rearm protocol may interpret it.
+inline void requireNoBrokerRelease(BootstrapDirectoryGuard& control){
+    control.verify();
+    for(const auto* leaf:{sessionReleaseLeaf,sessionReleasedLeaf}){
+        const auto path=L"\\\\?\\"+control.root+L"\\"+leaf;
+        const DWORD attributes=GetFileAttributesW(path.c_str());
+        if(attributes!=INVALID_FILE_ATTRIBUTES)throw WinError("mcp-session-release-present",ERROR_ACCESS_DENIED);
+        const DWORD error=GetLastError();
+        if(error!=ERROR_FILE_NOT_FOUND)throw WinError("mcp-session-release-uncertain",error);
+    }
+    control.verify();
+}
 inline JournalFileIdentity sessionFileIdentity(const BY_HANDLE_FILE_INFORMATION& info){
     return {info.dwVolumeSerialNumber,info.nFileIndexHigh,info.nFileIndexLow};
 }
@@ -104,6 +119,7 @@ public:
         if(!file||!store.healthy())throw WinError("mcp-session-poisoned",ERROR_INVALID_STATE);
         control.verify();lease.verify();file->verify();requireBootstrapAcl(file->handle.value,control.owner,false);
     }
+    const BY_HANDLE_FILE_INFORMATION& identity()const{return file->initial;}
     BrokerSessionRecord load(){return store.load();}
     void commit(const BrokerSessionRecord& value){store.commit(value);}
     void close(){verify();closeBootstrapHandle(*file);file.reset();}
@@ -128,7 +144,7 @@ inline void requireSessionReservation(const BrokerSessionRecord& record,Bootstra
 }
 inline void prepareBrokerSession(const std::wstring& path,const MainBootstrap& bootstrap){
     requirePublishingMain(bootstrap);BootstrapDirectoryGuard control(path);
-    NativeSessionLease lease(control,true);
+    requireNoBrokerRelease(control);NativeSessionLease lease(control,true);requireNoBrokerRelease(control);
     exactChildren(control.root,{sessionLeaseLeaf,L"native-session-reserved"});
     BootstrapPin reservation(control.root+L"\\native-session-reserved",true,READ_CONTROL|FILE_READ_ATTRIBUTES);
     resourceAcl(reservation,control.owner,nullptr,0,true,false,true);exactChildren(reservation.path,{});
@@ -141,7 +157,7 @@ inline void prepareBrokerSession(const std::wstring& path,const MainBootstrap& b
     lease.close();
 }
 inline void sealBrokerSession(const std::wstring& path,const MainBootstrap& bootstrap){
-    requirePublishingMain(bootstrap);BootstrapDirectoryGuard control(path);NativeSessionLease lease(control,false);
+    requirePublishingMain(bootstrap);BootstrapDirectoryGuard control(path);NativeSessionLease lease(control,false);requireNoBrokerRelease(control);
     {
         NativeSessionFile state(control,lease,false);auto record=state.load();requireSessionContext(record,control,lease,bootstrap);
         if(record.phase!=SessionPhase::Preparing)throw WinError("mcp-session-seal-order",ERROR_INVALID_STATE);
@@ -160,7 +176,7 @@ inline void sealBrokerSession(const std::wstring& path,const MainBootstrap& boot
 }
 inline void publishBrokerSession(const std::wstring& path,const std::array<uint8_t,bootstrapBytes>& bytes,const std::function<void()>& afterDescriptorClose={}){
     const auto bootstrap=decodeMainBootstrap(bytes.data(),bytes.size());requirePublishingMain(bootstrap);
-    BootstrapDirectoryGuard control(path);NativeSessionLease lease(control,false);
+    BootstrapDirectoryGuard control(path);NativeSessionLease lease(control,false);requireNoBrokerRelease(control);
     {
         NativeSessionFile state(control,lease,false);const auto record=state.load();requireSessionContext(record,control,lease,bootstrap);
         if(record.phase!=SessionPhase::Ready)throw WinError("mcp-session-publish-order",ERROR_INVALID_STATE);
@@ -185,6 +201,7 @@ public:
         requirePublishingMain(bootstrap);
         const auto admissionDeadline=std::min(startupDeadline,GetTickCount64()+5000);
         lease=std::make_unique<NativeSessionLease>(control,false,admissionDeadline,&bootstrap);
+        requireNoBrokerRelease(control);
         file=std::make_unique<NativeSessionFile>(control,*lease,false);record=file->load();requireSessionContext(record,control,*lease,bootstrap);
         if(record.phase!=SessionPhase::Ready)throw WinError("mcp-session-admission-order",ERROR_INVALID_STATE);
         requireSessionReservation(record,control,true);requirePublishingMain(bootstrap);
@@ -196,7 +213,7 @@ public:
     }
     ~BrokerSessionAdmission(){file.reset();lease.reset();}
     void verify(){
-        file->verify();const auto actual=file->load();
+        requireNoBrokerRelease(control);file->verify();const auto actual=file->load();
         if(encodeBrokerSession(actual,journalDigest)!=encodeBrokerSession(record,journalDigest))
             throw WinError("mcp-session-admission-changed",ERROR_ACCESS_DENIED);
     }

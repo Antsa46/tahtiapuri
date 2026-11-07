@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { access, lstat, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { access, copyFile, link, lstat, mkdir, readFile, readdir, rename, symlink, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { securePrivateDirectory } from "../../../apps/desktop/src/main/private-directory.js";
@@ -31,7 +31,7 @@ const tick = () => new Promise<void>(done => setTimeout(done, 2));
 let runtime: NativeMcpRuntime, end = 0, sequence = 0, tainted = false, rootAdmitted = false, abort = new AbortController();
 let peers: Peer[] = [], secrets: Buffer[] = [], pending = new Set<Promise<unknown>>();
 const evidence: object[] = [];
-function within<T>(work: () => Promise<T>, cap: number, label: string): Promise<T> {
+function within<T>(work: (deadline: number) => Promise<T>, cap: number, label: string): Promise<T> {
   return trace.within(traceScope, work, cap, label, { end, controller: abort, pending, taint: () => { tainted = true; } });
 }
 async function cleanupWait(work: Promise<unknown>, ms: number): Promise<boolean> {
@@ -118,10 +118,11 @@ async function actor(mode: string, f: Fixture): Promise<Peer> {
   if (performance.now() >= end) throw new Error("No probe spawn after deadline");
   const peer = new Peer(spawn(probe!, ["--" + mode, f.file], { windowsHide: true, stdio: ["pipe", "pipe", "pipe"], env: childEnvironment(process.env) }), mode);
   peers.push(peer);
-  if (mode === "admit-hold") return peer;
-  if (mode === "protect-session") { peer.child.stdin.end(); return peer; }
+  if (performance.now() >= end) { tainted = true; await peer.stop(); throw new Error("Probe returned after case deadline"); }
+  if (mode === "admit-hold" || mode === "admit-after-read" || mode.startsWith("hold-")) return peer;
+  if (mode.startsWith("protect-")) { peer.child.stdin.end(); return peer; }
   const input = Buffer.from(f.bytes);
-  if (mode === "publish-hold") peer.child.stdin.write(input, () => input.fill(0));
+  if (mode === "publish-hold" || mode.startsWith("release-hold-")) peer.child.stdin.write(input, () => input.fill(0));
   else peer.child.stdin.end(input, () => input.fill(0));
   return peer;
 }
@@ -152,7 +153,7 @@ beforeAll(async () => {
   expect(resolve(fixtureRoot!)).toBe(fixtureRoot);
   expect(dirname(fixtureRoot!)).toBe(join(root, ".artifacts/tests/native-mcp-session-gates"));
   expect(basename(fixtureRoot!)).toMatch(/^run-[a-f0-9]{32}$/);
-  expect(dirname(dirname(probe!))).toBe(join(root, ".artifacts/tests/t09an-mcp-session"));
+  expect(dirname(dirname(probe!))).toBe(join(root, ".artifacts/tests/t09ao-mcp-release-pristine"));
   expect(basename(dirname(probe!))).toMatch(/^probe-build-[a-f0-9]{32}$/);
   const marker = await within(() => readFile(join(fixtureRoot!, "owner.marker"), "utf8"), 3000, "run-owner-marker");
   expect(marker).toBe("TAHTIAPURI_NATIVE_SESSION_GATE_RUN_V1\n"); rootAdmitted = true;
@@ -191,11 +192,13 @@ afterEach(async context => {
     unexpectedLive: unexpected.length, cleanupErrors: failures, blockedBeforeStart,
     trace: scope, children: trace.records(scope) });
   expect(failures).toEqual([]); expect(unexpected).toEqual([]);
+  expect(scope.overflow).toBe(false); expect(scope.uncertain).toBe(false);
 });
 afterAll(async () => {
   if (!enabled || !rootAdmitted) return;
   const record = { cases: evidence, tainted, probeBinarySha256: probeDigest, fixturePreserved: true,
-    scope: "Production session functions in a nonpackaged owner probe; no normal broker HELLO/worker or independent OS/network acceptance",
+    scope: "Session/release owner probe: held barriers use20s and ordinary calls5s; not production-host or independent OS/network acceptance",
+    releaseTargetCount: 13, barrierBudgetMs: 20000, ordinaryProbeBudgetMs: 5000, normalBrokerExecuted: false,
     workerExecuted: false, profileCreated: false, jobCreated: false, inspectorExecuted: false };
   const signal = AbortSignal.timeout(3000);
   await writeFile(join(fixtureRoot!, "gate-evidence.json"), JSON.stringify(record, null, 2) + "\n", { flag: "wx", signal });
@@ -298,7 +301,11 @@ test("lease deadline retains READY and rejects admission", async () => {
 test("generic consume completes while the publisher still owns the session lease", async () => {
   const f = await fixture(true, true), ready = await read(f.session);
   const publisher = await actor("publish-hold", f); await publisher.line("published-held");
-  await within(() => runtime.helpers.operate("consume", f.file, f.bytes, abort.signal), 7000, "consume-under-lease");
+  await within(deadline => runtime.helpers.operate("consume", f.file, f.bytes, abort.signal, deadline), 7000, "consume-under-lease");
+  const budget = traceScope.events.find(event => event.event === "operation-requested" && event.operation === "consume-under-lease");
+  const dispatched = traceScope.events.filter(event => event.event === "stdin-end-enter" && event.operation === "main-bootstrap.exe--consume");
+  expect(budget?.deadlineMs).toBeDefined(); expect(dispatched).toHaveLength(1);
+  expect(dispatched[0]!.atMs).toBeLessThan(budget!.deadlineMs!);
   await absent(f.file); expect(publisher.observedClose).toBe(false);
   publisher.release(); await publisher.finish(0); expect(await read(f.session)).toEqual(ready);
 }, 60000);
@@ -313,4 +320,210 @@ test("owned publisher interruption preserves descriptor and READY", async () => 
   const publisher = await actor("publish-hold", f); await publisher.line("published-held"); await publisher.stop(true);
   expect(publisher.observedClose).toBe(true);
   expect(await read(f.file)).toEqual(f.bytes); expect(await read(f.session)).toEqual(ready);
+}, 60000);
+
+// Release is a fixed inventory, not a recursive filesystem cleanup. Snapshot
+// helpers retain only identities/sizes, never package bytes or ticket contents.
+const intentFile = (f: Fixture) => join(f.control, "native-session-release.bin");
+const completedFile = (f: Fixture) => join(f.control, "native-session-released.bin");
+function releasePaths(f: Fixture) {
+  const worker = join(f.reservation, "worker"), pkg = join(worker, "package");
+  return [
+    ...["licenses/mcp-core-LICENSE.txt", "licenses/mcp-server-LICENSE.txt", "licenses/node-LICENSE.txt", "licenses/zod-LICENSE.txt",
+      "mcp-worker.mjs", "node.exe", "package.json", "runtime-manifest.json"].map(name => join(pkg, name)),
+    join(pkg, "licenses"), pkg, join(worker, "scratch"), worker, f.reservation,
+  ];
+}
+async function releaseSnapshot(f: Fixture) {
+  const rows = [];
+  for (const path of releasePaths(f)) {
+    try {
+      const value = await within(() => lstat(path, { bigint: true }), 3000, "release-target-stat");
+      rows.push({ present: true, volume: value.dev.toString(), id: value.ino.toString(), bytes: value.size.toString() });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      rows.push({ present: false });
+    }
+  }
+  return rows;
+}
+async function verifiedReleaseIntent(f: Fixture, ready: Buffer) {
+  const intent = await read(intentFile(f));
+  expect(intent.length).toBe(1024); expect(intent.subarray(0, 8).toString("ascii")).toBe("TMCRLS1\0");
+  expect(intent.subarray(992).toString("hex")).toBe(hash(intent.subarray(0, 992)));
+  expect(intent.subarray(16, 48).toString("hex")).toBe(hash(ready));
+  expect(intent.readUInt32LE(60)).toBe(ready.readUInt32LE(20));
+  expect(intent.readBigUInt64LE(64)).toBe(ready.readBigUInt64LE(24));
+  for (const [intentOffset, readyOffset, length] of [[72, 32, 16], [88, 384, 32], [120, 48, 12],
+    [132, 84, 12], [144, 60, 12], [156, 72, 12], [168, 112, 64]] as const)
+    expect(intent.subarray(intentOffset, intentOffset + length)).toEqual(ready.subarray(readyOffset, readyOffset + length));
+  expect(intent.readUInt32LE(232)).toBe(ready.readUInt32LE(176));
+  expect(intent.subarray(236, 236 + intent.readUInt32LE(232))).toEqual(ready.subarray(180, 180 + ready.readUInt32LE(176)));
+  const stateId = await within(() => lstat(f.session, { bigint: true }), 3000, "release-session-id");
+  const intentId = await within(() => lstat(intentFile(f), { bigint: true }), 3000, "release-intent-id");
+  for (const [offset, value] of [[48, stateId], [908, intentId]] as const) {
+    expect(BigInt(intent.readUInt32LE(offset))).toBe(value.dev);
+    expect((BigInt(intent.readUInt32LE(offset + 4)) << 32n) | BigInt(intent.readUInt32LE(offset + 8))).toBe(value.ino);
+  }
+  return intent;
+}
+async function released(f: Fixture, ready: Buffer) {
+  await absent(f.reservation); expect(await read(f.session)).toEqual(ready);
+  expect((await within(() => readdir(f.control), 3000, "released-control")).sort()).toEqual([
+    "native-session-release.bin", "native-session-released.bin", "native-session.bin", "native-session.lease",
+  ]);
+  const intent = await verifiedReleaseIntent(f, ready), done = await read(completedFile(f));
+  expect(intent.length).toBe(1024); expect(done.length).toBe(1024);
+  expect(intent.subarray(0, 8).toString("ascii")).toBe("TMCRLS1\0");
+  expect(done.subarray(0, 8).toString("ascii")).toBe("TMCRLD1\0");
+  expect(intent.subarray(992).toString("hex")).toBe(hash(intent.subarray(0, 992)));
+  expect(done.subarray(992).toString("hex")).toBe(hash(done.subarray(0, 992)));
+  expect(intent.subarray(16, 48).toString("hex")).toBe(hash(ready));
+  expect(done.subarray(16, 48).toString("hex")).toBe(hash(intent));
+  expect(done.subarray(112, 144).toString("hex")).toBe(hash(ready));
+  const original = await within(() => lstat(intentFile(f), { bigint: true }), 3000, "intent-id");
+  expect(BigInt(intent.readUInt32LE(908))).toBe(original.dev);
+  expect((BigInt(intent.readUInt32LE(912)) << 32n) | BigInt(intent.readUInt32LE(916))).toBe(original.ino);
+  expect(done.subarray(48, 60)).toEqual(intent.subarray(908, 920));
+}
+async function interruptedRelease(f: Fixture, frontier: number) {
+  const held = await actor("release-hold-" + frontier, f); await held.line("release-held"); await held.stop(true);
+  return held;
+}
+async function releaseSuccess(f: Fixture) {
+  const peer = await run("release-pristine", f); expect(peer.lines).toEqual(["session-released"]); return peer;
+}
+test("pristine release removes the fixed inventory and acknowledges the same completed release", async () => {
+  const f = await fixture(true, true), ready = await read(f.session);
+  await releaseSuccess(f); await released(f, ready);
+  const intent = await read(intentFile(f)), completion = await read(completedFile(f));
+  await releaseSuccess(f); await released(f, ready);
+  expect(await read(intentFile(f))).toEqual(intent); expect(await read(completedFile(f))).toEqual(completion);
+}, 60000);
+test.each(Array.from({ length: 14 }, (_, index) => index))("pristine interruption resumes only its fixed removed prefix: %s", async frontier => {
+  const f = await fixture(true, true), ready = await read(f.session);
+  await interruptedRelease(f, frontier); await absent(completedFile(f));
+  const snapshot = await releaseSnapshot(f);
+  expect(snapshot.map(value => value.present)).toEqual(Array.from({ length: 13 }, (_, index) => index >= frontier));
+  const intent = await read(intentFile(f)); expect(intent.length).toBe(1024);
+  await releaseSuccess(f); await released(f, ready); expect(await read(intentFile(f))).toEqual(intent);
+}, 60000);
+const recordFaults = (["intent", "completion"] as const).flatMap(kind =>
+  (["write", "short-write", "flush", "read", "short-read", "readback"] as const).map(fault => [kind, fault] as const));
+test.each(recordFaults)("record I/O failure preserves the exact stopped state: %s %s", async (kind, fault) => {
+  const f = await fixture(true, true), ready = await read(f.session), before = await releaseSnapshot(f);
+  const stage = { write: "mcp-release-write", "short-write": "mcp-release-write-count", flush: "mcp-release-flush",
+    read: "mcp-release-read", "short-read": "mcp-release-read-count", readback: "mcp-release-readback" }[fault];
+  const failed = await run("release-" + kind + "-" + fault, f, 1, stage);
+  expect(failed.lines).not.toContain("session-released"); expect(await read(f.session)).toEqual(ready);
+  const snapshot = await releaseSnapshot(f);
+  if (kind === "intent") {
+    expect(snapshot).toEqual(before); await absent(completedFile(f));
+  } else expect(snapshot.map(value => value.present)).toEqual(Array(13).fill(false));
+  const file = kind === "intent" ? intentFile(f) : completedFile(f);
+  const bytes = await read(file); expect(bytes.length).toBe(fault === "write" ? 0 : fault === "short-write" ? 16 : 1024);
+  if (fault === "write" || fault === "short-write") {
+    await run("release-pristine", f, 1, "mcp-release-record-length");
+    expect(await read(file)).toEqual(bytes); expect(await releaseSnapshot(f)).toEqual(snapshot);
+  } else {
+    await releaseSuccess(f); await released(f, ready); expect(await read(file)).toEqual(bytes);
+  }
+}, 60000);
+test("a reader denying delete sharing prevents intent creation and every deletion", async () => {
+  const f = await fixture(true, true), ready = await read(f.session), before = await releaseSnapshot(f);
+  const reader = await actor("hold-deny-delete", f); await reader.line("reader-held");
+  await run("release-pristine", f, 1, "bootstrap-open");
+  expect(await releaseSnapshot(f)).toEqual(before); await absent(intentFile(f)); await absent(completedFile(f));
+  reader.release(); await reader.finish(0); await releaseSuccess(f); await released(f, ready);
+}, 60000);
+test.each(["hold-reader", "hold-metadata"] as const)("delete-pending uncertainty prevents completion while %s remains open", async mode => {
+  const f = await fixture(true, true), ready = await read(f.session), before = await releaseSnapshot(f);
+  const reader = await actor(mode, f); await reader.line("reader-held");
+  const failed = await actor("release-pristine", f), exit = await within(() => failed.closed, 7500, "pending-release-exit");
+  expect(exit).toEqual({ code: 1, signal: null }); expect(failed.observedClose).toBe(true);
+  const diagnostic = JSON.parse(Buffer.concat(failed.errors).toString("utf8")) as { stage: string; code: number };
+  expect(["bootstrap-still-present", "bootstrap-absence-uncertain"]).toContain(diagnostic.stage);
+  expect(Number.isInteger(diagnostic.code) && diagnostic.code > 0).toBe(true);
+  await failed.finish(1, diagnostic.stage);
+  expect(failed.lines).not.toContain("session-released"); await absent(completedFile(f)); expect(await read(f.session)).toEqual(ready);
+  const intent = await verifiedReleaseIntent(f, ready);
+  // The first link may be delete-pending, so do not treat a failed lstat as
+  // absence. Every later target must retain its original identity and size.
+  for (let index = 1; index < releasePaths(f).length; ++index) {
+    const value = await within(() => lstat(releasePaths(f)[index]!, { bigint: true }), 3000, "pending-survivor");
+    expect({ present: true, volume: value.dev.toString(), id: value.ino.toString(), bytes: value.size.toString() }).toEqual(before[index]);
+  }
+  reader.release(); await reader.finish(0); expect(reader.lines).toEqual(["reader-held", "reader-complete"]);
+  // This disappearance must precede the retry: an unrelated pre-delete error
+  // would leave target0 present after the reader closes.
+  await absent(releasePaths(f)[0]!); expect(await read(intentFile(f))).toEqual(intent);
+  await releaseSuccess(f); await released(f, ready);
+}, 60000);
+
+test.each(["intent-identity", "intent-corrupt", "target-identity", "target-content", "nonprefix-hole",
+  "extra-file", "reparse", "hardlink", "intent-acl", "target-acl"] as const)("a changed release inventory stays untouched: %s", async mutation => {
+  const f = await fixture(true, true), ready = await read(f.session);
+  await interruptedRelease(f, 0); const targets = releasePaths(f);
+  if (mutation === "intent-identity") {
+    const old = join(f.directory, "old-intent");
+    await within(() => rename(intentFile(f), old), 3000, "move-intent");
+    await within(() => copyFile(old, intentFile(f)), 3000, "replace-intent");
+  } else if (mutation === "intent-corrupt") {
+    const bytes = await read(intentFile(f)); bytes[1000] = bytes[1000]! ^ 1;
+    await within(() => writeFile(intentFile(f), bytes), 3000, "corrupt-intent");
+  } else if (mutation === "target-identity") {
+    const old = join(f.directory, "old-target");
+    await within(() => rename(targets[0]!, old), 3000, "move-target");
+    await within(() => copyFile(old, targets[0]!), 3000, "replace-target");
+  } else if (mutation === "target-content") await within(() => writeFile(targets[0]!, "changed fixture bytes"), 3000, "change-target");
+  else if (mutation === "nonprefix-hole") await within(() => unlink(targets[1]!), 3000, "nonprefix-hole");
+  else if (mutation === "extra-file") await within(() => writeFile(join(targets[9]!, "extra.txt"), "synthetic"), 3000, "extra-file");
+  else if (mutation === "reparse") {
+    const old = join(f.directory, "old-licenses");
+    await within(() => rename(targets[8]!, old), 3000, "move-licenses");
+    await within(() => symlink(old, targets[8]!, "junction"), 3000, "junction-licenses");
+  } else if (mutation === "hardlink") await within(() => link(targets[0]!, join(f.directory, "extra-link")), 3000, "hardlink-target");
+  else await run(mutation === "intent-acl" ? "protect-intent" : "protect-target", f);
+  const before = await releaseSnapshot(f), intent = await read(intentFile(f));
+  const stage = {
+    "intent-identity": "mcp-release-intent-context", "intent-corrupt": "mcp-release-checksum",
+    "target-identity": "mcp-release-target-binding", "target-content": "mcp-pin-size",
+    "nonprefix-hole": "mcp-release-nonprefix", "extra-file": "mcp-tree-shape", reparse: "mcp-release-reparse",
+    hardlink: "bootstrap-file-type", "intent-acl": "bootstrap-dacl", "target-acl": "mcp-acl-policy",
+  }[mutation];
+  await run("release-pristine", f, 1, stage);
+  expect(await releaseSnapshot(f)).toEqual(before); expect(await read(intentFile(f))).toEqual(intent);
+  expect(await read(f.session)).toEqual(ready); await absent(completedFile(f));
+  // Any release entry fences the old generation, even when malformed. Prepare
+  // must reject before CREATE_NEW can mutate the fixed existing lease.
+  for (const mode of ["prepare", "seal", "publish"]) await run(mode, f, 1, "mcp-session-release-present");
+  expect(await releaseSnapshot(f)).toEqual(before);
+}, 60000);
+test("an orphan completion blocks release and every old owner mode", async () => {
+  const f = await fixture(true, true), ready = await read(f.session), before = await releaseSnapshot(f);
+  await within(() => writeFile(completedFile(f), Buffer.alloc(0), { flag: "wx" }), 3000, "orphan-completion");
+  await run("release-pristine", f, 1, "mcp-release-orphan-completion");
+  for (const mode of ["prepare", "seal", "publish"]) await run(mode, f, 1, "mcp-session-release-present");
+  expect(await releaseSnapshot(f)).toEqual(before); expect(await read(f.session)).toEqual(ready); await absent(intentFile(f));
+}, 60000);
+test("a release intent fences a broker which already read the old descriptor", async () => {
+  const f = await fixture(true, true), ready = await read(f.session); await run("publish", f);
+  const candidate = await actor("admit-after-read", f); await candidate.line("descriptor-read");
+  await within(deadline => runtime.helpers.operate("consume", f.file, f.bytes, abort.signal, deadline), 7000, "consume-before-release");
+  const publisher = await actor("release-hold-0", f); await publisher.line("release-held");
+  candidate.release(); await candidate.line("admission-starting"); expect(candidate.lines).not.toContain("admitted");
+  publisher.release(); await publisher.finish(0); expect(publisher.lines).toEqual(["release-held", "session-released"]);
+  await candidate.finish(1, "mcp-session-release-present"); expect(candidate.lines).not.toContain("admitted");
+  await released(f, ready);
+}, 60000);
+test("a broker winning admission prevents pristine release before and after its exit", async () => {
+  const f = await fixture(true, true); await run("publish", f);
+  const admitted = await actor("admit-hold", f); await admitted.line("admitted");
+  await within(deadline => runtime.helpers.operate("consume", f.file, f.bytes, abort.signal, deadline), 7000, "consume-admitted-descriptor");
+  const before = await releaseSnapshot(f);
+  await run("release-pristine", f, 1, "mcp-session-lease-open");
+  await absent(intentFile(f)); await absent(completedFile(f)); expect(await releaseSnapshot(f)).toEqual(before);
+  admitted.release(); await admitted.finish(0); const record = await read(f.session); expect(record.readUInt32LE(16)).toBe(2);
+  await run("release-pristine", f, 1, "mcp-release-not-pristine");
+  expect(await releaseSnapshot(f)).toEqual(before); expect(await read(f.session)).toEqual(record); await absent(intentFile(f));
 }, 60000);

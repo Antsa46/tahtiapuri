@@ -1,3 +1,4 @@
+import { requireNativeOperationDeadline } from "./native-operation-deadline.js";
 import { constants } from "node:fs";
 import { copyFile, lstat, mkdir, open, opendir, realpath } from "node:fs/promises";
 import { createHash } from "node:crypto";
@@ -24,7 +25,7 @@ export interface NativeMcpResourceConfig { readonly runtimeRoot: string; readonl
 export interface NativeMcpHostResources {
   readonly helpers: NativeMcpHelpers;
   /** Fixed native preparation/publication; no worker-selected operation. */
-  session(operation: NativeMcpSessionOperation, file: string, bytes: Buffer, signal: AbortSignal): Promise<void>;
+  session(operation: NativeMcpSessionOperation, file: string, bytes: Buffer, signal: AbortSignal, deadline?: number): Promise<void>;
   /** Only a fresh Main-owned fixed reservation; never starts or repairs a process. */
   prepareWorker(reservation: string, signal: AbortSignal): Promise<void>;
 }
@@ -163,12 +164,13 @@ export async function loadNativeMcpRuntime(config: NativeMcpResourceConfig, sign
   await verify(signal); signal.throwIfAborted();
   const helpers = await loadNativeMcpHelpers(join(root, "helpers"), metadata.helpers); signal.throwIfAborted();
   return Object.freeze({ broker, packageDigest: metadata.package.digest, helpers,
-    async session(operation: NativeMcpSessionOperation, file: string, bytes: Buffer, operationSignal: AbortSignal) {
+    async session(operation: NativeMcpSessionOperation, file: string, bytes: Buffer, operationSignal: AbortSignal, deadline?: number) {
       if (!Buffer.isBuffer(bytes) || bytes.length !== NATIVE_BOOTSTRAP_BYTES) denied();
       const input = Buffer.from(bytes);
       try {
-        operationSignal.throwIfAborted(); await verifyBroker(operationSignal); operationSignal.throwIfAborted();
-        await runNativeMcpSessionOperation(broker, operation, file, input, operationSignal);
+        operationSignal.throwIfAborted(); requireNativeOperationDeadline(deadline);
+        await verifyBroker(operationSignal); operationSignal.throwIfAborted(); requireNativeOperationDeadline(deadline);
+        await runNativeMcpSessionOperation(broker, operation, file, input, operationSignal, deadline);
       } finally { input.fill(0); }
     }, async prepareWorker(reservation: string, callerSignal: AbortSignal) {
     canonical(reservation);

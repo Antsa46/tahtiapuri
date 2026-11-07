@@ -110,3 +110,33 @@ it("keeps late exit uncertainty after the outer timeout and blocks a clean new c
     expect(JSON.stringify(first)).not.toContain("private original");
   } finally { vi.useRealTimers(); }
 });
+
+it("observes stdin dispatch and close without changing calls or recording input", () => {
+  const trace = createNativeProcessTrace(), scope = trace.current(), owned = child();
+  const input: EventEmitter & { write(...args: unknown[]): boolean; end(...args: unknown[]): EventEmitter } = Object.assign(new EventEmitter(), {
+    write: vi.fn(function (this: unknown, ...args: unknown[]) { expect(this).toBe(input); expect(args).toEqual([secret, callback]); return false; }),
+    end: vi.fn(function (this: unknown, ...args: unknown[]) { expect(this).toBe(input); expect(args).toEqual([secret, callback]); return input; }),
+  });
+  const secret = Buffer.from("never-record-authority"), callback = vi.fn();
+  Object.assign(owned, { stdin: input });
+  trace.wrap(module(() => owned)).spawn("C:\\private\\main-bootstrap.exe", ["--consume", "private.bin"]);
+  expect(input.write(secret, callback)).toBe(false); expect(input.end(secret, callback)).toBe(input);
+  input.emit("close"); owned.emit("close", 0, null);
+  expect(callback).not.toHaveBeenCalled();
+  expect(scope.events.map(event => event.event)).toEqual([
+    "spawn-enter", "spawn-return", "stdin-write-enter", "stdin-write-return", "stdin-end-enter", "stdin-end-return", "stdin-close", "child-close",
+  ]);
+  expect(JSON.stringify(scope)).not.toContain("never-record-authority"); expect(JSON.stringify(scope)).not.toContain("private.bin");
+});
+it.each([3000, 10000])("passes the exact shared absolute deadline, limited by case budget %s", async remaining => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+  try {
+    const trace = createNativeProcessTrace(), scope = trace.current(), pending = new Set<Promise<unknown>>(), controller = new AbortController();
+    const start = performance.now(); let dispatched: number | undefined;
+    expect(await trace.within(scope, async deadline => { dispatched = deadline; return "done"; }, 7000, "consume",
+      { end: start + remaining, controller, pending, taint: () => {} })).toBe("done");
+    expect(dispatched).toBe(start + Math.min(remaining, 7000));
+    expect(scope.events.find(event => event.event === "operation-requested")?.deadlineMs).toBe(Math.min(remaining, 7000));
+    expect(pending.size).toBe(0); expect(controller.signal.aborted).toBe(false);
+  } finally { vi.useRealTimers(); }
+});

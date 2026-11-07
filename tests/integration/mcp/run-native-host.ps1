@@ -23,7 +23,7 @@ foreach ($property in $receipt.source.psobject.Properties) {
 
 
 $inputs = @{}
-$paths = @('apps/desktop/src/main/native-development-host.ts','apps/desktop/src/main/native-mcp-helpers.ts','apps/desktop/src/main/native-mcp-helpers.test.ts','apps/desktop/src/main/native-development-wire.test.ts','apps/desktop/src/main/native-main-connection.test.ts','apps/desktop/src/main/development-owner.ts','apps/desktop/src/main/development-host.ts','apps/desktop/src/main/development-host.test.ts','tests/integration/mcp/native-host.integration.test.ts','apps/backend/src/modules/development/application/development-service.ts','apps/backend/src/modules/assistant/application/assistant-service.ts','apps/desktop/src/main/native-main-connection.ts','apps/desktop/src/main/native-development-admission.ts','apps/desktop/src/main/native-development-wire.ts','apps/desktop/src/main/native-development-writer.ts','tests/integration/mcp/run-native-host.ps1')
+$paths = @('apps/desktop/src/main/native-development-host.ts','apps/desktop/src/main/native-mcp-helpers.ts','apps/desktop/src/main/native-operation-deadline.ts','apps/desktop/src/main/native-bootstrap-operation.ts','apps/desktop/src/main/native-development-bootstrap.ts','apps/desktop/src/main/native-mcp-helpers.test.ts','apps/desktop/src/main/native-development-wire.test.ts','apps/desktop/src/main/native-main-connection.test.ts','apps/desktop/src/main/development-owner.ts','apps/desktop/src/main/development-host.ts','apps/desktop/src/main/development-host.test.ts','tests/integration/mcp/native-host.integration.test.ts','apps/backend/src/modules/development/application/development-service.ts','apps/backend/src/modules/assistant/application/assistant-service.ts','apps/desktop/src/main/native-main-connection.ts','apps/desktop/src/main/native-development-admission.ts','apps/desktop/src/main/native-development-wire.ts','apps/desktop/src/main/native-development-writer.ts','tests/integration/mcp/run-native-host.ps1')
 foreach ($path in $paths) { $inputs[$path] = (Get-FileHash (Join-Path $root $path) -Algorithm SHA256).Hash.ToLowerInvariant() }
 $inputs | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $outputRoot "$Run.inputs.json") -Encoding UTF8
 
@@ -53,7 +53,7 @@ foreach ($path in $paths) {
 }
 if ($p.ExitCode -ne 0) { exit $p.ExitCode }
 $result = Get-Content -LiteralPath (Join-Path $outputRoot 'tests.json') -Raw | ConvertFrom-Json
-if (!$result.success -or $result.numPassedTests -ne 89 -or $result.numFailedTests -ne 0 -or $result.numPendingTests -ne 0) { throw 'Incomplete host test result' }
-@{ source=$inputs; passed=89; failed=0; pending=0; identityHelperSha256=$receipt.identityHelperSha256; publicationHelperSha256=$receipt.publicationHelperSha256 } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $outputRoot 'receipt.json') -Encoding UTF8
-Write-Output 'Native Main host integration passed: 89/89'
+if (!$result.success -or $result.numTotalTests -ne 97 -or $result.numPassedTests -ne 97 -or $result.numFailedTests -ne 0 -or $result.numPendingTests -ne 0 -or $result.numTodoTests -ne 0) { throw 'Incomplete host test result' }
+@{ source=$inputs; passed=97; failed=0; pending=0; identityHelperSha256=$receipt.identityHelperSha256; publicationHelperSha256=$receipt.publicationHelperSha256 } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $outputRoot 'receipt.json') -Encoding UTF8
+Write-Output 'Native Main host integration passed: 97/97'
 

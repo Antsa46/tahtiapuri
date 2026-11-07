@@ -20,6 +20,7 @@ const descriptorDigest = process.env.TAHTIAPURI_NATIVE_MCP_RUNTIME_DIGEST;
 const runRoot = process.env.TAHTIAPURI_NATIVE_MCP_RUN_ROOT;
 const enabled = process.platform === "win32" && !!runtimeRoot && !!descriptorDigest && !!runRoot;
 const test = enabled ? it : it.skip;
+let functionalTainted = false;
 const digest = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
 type Exit = { code: number | null; signal: NodeJS.Signals | null };
 type Rpc = { jsonrpc: string; id: number; error?: unknown; result?: { tools?: { name: string }[]; structuredContent?: unknown } };
@@ -107,6 +108,7 @@ class McpPeer {
 }
 
 test("round trips real MCP status and Main STOP through the native broker candidate", async () => {
+  functionalTainted = true;
   const routineEnd = performance.now() + 80000;
   const routine = <T>(work: () => Promise<T>, cap: number, label: string): Promise<T> => {
     const remaining = routineEnd - performance.now();
@@ -279,6 +281,7 @@ test("round trips real MCP status and Main STOP through the native broker candid
       try { await rejected.stopOwned(); } catch (error) { cleanupErrors.push(String(error)); }
     }
     service.configure(null); assistant.dispose();
+    functionalTainted ||= !!original || !success || cleanupErrors.length !== 0 || !!peer?.forced || !peer?.observedClose;
     // Preserve every fixture, including a successful journal. No recovery or
     // recursive removal is allowed to turn uncertain ownership into success.
     const receiptAbort = new AbortController();
@@ -294,8 +297,140 @@ test("round trips real MCP status and Main STOP through the native broker candid
       stdinOpenAtMainStop, mainStopIssuedByTest, workerPresentAtEnabled, stdoutEnded: peer?.stdoutEnded ?? false,
       terminalSuccessRequires: "One passed Vitest case, actual process exit0, no timeout/cleanup errors; this receipt alone is not terminal success",
     }, null, 2) + "\n", { flag: "wx", signal: receiptAbort.signal }), 3000, "functional-receipt-write"); }
+    catch (error) { functionalTainted = true; throw error; }
     finally { clearTimeout(receiptTimer); }
   }
   if (original) throw original;
   expect(cleanupErrors).toEqual([]); expect(success).toBe(true);
+  functionalTainted = false;
+}, 130000);
+
+// Real loader and native release CLI; synthetic backend, without a broker client.
+test("production Host disable releases a sealed never-admitted session", async () => {
+  if (functionalTainted) throw new Error("Earlier functional case did not complete safely");
+  functionalTainted = true;
+  const end = performance.now() + 80000;
+  const step = <T>(work: () => Promise<T>, cap: number, label: string): Promise<T> => {
+    const limit = Math.min(end, performance.now() + cap);
+    if (performance.now() >= limit) return Promise.reject(new Error("Pristine functional deadline"));
+    return bounded(Promise.resolve().then(() => {
+      if (performance.now() >= limit) throw new Error(label + " dispatch deadline");
+      return work();
+    }), limit - performance.now(), label).then(value => {
+      if (performance.now() >= limit) throw new Error(label + " late completion");
+      return value;
+    });
+  };
+  expect(resolve(runRoot!)).toBe(runRoot); expect(resolve(runtimeRoot!)).toBe(runtimeRoot);
+  expect(dirname(runRoot!)).toBe(join(projectRoot, ".artifacts/tests/native-mcp-runtime"));
+  expect(basename(runRoot!)).toMatch(/^run-[a-f0-9]{32}$/);
+  expect(dirname(runtimeRoot!)).toBe(join(projectRoot, ".artifacts/native/mcp-native/builds"));
+  expect(basename(runtimeRoot!)).toMatch(/^build-[a-f0-9]{32}$/);
+  const fixed = (path: string, size: number) => step(async () => {
+    const before = await lstat(path, { bigint: true });
+    expect(before.isFile()).toBe(true); expect(before.nlink).toBe(1n); expect(before.size).toBe(BigInt(size));
+    const bytes = await readFile(path), after = await lstat(path, { bigint: true });
+    expect(after.isFile()).toBe(true); expect(bytes.length).toBe(size);
+    for (const key of ["dev", "ino", "size", "nlink", "mtimeNs", "ctimeNs"] as const) expect(after[key]).toBe(before[key]);
+    return { bytes, id: after };
+  }, 3000, "pristine-fixed-readback");
+  const runtime = await step(() => loadNativeMcpRuntime({ runtimeRoot: runtimeRoot!, descriptorSha256: descriptorDigest! }, new AbortController().signal), 15000, "pristine-runtime");
+  const control = join(runRoot!, "pristine-control"), file = join(control, "main-bootstrap.bin"), operations: string[] = [];
+  let engineRuns = 0;
+  const assistant = new AssistantService({ run: async () => { ++engineRuns; return { text: "Synthetic", info: null, error: null }; }, cancel: () => {} });
+  const service = new DevelopmentService(assistant);
+  const development: BackendController["development"] = async (operation, value) => {
+    operations.push(operation);
+    if (operation === "development.status") return service.status();
+    if (operation === "development.configure" && (typeof value === "string" || value === null)) return service.configure(value);
+    throw new Error("No broker operation belongs to pristine fixture");
+  };
+  const host = new NativeDevelopmentHost({ development }, control, runtime);
+  let outcome: NativeHostOutcome | undefined, success = false, original: unknown, launch: Buffer | undefined, phase = "enable";
+  const cleanupErrors: string[] = [];
+  try {
+    expect(await step(() => host.setEnabled(true), 35000, "pristine-enable")).toMatchObject({ ok: true, status: { enabled: true } });
+    launch = (await fixed(file, 96)).bytes;
+    const decoded = decodeNativeBootstrap(launch), sessionPath = join(control, "native-session.bin");
+    const stateBefore = await fixed(sessionPath, 1024), ready = stateBefore.bytes;
+    expect(ready.subarray(0, 7).toString("ascii")).toBe("TMCSES1"); expect(ready[7]).toBe(0);
+    expect(ready.readUInt32LE(8)).toBe(1); expect(ready.readUInt32LE(12)).toBe(1024); expect(ready.readUInt32LE(16)).toBe(1);
+    expect(ready.readUInt32LE(96)).toBe(0); expect(ready.readBigUInt64LE(104)).toBe(0n);
+    expect(ready.subarray(992).toString("hex")).toBe(digest(ready.subarray(0, 992)));
+    const leasePath = join(control, "native-session.lease"), leaseBefore = await fixed(leasePath, 32);
+    const expectedLease = Buffer.alloc(32); expectedLease.write("TMCLEAS1", "ascii"); expectedLease.writeUInt32LE(1, 8); expectedLease.writeUInt32LE(32, 12);
+    expect(leaseBefore.bytes).toEqual(expectedLease);
+    for (const [offset, path] of [[48, control], [60, join(control, "native-session-reserved")],
+      [72, join(control, "native-session-reserved/worker")], [84, leasePath]] as const) {
+      const id = await step(() => lstat(path, { bigint: true }), 3000, "pristine-ready-id");
+      expect(BigInt(ready.readUInt32LE(offset))).toBe(id.dev);
+      expect((BigInt(ready.readUInt32LE(offset + 4)) << 32n) | BigInt(ready.readUInt32LE(offset + 8))).toBe(id.ino);
+    }
+    expect(ready.readUInt32LE(20)).toBe(decoded.main.pid); expect(ready.readBigUInt64LE(24)).toBe(decoded.main.creationTime);
+    expect(ready.subarray(32, 48).toString("hex")).toBe(decoded.ticket.generation);
+    expect(ready.subarray(384, 416).toString("hex")).toBe(digest(launch));
+    phase = "disable";
+    expect(await step(() => host.setEnabled(false), 35000, "pristine-disable")).toMatchObject({ ok: true, status: { enabled: false, connected: false } });
+    outcome = await step(() => host.stop(), 3000, "pristine-cached-stop");
+    expect(outcome).toEqual({ failed: false, descriptorRemoved: true, helperExitVerified: true, backendRevoked: true,
+      listenerClosed: true, brokerCleanupReported: false, reservationCreated: true, reservationReleased: true });
+    expect(await host.stop()).toBe(outcome); expect((await host.setEnabled(true)).ok).toBe(false);
+    expect(service.status()).toMatchObject({ status: { enabled: false, connected: false } });
+    expect(operations).toEqual(["development.configure", "development.status", "development.configure", "development.status"]); expect(engineRuns).toBe(0);
+    for (const path of [file, join(control, "native-session-reserved")])
+      await expect(step(() => access(path), 3000, "pristine-absent")).rejects.toMatchObject({ code: "ENOENT" });
+    expect((await step(() => readdir(control), 3000, "pristine-retained-files")).sort()).toEqual([
+      "native-session-release.bin", "native-session-released.bin", "native-session.bin", "native-session.lease",
+    ]);
+    const stateAfter = await fixed(sessionPath, 1024), leaseAfter = await fixed(leasePath, 32);
+    expect(stateAfter.bytes).toEqual(ready); expect(leaseAfter.bytes).toEqual(leaseBefore.bytes);
+    for (const key of ["dev", "ino"] as const) { expect(stateAfter.id[key]).toBe(stateBefore.id[key]); expect(leaseAfter.id[key]).toBe(leaseBefore.id[key]); }
+    const intentPath = join(control, "native-session-release.bin"), intentRead = await fixed(intentPath, 1024), intent = intentRead.bytes;
+    const done = (await fixed(join(control, "native-session-released.bin"), 1024)).bytes;
+    for (const [bytes, magic] of [[intent, "TMCRLS1\0"], [done, "TMCRLD1\0"]] as const) {
+      expect(bytes.length).toBe(1024); expect(bytes.subarray(0, 8).toString("ascii")).toBe(magic);
+      expect(bytes.readUInt32LE(8)).toBe(1); expect(bytes.readUInt32LE(12)).toBe(1024);
+      expect(bytes.subarray(992).toString("hex")).toBe(digest(bytes.subarray(0, 992)));
+    }
+    expect(intent.subarray(16, 48).toString("hex")).toBe(digest(ready));
+    expect(intent.readUInt32LE(60)).toBe(decoded.main.pid); expect(intent.readBigUInt64LE(64)).toBe(decoded.main.creationTime);
+    expect(intent.subarray(72, 88).toString("hex")).toBe(decoded.ticket.generation);
+    expect(intent.subarray(88, 120).toString("hex")).toBe(digest(launch));
+    expect(intent.subarray(168, 232).toString("ascii")).toBe(runtime.packageDigest);
+    for (const [intentOffset, readyOffset] of [[120, 48], [132, 84], [144, 60], [156, 72]] as const)
+      expect(intent.subarray(intentOffset, intentOffset + 12)).toEqual(ready.subarray(readyOffset, readyOffset + 12));
+    expect(intent.readUInt32LE(232)).toBe(ready.readUInt32LE(176));
+    expect(intent.subarray(236, 236 + intent.readUInt32LE(232))).toEqual(ready.subarray(180, 180 + ready.readUInt32LE(176)));
+    const stateId = stateAfter.id, intentId = intentRead.id;
+    for (const [offset, id] of [[48, stateId], [908, intentId]] as const) {
+      expect(BigInt(intent.readUInt32LE(offset))).toBe(id.dev);
+      expect((BigInt(intent.readUInt32LE(offset + 4)) << 32n) | BigInt(intent.readUInt32LE(offset + 8))).toBe(id.ino);
+    }
+    expect(done.subarray(16, 48).toString("hex")).toBe(digest(intent));
+    expect(done.subarray(48, 60)).toEqual(intent.subarray(908, 920));
+    expect(done.subarray(60, 72)).toEqual(ready.subarray(48, 60));
+    expect(done.subarray(72, 84)).toEqual(ready.subarray(84, 96));
+    expect(done.readUInt32LE(84)).toBe(decoded.main.pid); expect(done.readBigUInt64LE(88)).toBe(decoded.main.creationTime);
+    expect(done.subarray(96, 112)).toEqual(ready.subarray(32, 48));
+    expect(done.subarray(112, 144).toString("hex")).toBe(digest(ready));
+    phase = "done"; success = true;
+  } catch (error) { original = error; }
+  finally {
+    try { outcome ??= await bounded(host.stop(), 35000, "pristine-cleanup-stop"); } catch (error) { cleanupErrors.push(String(error)); }
+    launch?.fill(0); service.configure(null); assistant.dispose();
+    functionalTainted ||= !!original || cleanupErrors.length !== 0 || !success || outcome?.failed !== false;
+    const signal = new AbortController(), timer = setTimeout(() => signal.abort(), 3000);
+    try { await bounded(writeFile(join(runRoot!, "pristine-functional-result.json"), JSON.stringify({
+      success: success && cleanupErrors.length === 0, phase, outcome, operations, engineRunCalls: engineRuns,
+      error: original instanceof Error ? original.message : original ? String(original) : null, cleanupErrors,
+      scope: "Real Node Host and production release CLI with synthetic in-process backend; no normal broker/worker requested; not independent OS/network/profile/Job proof",
+      fixturePreserved: true, rearmAttempted: false, inspectorExecuted: false,
+      terminalSuccessRequires: "Passed named Vitest case and actual process exit0 without timeout/cleanup errors; receipt alone is insufficient",
+    }, null, 2) + "\n", { flag: "wx", signal: signal.signal }), 3000, "pristine-receipt"); }
+    catch (error) { functionalTainted = true; throw error; }
+    finally { clearTimeout(timer); }
+  }
+  if (original) throw original;
+  expect(cleanupErrors).toEqual([]); expect(success).toBe(true);
+  functionalTainted = false;
 }, 130000);

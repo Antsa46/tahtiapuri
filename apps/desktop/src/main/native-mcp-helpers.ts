@@ -1,3 +1,4 @@
+import { requireNativeOperationDeadline } from "./native-operation-deadline.js";
 import { constants } from "node:fs";
 import { lstat, open, opendir, realpath } from "node:fs/promises";
 import { dirname, join, relative, resolve, win32 } from "node:path";
@@ -56,9 +57,10 @@ export async function loadNativeMcpHelpers(root: string, supplied: NativeMcpHelp
       signal?.throwIfAborted(); await verify(root, pins); signal?.throwIfAborted();
       return queryNativeMainIdentity(join(root, names[0]));
     },
-    async operate(operation: NativeBootstrapOperation, file: string, bytes?: Buffer, signal?: AbortSignal) {
-      signal?.throwIfAborted(); await verify(root, pins); signal?.throwIfAborted();
-      return runNativeBootstrapOperation(join(root, names[1]), operation, file, bytes, signal);
+    async operate(operation: NativeBootstrapOperation, file: string, bytes?: Buffer, signal?: AbortSignal, deadline?: number) {
+      signal?.throwIfAborted(); requireNativeOperationDeadline(deadline);
+      await verify(root, pins); signal?.throwIfAborted(); requireNativeOperationDeadline(deadline);
+      return runNativeBootstrapOperation(join(root, names[1]), operation, file, bytes, signal, deadline);
     },
   });
 }

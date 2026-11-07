@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
-import { copyFile, link, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { copyFile, link, lstat, mkdir, mkdtemp, open, readFile, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { encodeNativeBootstrap } from "./native-development-bootstrap.js";
 import { loadNativeMcpRuntime } from "./native-mcp-resources.js";
@@ -11,7 +11,7 @@ const processGuard = vi.hoisted(() => {
 });
 vi.mock("node:child_process", () => ({ execFile: processGuard.invoke, spawn: processGuard.invoke }));
 vi.mock("node:fs/promises", async original => {
-  const real = await original<typeof import("node:fs/promises")>(); return { ...real, copyFile: vi.fn(real.copyFile) };
+  const real = await original<typeof import("node:fs/promises")>(); return { ...real, copyFile: vi.fn(real.copyFile), open: vi.fn(real.open) };
 });
 const roots: string[] = [];
 const sha = (value: Buffer | string) => createHash("sha256").update(value).digest("hex");
@@ -23,6 +23,7 @@ const node = { version: "24.22.2", archive: "node-v24.22.2-win-x64.zip",
 beforeEach(async () => {
   const real = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
   vi.mocked(copyFile).mockImplementation(real.copyFile); vi.mocked(copyFile).mockClear();
+  vi.mocked(open).mockImplementation(real.open); vi.mocked(open).mockClear();
 });
 afterEach(async () => {
   try { expect(processGuard.attempts()).toBe(0); }
@@ -140,8 +141,29 @@ it("reverifies the bound broker before every native owner operation", async () =
   const bytes = encodeNativeBootstrap({ main: { pid: process.pid, creationTime: 1n }, pipeNonce: "11".repeat(16),
     ticket: { generation: "22".repeat(16), token: "33".repeat(32) } });
   try {
-    for (const operation of ["prepare", "seal", "publish"] as const)
+    for (const operation of ["prepare", "seal", "publish", "release-pristine"] as const)
       await expect(runtime.session(operation, join(f.root, "control/main-bootstrap.bin"), bytes, signal())).rejects.toThrow("rejected");
   } finally { bytes.fill(0); }
   expect(processGuard.attempts()).toBe(0);
+});
+
+it("an owner deadline expiring during broker verification prevents dispatch", async () => {
+  const f = await fixture(), runtime = await loadNativeMcpRuntime(f.config, signal());
+  const real = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+  let entered!: () => void, release!: () => void;
+  const waiting = new Promise<void>(done => { entered = done; }), resumed = new Promise<void>(done => { release = done; });
+  vi.mocked(open).mockImplementation(async (...args) => {
+    if (args[0] === runtime.broker) { entered(); await resumed; }
+    return real.open(...args);
+  });
+  const bytes = encodeNativeBootstrap({ main: { pid: process.pid, creationTime: 1n }, pipeNonce: "11".repeat(16),
+    ticket: { generation: "22".repeat(16), token: "33".repeat(32) } });
+  const deadline = performance.now() + 60000;
+  const result = runtime.session("release-pristine", join(f.root, "control/main-bootstrap.bin"), bytes, signal(), deadline).catch(error => error);
+  let restore: (() => void) | undefined;
+  try {
+    await waiting;
+    const clock = vi.spyOn(performance, "now").mockReturnValue(deadline + 1); restore = () => { clock.mockRestore(); };
+    release(); expect(await result).toMatchObject({ exitVerified: true }); expect(processGuard.attempts()).toBe(0);
+  } finally { restore?.(); release(); await result; bytes.fill(0); vi.mocked(open).mockImplementation(real.open); }
 });

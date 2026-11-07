@@ -563,13 +563,16 @@ vapauta tätä omistusta. Koostamisen ei pidä kiertää sitä portin aliasolioi
 Main omistaa kiinteän yksityisen kontrollihakemiston ja sovelluksen
 instanssilukon. Ennen julkaisua luodaan vain uutena
 `native-session-reserved`-hakemisto. Olemassa oleva varaus estää avauksen.
-Tämä toteutus ei poista varausta koskaan, myöskään onnistuneen CLEANin
-jälkeen, eikä valitse tilalle uutta satunnaishakemistoa. Brokerin varmennettu
-palautus ja uudelleenavaus ovat erillinen jäljellä oleva toteutusportti.
+Varaus voidaan poistaa vain alla kuvatulla natiivilla pristine-polulla,
+kun broker ei ole liittynyt sessioniin. Onnistunut CLEAN ei yksin vapauta
+BROKER_ADMITTED-varausta, eikä tilalle valita uutta satunnaishakemistoa.
+Brokerin varmennettu vapautus, palautus ja uudelleenavaus ovat jäljellä
+olevia toteutusportteja.
 
-Avaus etenee varauksesta kuvaustiedoston palautukseen, suljetun worker-paketin
-valmisteluun, tarkkaan Main-tunnisteeseen,
-backendin istuntoon, kuuntelevaan putkeen ja julkaisuun. Kaikkien odotusten
+Avaus etenee varauksesta kuvaustiedoston palautukseen, tarkkaan Main-tunnisteeseen
+ja liittymislippuun sekä native-prepareen. Sen jälkeen valmistellaan suljettu
+worker-paketti ja sinetöidään session. Vasta sitten määritetään backendin
+istunto, avataan kuunteleva putki ja julkaistaan kuvaus. Kaikkien odotusten
 jälkeen tarkistetaan peruutus. Putken kokonaisyhteysraja on neljä;
 kuudestoista hyväksyntä on viimeinen samassa sekunnin laskentaikkunassa.
 Väärä tunnistautumaton asiakas ei kuluta oikean asiakkaan tunnusta.
@@ -926,7 +929,7 @@ rajattuna omistusoperaationa; polkukysely ei korvaa sitä.
 Mainin natiivinen Host käyttää pakollista resources.session-porttia.
 Tuotantoloader tarkistaa ulkoiseen descriptor-pinniin sidotun brokerin
 uudelleen ennen jokaista operaatiota ja kopioi 96 syötetavua ennen
-asynkronisia tarkistuksia. Portilla on vain kolme kiinteää operaatiota:
+asynkronisia tarkistuksia. Portilla on neljä kiinteää operaatiota:
 
 1. Main luo uuden pysyvän varauksen, selvittää oman identiteettinsä ja
    muodostaa liittymislipun ilman backend-kutsua. Brokerin --prepare
@@ -938,6 +941,9 @@ asynkronisia tarkistuksia. Portilla on vain kolme kiinteää operaatiota:
    Julkaisija pitää leasen READY-tarkistuksesta descriptorin renameen,
    takaisinlukuun ja descriptor-kahvan sulkuun. Lease ja muut session
    kahvat suljetaan ennen helperin onnistumiskuittausta.
+4. --release-pristine vapauttaa erillisen intent-/completion-protokollan kautta
+   vain READY-sessionin, johon broker ei ole liittynyt. Sen rajat ja näyttö
+   kuvataan [pristine-vapautuksessa](#pristine-vapautus-ja-todennettu-näyttö).
 
 Nämä moodit kuuluvat pakettiin sidottuun mcp-broker.exe:en. Ne
 dispatchataan ennen tavallisen brokerin stdio-/Main-/worker-elinkaarta.
@@ -1045,7 +1051,118 @@ mallia ei ajettu. Brokerin FILETIME:sta varmennettiin vain ei-nolla,
 ja siivousnäyttö koostui brokerin raportista ja paikallisesta jälkitilasta.
 Tämä ei ole riippumaton prosessi-/Job-/profiili-/verkkorajan hyväksyntä.
 
-Varauksen vapautus, saman Mainin uudelleenavaus ja kaatumispalautus
-puuttuvat edelleen. Nykyinen session-tietue ei anna poistovaltuutta.
+BROKER_ADMITTED-varauksen vapautus, saman Mainin uudelleenavaus ja
+kaatumispalautus puuttuvat edelleen. Session-tietue ei yksin anna
+poistovaltuutta; koskaan liittymättömän sessionin erillinen pristine-polku
+kuvataan seuraavaksi.
 Oletuskoostaminen ja koko sovelluksen riippumaton OS/FMI/CPU/GPU-näyttö
 eivät tule hyväksytyiksi tällä perustalla.
+
+
+## Pristine-vapautus ja todennettu näyttö
+
+--release-pristine-polku vapauttaa sinetöidyn READY-sessionin, johon broker
+ei ole liittynyt. Se on varmennettu erillisessä Windows-owner-kokeessa ja
+Node-isännän koostumiskokeessa. Tämä ei hyväksy uudelleenavausta,
+kaatumispalautusta tai Electronin oletuskoostamista.
+
+Kiinteä 1024 tavun native-session-release.bin sidotaan omaan ja alkuperäisen
+sessionin tiedostoidentiteettiin, READY-tietueen SHA-256:een, Mainiin,
+generationiin, descriptoriin, pakettiin sekä 13 kiinteään poistokohteeseen.
+Kahdeksan tiedoston koot ja hashit sidotaan hyväksyttyyn pakettiin.
+Intentin flush ja takaisinluku edeltävät ensimmäistä poistoa. Uusinta
+hyväksyy vain jo poistetun etuliitteen kiinteässä järjestyksessä, ja varmentaa
+koko jäljellä olevan puun. Tiedostot poistetaan ennen niiden tyhjiä hakemistoja.
+
+Poisto kohdistuu säilytettyyn DELETE-kahvaan
+[FileDispositionInfo-operaatiolla](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-setfileinformationbyhandle).
+Kahvan sulun jälkeen vaaditaan varma poissaolo; delete-pending tai
+epäselvä tiedostokysely ei hyväksy seuraavaa poistoa. Valmis poisto saa
+erillisen native-session-released.bin-kuittauksen, joka sidotaan intenttiin.
+Molemmat tietueet sekä lease ja alkuperäinen session säilyvät. Minkä tahansa
+release-tietueen olemassaolo, myös vioittuneena, estää vanhan sessionin
+prepare/seal/publish- ja admission-polut.
+
+Mainin absoluuttinen sulkuaika kulkee sen omissa Node-lataus- ja apuripoluissa
+varmistuksesta käynnistykseen ja syötteen lähettämiseen. Sulkuhavainnot
+tarvitaan myös silloin, kun myöhäiselle lapselle ei lähetetty valtuutusta.
+Natiivilla apurilla on oma viiden sekunnin rajansa; se tarkistaa sen ennen
+uusien tietueiden luontia, kirjoitusta, flushia ja poistomerkintää. Jo alkanut
+synkroninen Windows-kutsu ei muutu keskeytettäväksi tällä tarkistuksella.
+
+ReleaseRecordIo on vain vapautustietueiden sisäinen riippuvuus: tuotanto
+tekee oikeat seek/write/truncate/flush/read-kutsut. Poikkeavat paluuarvot,
+lyhyet tavumäärät ja takaisinluvun ero pysäyttävät saman tuotantokoodin.
+[Windowsin kirjoitusvälimuisti](https://learn.microsoft.com/en-us/windows/win32/fileio/file-caching)
+on syy eksplisiittiseen flushiin; tiedoston sulkua ei pidetä sen korvikkeena.
+Testisovitin valitaan vain erillisessä C++-koeajurissa, ei tuotannon
+CLI:stä tai ympäristöstä.
+
+Host käyttää natiivista vapautusporttia vasta varmojen apurien, suljetun
+kuuntelijan, detach/revoke-polun ja poistetun descriptorin jälkeen.
+BROKER_ADMITTED ei kelpaa tähän polkuun. Host säilyy kertakäyttöisenä:
+completion ei vielä salli leasen uudelleenkäyttöä tai uutta generationia.
+
+Vapautuscodecin ja etuliitepolitiikan 37 siirrettävää tapausta läpäisi.
+Tarkiste on tässä nimetty testikorvaus, ei Windows- tai kryptografianäyttö.
+Aikarajakorjausten desktop-käännös, testien tyypit ja 54 synteettistä
+sovitintestiä läpäisivät. Tuotannon natiivipaketti rakennettiin ja sen
+suljetut lähde-, työkalu-, binääri- ja worker-pinnit tarkistettiin.
+
+Windows-ownerin koko 65 tapauksen ajo läpäisi ilman ohituksia. Se sisältää
+aiemmat 22 session-tapausta ja 43 vapautustapausta: tavallisen poiston ja
+saman completionin uusinnan, kaikki 14 keskeytysrajaa, 12 tietueen I/O-virhettä,
+ristiriitaiset kahvat ja delete-pending-tilanteet, muuttuneet identiteetit,
+sisällön, ACL:n ja puun sekä molemmat admission-kilpailujen suunnat.
+Testiapuri käyttää tuotannon natiiveja vapautusfunktioita; poikkeava I/O ja
+pidetyt kahvat valitaan vain sen sisäisillä testipoluilla.
+Pidettyjen esteiden testimoodi käyttää 20 sekunnin rajaa; tavallisen
+natiivitoiminnon tuotantoraja on viisi sekuntia. Tämä ei ole koko Windowsin
+prosessikäynnistyksen läpimenoaikaraja. Mainin absoluuttinen sulkuraja ja
+syötteen lähetysportti ovat siitä erillisiä.
+Kaikkien 403 omistetun lapsen todellinen sulkeutuminen havaittiin.
+Odotetut virhepoistumiset ja tarkoitukselliset keskeytykset erotetaan
+onnistuneista exit0-poistumisista. Tapauskohtainen jäljitys pysyi 512
+tapahtuman rajassa ilman ylivuotoa, epävarmuutta tai siivousvirheitä.
+
+Kymmenen synteettistä jäljitystestiä varmentaa myös stdin-havainnon
+läpinäkyvyyden ja saman absoluuttisen määräajan välittämisen. Jäljitys ei
+lue eikä tallenna stdin-syötteen sisältöä. Jokaisen operaation määräaika on
+samalla rajatulla request-tapahtumalla; erillinen tapahtuma jokaista
+tiedostokyselyä kohti täytti aiemman jäljen. Ylivuoto hylkää nyt myös
+kyseisen testin ja estää seuraavat tapaukset.
+
+Host-ohjaimen 38 tapauksen sarja läpäisi. Session- ja worker-portit ovat
+siinä synteettisiä, generic-helperit oikeita. Jos seal palautuu varmasti
+onnistuneena kesken avauksen sulun, erillinen cleanup-signaali saa pyytää
+pristine-vapautusta. Prepare-vaiheen keskeytys tai epävarma seal-tulos ei
+saa tätä oikeutta. Synteettinen release-kuitti ei todista hakemiston poistoa.
+
+Tuotantoloaderin ja nykyisten natiivibinäärien koostumiskoe läpäisi kaksi
+tapausta. Ensimmäinen varmentaa oikean broker/worker-tilakierroksen ja
+Main-STOPin sekä brokerin todellisen exit0:n; liittynyt varaus säilyy.
+Toinen poistaa kehitysyhteyden käytöstä setEnabled(false)-kutsulla ilman
+broker-asiakasta. Oikea natiivi CLI poistaa varauksen, mutta säilyttää
+alkuperäisen READYn, leasen, intentin ja completionin. Tiedostojen tyypit,
+koot, linkkimäärät, identiteetit, checksumit ja kontekstisidonnat tarkistetaan.
+Jokainen testin aloitus pitää jatkoeston päällä, kunnes myös kuitti ja
+lopulliset assertiot ovat onnistuneet. Molempien backend on synteettinen
+ja saman Node-isännän sisällä; kielimallia ei ajettu.
+
+Aiemmat epäonnistumiset säilyvät: ensimmäinen basic-koe pysähtyi identityn
+käynnistykseen; ensimmäisen laajan owner-ajon consume-viive esti myöhemmät
+tapaukset. Synkronisen käynnistyksen viiveiden käyttöjärjestelmätason syy
+jäi avoimeksi. Kokeen puuttuva absoluuttisen aikarajan välitys korjattiin,
+ja kohdistettu consume-koe läpäisi ennen laajaa uusintaa.
+Seuraavan owner-ajon 52 tapausta olivat täydellisiä; yksi body läpäisi mutta
+sen jälki ylivuoti ja 12 jäi estetyksi. Lisäksi Hostin aiempi 37/38-ajo
+säilyy epäonnistuneena vanhentuneen seal-odotuksen vuoksi. Korjattu
+kohdistettu seal-testi ja koko 38 tapauksen sarja läpäisivät. Onnistuneet
+ajot eivät selitä aiempien käynnistysviiveiden syytä.
+
+Koko julkista 97 tapauksen Host-reseptiä ei ajettu tässä tarkistuksessa;
+sen prerequisite on hyväksytty nykyiseen lähteeseen sidottu bootstrap-kuitti.
+Node-koostumiskoe ei ole Electronin oletusentryn E2E eikä riippumaton
+OS-/verkko-/Job-/profiilinäyttö. CLEAN on edelleen brokerin ilmoitus.
+Release-clean, saman Mainin uusi generation ja kaatumispalautus sekä
+koko minimipaketin FMI-/CPU-/GPU- ja oikeusrajat jäävät jatkotyöksi.
