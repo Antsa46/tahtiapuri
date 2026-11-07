@@ -53,14 +53,18 @@ function backend() {
   cleanups.push(async () => { service.configure(null); assistant.dispose(); });
   return { port: { development }, service, operations };
 }
-// These tests use a synthetic broker peer, so worker preparation is explicit
-// test-only substitution. The real broker fixture uses the production loader.
-const syntheticResources = (custom: NativeMcpHelpers, prepareWorker: NativeMcpHostResources["prepareWorker"] = async () => {}): NativeMcpHostResources => ({ helpers: custom, prepareWorker });
-async function fixture(custom: NativeMcpHelpers = helpers, root?: string, prepareWorker?: NativeMcpHostResources["prepareWorker"]) {
+// These controller tests substitute native session preparation and the worker.
+// Only descriptor publication/consumption use the generic real helper. They do
+// not prove the new native session boundary; the real-broker fixture does.
+const syntheticResources = (custom: NativeMcpHelpers, prepareWorker: NativeMcpHostResources["prepareWorker"] = async () => {},
+  session: NativeMcpHostResources["session"] = async (operation, file, bytes, signal) => {
+    signal.throwIfAborted(); if (operation === "publish") await custom.operate("publish", file, bytes, signal);
+  }): NativeMcpHostResources => ({ helpers: custom, prepareWorker, session });
+async function fixture(custom: NativeMcpHelpers = helpers, root?: string, prepareWorker?: NativeMcpHostResources["prepareWorker"], session?: NativeMcpHostResources["session"]) {
   const b = backend(), directory = root ?? await mkdtemp(join(base, "host-"));
   // securePrivateDirectory creates a new child with its required protected ACL.
   const control = join(directory, "control");
-  const host = new NativeDevelopmentHost(b.port, control, syntheticResources(custom, prepareWorker));
+  const host = new NativeDevelopmentHost(b.port, control, syntheticResources(custom, prepareWorker, session));
   cleanups.push(async () => { await host.stop(); });
   return { ...b, host, directory, control, file: join(control, "main-bootstrap.bin"), reservation: join(control, "native-session-reserved") };
 }
@@ -287,7 +291,7 @@ test("terminal stop timeout forbids a late publisher from starting another helpe
 test("does not publish until the required worker preparation settles", async () => {
   const entered = gate(), release = gate(), calls: string[] = []; let prepared = false, expectedReservation: string | undefined;
   const wrapped: NativeMcpHelpers = {
-    identity: async signal => { calls.push("identity"); expect(prepared).toBe(true); return helpers.identity(signal); },
+    identity: async signal => { calls.push("identity"); expect(prepared).toBe(false); return helpers.identity(signal); },
     operate: async (...args) => { calls.push(args[0]); if (args[0] === "publish") expect(prepared).toBe(true); await helpers.operate(...args); },
   };
   const f = await fixture(wrapped, undefined, async (reservation, signal) => {
@@ -297,7 +301,7 @@ test("does not publish until the required worker preparation settles", async () 
   expectedReservation = f.reservation; const opening = f.host.setEnabled(true);
   try {
     await entered.promise;
-    expect(calls).toEqual(["recover"]); expect(f.operations).not.toContain("development.configure");
+    expect(calls).toEqual(["recover", "identity"]); expect(f.operations).not.toContain("development.configure");
     await absent(f.file); await absent(join(f.control, "main-bootstrap.pending"));
     release.resolve(); expect(await opening).toMatchObject({ ok: true, status: { enabled: true } });
     expect(calls).toEqual(["recover", "identity", "publish"]); await access(f.file);
@@ -322,7 +326,7 @@ for (const late of ["resolve", "reject"] as const)
       expect(observedSignal?.aborted).toBe(true); release.resolve();
       expect((await opening).ok).toBe(false);
       expect(await closing).toMatchObject({ descriptorRemoved: true, listenerClosed: true, reservationCreated: true, reservationReleased: false });
-      expect(calls).toEqual(["recover"]); expect(f.operations).not.toContain("development.configure");
+      expect(calls).toEqual(["recover", "identity"]); expect(f.operations).not.toContain("development.configure");
       await absent(f.file); await absent(join(f.control, "main-bootstrap.pending"));
       expect(await readFile(join(f.reservation, "worker/partial.bin"), "utf8")).toBe("partial synthetic stage");
     } finally { release.resolve(); await opening; }
@@ -367,11 +371,55 @@ test("retains an overdue preparation promise after the full close deadline and n
     const closing = f.host.stop(); await vi.advanceTimersByTimeAsync(30001);
     const outcome = await closing;
     expect(outcome).toMatchObject({ failed: true, descriptorRemoved: false, reservationCreated: true, reservationReleased: false });
-    expect(calls).toEqual(["recover"]); expect(f.operations).not.toContain("development.configure");
+    expect(calls).toEqual(["recover", "identity"]); expect(f.operations).not.toContain("development.configure");
     await absent(f.file); await absent(join(f.control, "main-bootstrap.pending"));
     release.resolve(); expect((await opening).ok).toBe(false); expect(await f.host.stop()).toBe(outcome);
-    expect(calls).toEqual(["recover"]); expect(f.operations).not.toContain("development.configure");
+    expect(calls).toEqual(["recover", "identity"]); expect(f.operations).not.toContain("development.configure");
     expect(await readFile(join(f.reservation, "worker/partial.bin"), "utf8")).toBe("overdue stage");
     await absent(f.file);
   } finally { vi.useRealTimers(); release.resolve(); await opening; }
 });
+
+test("native session prepares and seals before backend configuration and publication", async () => {
+  const calls: string[] = []; let prepared = false, f!: Awaited<ReturnType<typeof fixture>>;
+  f = await fixture(helpers, undefined, async () => { calls.push("stage"); prepared = true; }, async (operation, file, bytes, signal) => {
+    calls.push(operation);
+    if (operation !== "publish") expect(f.operations).not.toContain("development.configure");
+    if (operation === "seal") expect(prepared).toBe(true);
+    if (operation === "publish") {
+      expect(prepared).toBe(true); expect(f.operations).toContain("development.configure");
+      await helpers.operate("publish", file, bytes, signal);
+    }
+  });
+  expect(await f.host.setEnabled(true)).toMatchObject({ ok: true, status: { enabled: true } });
+  expect(calls).toEqual(["prepare", "stage", "seal", "publish"]);
+  expect(await f.host.stop()).toMatchObject({ failed: false, descriptorRemoved: true });
+});
+for (const operation of ["prepare", "seal"] as const)
+  test("stop during native " + operation + " forbids later configuration or publication", async () => {
+    const entered = gate(), release = gate(), calls: string[] = [];
+    const f = await fixture(helpers, undefined, undefined, async (step, _file, _bytes, signal) => {
+      calls.push(step);
+      if (step === operation) { entered.resolve(); await release.promise; expect(signal.aborted).toBe(true); }
+    });
+    const opening = f.host.setEnabled(true);
+    try {
+      await entered.promise; const closing = f.host.stop(); release.resolve();
+      expect((await opening).ok).toBe(false);
+      expect(await closing).toMatchObject({ descriptorRemoved: true, reservationReleased: false });
+      expect(f.operations).not.toContain("development.configure"); expect(calls).not.toContain("publish");
+      expect(calls).toEqual(operation === "prepare" ? ["prepare"] : ["prepare", "seal"]);
+      await absent(f.file); await access(f.reservation);
+    } finally { release.resolve(); await opening; }
+  });
+for (const operation of ["prepare", "seal"] as const)
+  test("uncertain native " + operation + " exit blocks every later session operation", async () => {
+    const calls: string[] = [];
+    const f = await fixture(helpers, undefined, undefined, async step => {
+      calls.push(step); if (step === operation) throw new NativeBootstrapProcessError(false);
+    });
+    expect((await f.host.setEnabled(true)).ok).toBe(false);
+    expect(await f.host.stop()).toMatchObject({ failed: true, helperExitVerified: false, reservationReleased: false });
+    expect(calls).toEqual(operation === "prepare" ? ["prepare"] : ["prepare", "seal"]);
+    expect(f.operations).not.toContain("development.configure"); await absent(f.file); await access(f.reservation);
+  });

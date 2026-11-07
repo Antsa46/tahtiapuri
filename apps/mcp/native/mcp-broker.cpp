@@ -1,6 +1,8 @@
 #include "broker-worker.h"
 #include "broker-relay.h"
 #include "main-peer.h"
+#include "broker-session.h"
+#include <cstdio>
 
 namespace {
 using namespace mcp_runtime;
@@ -10,15 +12,57 @@ void diagnostic(HANDLE pipe,const std::string& reason,DWORD error){
     BrokerWriter output(pipe,false,1);output.bytes({message.begin(),message.end()});const auto end=clockNow()+2000;
     while(!output.idle()&&!output.failed()&&clockNow()<end)Sleep(2);output.stop();
 }
+
+struct SessionHelperInput {
+    std::array<uint8_t,bootstrapBytes+1> bytes={};
+    ~SessionHelperInput(){SecureZeroMemory(bytes.data(),bytes.size());}
+    std::array<uint8_t,bootstrapBytes> read(){
+        for(DWORD type:{STD_INPUT_HANDLE,STD_OUTPUT_HANDLE,STD_ERROR_HANDLE})
+            if(GetFileType(GetStdHandle(type))!=FILE_TYPE_PIPE)throw WinError("mcp-session-helper-pipe",ERROR_INVALID_HANDLE);
+        size_t used=0;
+        for(;;){
+            DWORD count=0;const BOOL ok=ReadFile(GetStdHandle(STD_INPUT_HANDLE),bytes.data()+used,static_cast<DWORD>(bytes.size()-used),&count,nullptr);
+            if(!ok){if(GetLastError()==ERROR_BROKEN_PIPE)break;throw WinError("mcp-session-helper-input");}
+            if(!count)break;
+            used+=count;if(used==bytes.size())throw WinError("mcp-session-helper-size",ERROR_INVALID_DATA);
+        }
+        if(used!=bootstrapBytes)throw WinError("mcp-session-helper-size",ERROR_INVALID_DATA);
+        std::array<uint8_t,bootstrapBytes> result={};std::copy_n(bytes.data(),result.size(),result.data());return result;
+    }
+};
+int sessionHelper(const std::wstring& mode,const std::wstring& path){
+    // Fixed package-bound owner operations, not a second worker entry point.
+    BrokerWatchdog watchdog;watchdog.deadline.store(clockNow()+5000);
+    SessionHelperInput input;std::array<uint8_t,bootstrapBytes> bytes={};
+    try{
+        bytes=input.read();auto bootstrap=decodeMainBootstrap(bytes.data(),bytes.size());
+        struct TicketGuard{std::array<uint8_t,32>& token;~TicketGuard(){SecureZeroMemory(token.data(),token.size());}} ticketGuard{bootstrap.launchToken};
+        if(mode==L"--prepare")prepareBrokerSession(path,bootstrap);
+        else if(mode==L"--seal")sealBrokerSession(path,bootstrap);
+        else publishBrokerSession(path,bytes);
+        SecureZeroMemory(bytes.data(),bytes.size());
+        // Every session/resource/lease handle has closed before this receipt.
+        emit(mode==L"--prepare"?"session-prepared":mode==L"--seal"?"session-sealed":"published");return 0;
+    }catch(const WinError& e){
+        SecureZeroMemory(bytes.data(),bytes.size());fprintf(stderr,"%s:%lu\n",e.what(),e.code);return 1;
+    }catch(...){SecureZeroMemory(bytes.data(),bytes.size());fputs("mcp-session-helper-invalid\n",stderr);return 1;}
+}
 }
 int wmain(int argc,wchar_t** argv){
     using namespace mcp_runtime;
-    // Fixed Main descriptor only: no worker path, policy selector or extra args.
+    if(argc==3){
+        const std::wstring mode=argv[1];
+        if(mode!=L"--prepare"&&mode!=L"--seal"&&mode!=L"--publish")return 64;
+        return sessionHelper(mode,argv[2]);
+    }
+    // Normal client mode: only the fixed descriptor, never a worker/policy path.
     if(argc!=2)return 64;
-    BrokerWatchdog watchdog;watchdog.deadline.store(clockNow()+45000);
+    const auto startupDeadline=clockNow()+45000;
+    BrokerWatchdog watchdog;watchdog.deadline.store(startupDeadline);
     try{
         BrokerOwnerPipes pipes;
         std::unique_ptr<BootstrapDirectoryGuard> control;
+        std::unique_ptr<BrokerSessionAdmission> session;
         std::unique_ptr<VerifiedMainPipe> main;
         std::unique_ptr<BrokerResources> resources;
         std::unique_ptr<BrokerJournal> journal;
@@ -30,7 +74,10 @@ int wmain(int argc,wchar_t** argv){
         std::string reason="none";DWORD error=0;
         std::function<void()> pollMain;
         try{
-            auto bootstrap=readMainBootstrapFile(argv[1]);control=std::make_unique<BootstrapDirectoryGuard>(argv[1]);
+            auto bootstrap=readMainBootstrapFile(argv[1]);
+            struct TicketGuard{std::array<uint8_t,32>& token;~TicketGuard(){SecureZeroMemory(token.data(),token.size());}} ticketGuard{bootstrap.launchToken};
+            control=std::make_unique<BootstrapDirectoryGuard>(argv[1]);
+            session=std::make_unique<BrokerSessionAdmission>(*control,bootstrap,startupDeadline);
             main=std::make_unique<VerifiedMainPipe>(bootstrap);mainPresent=true;const HANDLE channel=main->channel();
             mainWriter=std::make_unique<BrokerWriter>(channel,true,8);hostWriter=std::make_unique<BrokerWriter>(pipes.output.value,false,16);
             relay=std::make_unique<BrokerRelay>(bootstrap,[&](BrokerFrame frame){mainWriter->frame(Direction::ToMain,std::move(frame));},
@@ -49,8 +96,9 @@ int wmain(int argc,wchar_t** argv){
             while(!relay->accepted()){
                 pollMain();if(clockNow()>=authenticationEnd)throw WinError("mcp-authentication-timeout",ERROR_TIMEOUT);Sleep(2);
             }
-            resources=std::make_unique<BrokerResources>(*control);journal=std::make_unique<BrokerJournal>(*control,*resources,bootstrap);
             auto ownerAlive=[&]{pollMain();if(relay->stopping()){requestedStop=true;throw WinError("mcp-main-stop",ERROR_OPERATION_ABORTED);}};
+            ownerAlive();session->verify();resources=std::make_unique<BrokerResources>(*control);
+            session->bindResources(*resources);ownerAlive();journal=std::make_unique<BrokerJournal>(*control,*resources,bootstrap);
             worker=std::make_unique<BrokerWorker>(*resources,*journal,pipes,ownerAlive);worker->prepare();
             workerWriter=std::make_unique<BrokerWriter>(worker->input.value,false,16);worker->start();
             const auto readyEnd=clockNow()+10000;bool observedReady=false;
@@ -98,6 +146,14 @@ int wmain(int argc,wchar_t** argv){
             }catch(const WinError& e){failed=true;reason=e.what();error=e.code;}catch(...){failed=true;reason="mcp-clean-write";error=ERROR_INVALID_DATA;}
         }
         if(mainWriter){mainWriter->stop();mainWriter.reset();}
+        // Lease releases last, after the actual worker/process/Job and all
+        // journal/resource/Main handles. It is not an exit witness by itself.
+        pollMain={};relay.reset();worker.reset();journal.reset();resources.reset();main.reset();
+        if(session){
+            try{session->close();}catch(const WinError& e){failed=true;reason=e.what();error=e.code;}
+            catch(...){failed=true;reason="mcp-session-close";error=ERROR_UNHANDLED_EXCEPTION;}
+            session.reset();
+        }
         if(failed||!clean){try{diagnostic(pipes.error.value,reason,error);}catch(...){}}
         return !failed&&clean&&requestedStop?0:1;
     }catch(...){return 1;}

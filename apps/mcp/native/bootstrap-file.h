@@ -37,9 +37,9 @@ inline std::wstring bootstrapPath(const std::wstring& path) {
 }
 struct BootstrapPin {
     Handle handle;bool directory;std::wstring path;BY_HANDLE_FILE_INFORMATION initial={};
-    BootstrapPin(const std::wstring& name,bool dir,DWORD access,DWORD disposition=OPEN_EXISTING):directory(dir),path(name) {
+    BootstrapPin(const std::wstring& name,bool dir,DWORD access,DWORD disposition=OPEN_EXISTING,DWORD sharing=MAXDWORD):directory(dir),path(name) {
         const auto extended=L"\\\\?\\"+name;
-        handle.value=CreateFileW(extended.c_str(),access,dir?FILE_SHARE_READ|FILE_SHARE_WRITE:FILE_SHARE_READ,nullptr,disposition,
+        handle.value=CreateFileW(extended.c_str(),access,sharing==MAXDWORD?(dir?FILE_SHARE_READ|FILE_SHARE_WRITE:FILE_SHARE_READ):sharing,nullptr,disposition,
             FILE_FLAG_OPEN_REPARSE_POINT|(dir?FILE_FLAG_BACKUP_SEMANTICS:0),nullptr);
         if(handle.value==INVALID_HANDLE_VALUE)throw WinError("bootstrap-open");
         initial=inspect();verifyName();DWORD flags=0;

@@ -919,3 +919,133 @@ Profiilin SID:n johtaminen ei ole profiilin puuttumistodiste.
 kuvaa olemattoman profiilin poiston onnistuvan, mutta epäonnistuminen
 jättää tilan määrittelemättömäksi. Tuleva palautus käsittelee tämän
 rajattuna omistusoperaationa; polkukysely ei korvaa sitä.
+
+
+## Pysyvä session sidonta ennen liittymistä
+
+Mainin natiivinen Host käyttää pakollista resources.session-porttia.
+Tuotantoloader tarkistaa ulkoiseen descriptor-pinniin sidotun brokerin
+uudelleen ennen jokaista operaatiota ja kopioi 96 syötetavua ennen
+asynkronisia tarkistuksia. Portilla on vain kolme kiinteää operaatiota:
+
+1. Main luo uuden pysyvän varauksen, selvittää oman identiteettinsä ja
+   muodostaa liittymislipun ilman backend-kutsua. Brokerin --prepare
+   luo control-juureen uuden leasen ja PREPARING-tietueen ennen stagen kopiointia.
+2. Paketin valmistelun jälkeen --seal varmentaa saman kontekstin,
+   varauksen, kahdeksan tiedoston worker-paketin ja tyhjän scratchin.
+   Vain kokonaan onnistunut tarkistus ja pysyvä takaisinluku tuottavat READYn.
+3. Backendin configure, kuuntelija ja --publish seuraavat tätä.
+   Julkaisija pitää leasen READY-tarkistuksesta descriptorin renameen,
+   takaisinlukuun ja descriptor-kahvan sulkuun. Lease ja muut session
+   kahvat suljetaan ennen helperin onnistumiskuittausta.
+
+Nämä moodit kuuluvat pakettiin sidottuun mcp-broker.exe:en. Ne
+dispatchataan ennen tavallisen brokerin stdio-/Main-/worker-elinkaarta.
+Ne eivät yhdistä Main-putkeen, luo profiilia/Jobia tai käynnistä workeria.
+Generic main-bootstrap.exe säilyy descriptor-only-apurina.
+Sen publish ei muodosta READY-sidontaa; consume poistaa edelleen vain
+täsmälleen odotetut 96 tavua. Consume ei ota session leasea, koska Mainin
+ACCEPT muuten odottaisi brokerin pitämää lukkoa.
+
+native-session.lease sijaitsee varauksen ulkopuolella. Sen kahva avataan
+todellisella GENERIC_READ/GENERIC_WRITE-oikeudella ja share=0:lla.
+Hakemistojen metadata-kahvat eivät korvaa tätä lukkoa. BootstrapPinin
+oletusjakaminen säilyy ennallaan; eksplisiittinen nolla välitetään nollana.
+Lease sisältää kiinteän 32-tavuisen headerin. Tiedosto, identiteetti,
+owner/SYSTEM-DACL ja header varmistetaan. Nykyinen prepare on CREATE_NEW:
+aiempaa leasea tai osittaista tietuetta ei korjata tai ohiteta.
+
+native-session.bin on myös control-juuressa ja sisältää 1024 tavua:
+
+| Tavukohta | Kenttä |
+| --- | --- |
+| 0–31 | TMCSES1, versio, koko, vaihe ja Mainin PID/FILETIME |
+| 32–47 | Generation |
+| 48–95 | Controlin, reservationin, stagen ja leasen volume/indexHigh/indexLow |
+| 96–111 | Brokerin PID, nollatäyte ja FILETIME |
+| 112–175 | Paketin digest |
+| 176–371 | Owner-SID:n pituus ja enintään 192 tavua nollatäytteineen |
+| 372–383 | Varattu nollatäyte |
+| 384–415 | Alkuperäisten 96 descriptor-tavun SHA-256 |
+| 416–991 | Varattu nollatäyte |
+| 992–1023 | SHA-256 ensimmäisistä 992 tavusta |
+
+BrokerSessionStore omistaa tietueen luku-/kirjoitussopimuksen. Lataus ja
+commit varmentavat tiedostoa sekä ennen I/O:ta että takaisinluvun yhteydessä;
+commit sisältää kirjoituksen ja flushin. Jokainen virhe myrkyttää kyseisen
+store-olion: aiempi onnistunut tietue ei jää käytettäväksi eikä seuraava
+kutsu aloita uutta I/O:ta. Vaiheiden sallittu järjestys kuuluu omistavalle
+session-operaatiolle. Virheellinen tai osittainen pysyvä tila säilytetään;
+store ei korjaa sitä tai anna varauksen poistovaltuutta.
+
+PREPARINGissa stage-identiteetti on vielä tyhjä. READY sitoo sen, mutta
+ei sisällä broker-identiteettiä. Tavallinen broker ottaa saman leasen
+ennen Main-yhteyttä ja HELLOa, vertaa READY-kontekstia ja varsinaisia
+hakemistoidentiteettejä sekä tallentaa oman PID/FILETIME-parinsa pysyvään
+BROKER_ADMITTED-vaiheeseen. Descriptor-digest sitoo myös pipe-noncen ja
+liittymislipun tallentamatta lippua session-tietueeseen.
+
+Vain sharing violation on leasen odotuksessa uusittava kilpailu.
+Odotus ja koko admission-vaihe rajataan viiteen sekuntiin alkuperäisen
+startup-budjetin sisällä. Rajat tarkistetaan ennen avausyritystä,
+onnistumisen/varmennuksen jälkeen sekä ennen admission-kirjausta ja sen
+jälkeen. Myöhäinen tai epävarma kirjoitus ei johda HELLOon. Natiivisten
+helper-moodien oma kova määräaika on viisi sekuntia, Node-omistajan
+poistumishavainnon määräaika kuusi; kuittirivi ei korvaa todellista exit0:aa.
+
+Broker pitää leasen resurssielinkaaren yli. Resurssien identiteetit
+verrataan vielä sessioniin ennen journalin luontia, ja Mainin elossaolo
+tarkistetaan resurssien avaamisen molemmin puolin. Worker ei peri leasea
+tai session-kahvaa. Worker/process/Job, journal, resurssit ja Main-peer
+suljetaan ennen session-kahvaa ja viimeisenä leasea. Leasen saaminen ei
+yksin todista brokerin poistumista; tuleva vapautus tarvitsee tuoreen
+PID/FILETIME- ja poistumishavainnon.
+
+## Session-perustan todennettu näyttö ja rajat
+
+Siirrettävä C++-koe läpäisi 37 tapausta: 19 codecin ja 18 tallennusportin
+tapausta. Mukana ovat luku-, varmistus-, kirjoitus-, flush- ja takaisinlukuvirheet
+sekä virheen jälkeisen jatkon estäminen. Tarkiste on nimetty testikorvaus:
+koe ei todista kryptografiaa, Windows-tiedostorajoja tai fyysisen levyn
+virhekäyttäytymistä.
+
+Windowsin erillinen owner-koe läpäisi 22 tapausta. Se käyttää samoja
+tuotannon session-funktioita testiapurissa ja varmentaa muun muassa
+järjestyksen, muuttuneet tiedosto-/descriptor-sidonnat, virheellisen pysyvän
+tilan, leasen todellisen jakamiskiellon ja rajatun odotuksen. Julkaisijan
+hallittu katkaisu ja callback-virhe säilyttävät READYn ja julkaistun
+descriptorin. Generic consume onnistui julkaisijan pitäessä leasea.
+Tämä koe ei käynnistä normaalia broker-/worker-elinkaarta.
+
+Owner-kokeen ensimmäinen ajo säilyy epäonnistuneena: 18 tapausta läpäisi,
+kaksi ylitti ulomman aikarajan ja kaksi jäi sen jälkeen estetyiksi.
+Alkuperäisten viiveiden syy jäi avoimeksi. Testiin lisättiin rajattu,
+monotoninen apuprosessien tapahtumajälki ja alkuperäisen
+exitVerified=false-virheen säilyttävä jatkoesto. Seitsemän synteettistä
+regressiota kattaa myös myöhäisen virheen ja asynkronisen käynnistyksen
+omistajuuden. Korjattu 22 tapauksen ajo onnistui muuttamatta tuotannon
+määräaikoja. Uusi onnistuminen ei selitä aiempia viiveitä.
+
+Nykyisen lähteen tuotantobinäärit rakennettiin ja suljettu paketti
+tarkistettiin. Desktopin käännös sekä integraatio- ja yksikkötestien
+tyyppitarkistukset läpäisivät. Kohdennettu 61 tapauksen sarja sisältää
+18 lataajan testiä, 12 session-apurin testiä ja 31 Host-ohjaintestiä.
+Lataajan kumulatiivinen prosessinkäynnistyskielto säilyi. Host-testit
+korvaavat session- ja worker-portit erikseen; oikeat generic-helperit
+todistavat descriptor-polun toimintaa. Nämä testit eivät yksin todista
+uutta natiivia session-rajaa. Julkisen Host-reseptin koko 89 tapauksen
+valintaa ei ajettu tässä tarkistuksessa.
+
+Tuotantoloaderia käyttävä oikean brokerin koostumiskoe läpäisi 1/1.
+Se torjui generic-julkaisun ilman READY-tilaa ja muuttuneen descriptorin
+ennen Mainiin liittymistä. Onnistunut tilakierros varmisti
+READY/BROKER_ADMITTED-sidonnan sekä Main-STOPin ja brokerin todellisen
+exit0:n. Backend oli synteettinen ja saman Node-isännän sisällä;
+mallia ei ajettu. Brokerin FILETIME:sta varmennettiin vain ei-nolla,
+ja siivousnäyttö koostui brokerin raportista ja paikallisesta jälkitilasta.
+Tämä ei ole riippumaton prosessi-/Job-/profiili-/verkkorajan hyväksyntä.
+
+Varauksen vapautus, saman Mainin uudelleenavaus ja kaatumispalautus
+puuttuvat edelleen. Nykyinen session-tietue ei anna poistovaltuutta.
+Oletuskoostaminen ja koko sovelluksen riippumaton OS/FMI/CPU/GPU-näyttö
+eivät tule hyväksytyiksi tällä perustalla.

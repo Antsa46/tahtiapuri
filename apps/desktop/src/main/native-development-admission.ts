@@ -19,8 +19,8 @@ interface Session {
   closed?: Promise<boolean>;
 }
 
-/** Main-owned capability admission for the native path. The owner must first
- * configure the backend epoch and later revoke it on disable/failure. This
+/** Main-owned capability admission for the native path. The owner configures the backend
+ * epoch before publishing a ticket and revokes it on disable/failure. This
  * class never publishes files, authenticates OS peers, or proves worker exit. */
 export class NativeDevelopmentAdmission {
   private phaseValue: NativeAdmissionPhase = "idle";

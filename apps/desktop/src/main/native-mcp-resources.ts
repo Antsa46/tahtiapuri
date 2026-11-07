@@ -5,6 +5,9 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep, win32 } fr
 import { exactKeys, isRecord } from "@tahtiapuri/validation/public";
 import { loadNativeMcpHelpers, type NativeMcpHelpers, type NativeMcpHelperPins } from "./native-mcp-helpers.js";
 
+import { runNativeMcpSessionOperation, type NativeMcpSessionOperation } from "./native-mcp-session-operation.js";
+import { NATIVE_BOOTSTRAP_BYTES } from "./native-development-bootstrap.js";
+
 const NODE = Object.freeze({ version: "24.22.2", archive: "node-v24.22.2-win-x64.zip",
   archiveSha256: "ca1bff5d8ead13c9f2ea404a176db46bd430704d5b5113734049fa365e7799e2",
   executableSha256: "1c331340fa6cac5e4294725959070a143fa0507195a78ad77eed7943f719aac9",
@@ -20,6 +23,8 @@ type Descriptor = { schema: 1; id: "tahtiapuri-native-mcp-v1"; protocols: ["TMCT
 export interface NativeMcpResourceConfig { readonly runtimeRoot: string; readonly descriptorSha256: string }
 export interface NativeMcpHostResources {
   readonly helpers: NativeMcpHelpers;
+  /** Fixed native preparation/publication; no worker-selected operation. */
+  session(operation: NativeMcpSessionOperation, file: string, bytes: Buffer, signal: AbortSignal): Promise<void>;
   /** Only a fresh Main-owned fixed reservation; never starts or repairs a process. */
   prepareWorker(reservation: string, signal: AbortSignal): Promise<void>;
 }
@@ -124,9 +129,10 @@ function overlaps(a: string, b: string): boolean {
   const below = (parent: string, child: string) => { const rel = relative(parent, child); return rel === "" || !isAbsolute(rel) && rel !== ".." && !rel.startsWith(".." + sep); };
   return below(a, b) || below(b, a);
 }
-/** No subprocess, ACL grant, network, deletion or recovery lives in this adapter.
- * Byte/identity checks are not write/delete-excluding native handle pins. The
- * ordinary owner and administrators are trusted, as in the existing Main loader. */
+/** Loading and worker staging never start a process. The explicit session port
+ * starts only the reverified fixed broker's owner modes. No network, ACL grant,
+ * deletion or recovery lives here. Ordinary owner/admin mutation is trusted;
+ * byte/identity checks are not native write/delete-excluding executable pins. */
 export async function loadNativeMcpRuntime(config: NativeMcpResourceConfig, signal: AbortSignal): Promise<NativeMcpRuntime> {
   const root = config.runtimeRoot, descriptorSha256 = config.descriptorSha256;
   canonical(root); if (join(root, "helpers").length > 220 || !hash(descriptorSha256)) denied(); signal.throwIfAborted();
@@ -139,7 +145,7 @@ export async function loadNativeMcpRuntime(config: NativeMcpResourceConfig, sign
   if (!canonicalManifest.equals(manifestBytes)) denied();
   const files = Object.freeze([...parsedFiles, Object.freeze({ path: "runtime-manifest.json", bytes: manifestBytes.length, sha256: metadata.package.digest })]);
   const broker = join(root, "bin/mcp-broker.exe");
-  const verify = async (operationSignal: AbortSignal) => {
+  const verifyBroker = async (operationSignal: AbortSignal) => {
     operationSignal.throwIfAborted();
     const current = await read(join(root, "runtime-descriptor.json"), operationSignal, 16384);
     if (sha(current) !== descriptorSha256) denied();
@@ -147,13 +153,24 @@ export async function loadNativeMcpRuntime(config: NativeMcpResourceConfig, sign
     if (sha(build) !== metadata.buildManifestSha256) denied();
     operationSignal.throwIfAborted(); await children(join(root, "bin"), ["mcp-broker.exe"], operationSignal);
     await read(broker, operationSignal, 4194304, metadata.broker); operationSignal.throwIfAborted();
+  };
+  const verify = async (operationSignal: AbortSignal) => {
+    await verifyBroker(operationSignal); operationSignal.throwIfAborted();
     // Loading the helpers only verifies them. It cannot start either helper.
     await loadNativeMcpHelpers(join(root, "helpers"), metadata.helpers); operationSignal.throwIfAborted();
     await verifyPackage(join(root, "package"), files, operationSignal); operationSignal.throwIfAborted();
   };
   await verify(signal); signal.throwIfAborted();
   const helpers = await loadNativeMcpHelpers(join(root, "helpers"), metadata.helpers); signal.throwIfAborted();
-  return Object.freeze({ broker, packageDigest: metadata.package.digest, helpers, async prepareWorker(reservation: string, callerSignal: AbortSignal) {
+  return Object.freeze({ broker, packageDigest: metadata.package.digest, helpers,
+    async session(operation: NativeMcpSessionOperation, file: string, bytes: Buffer, operationSignal: AbortSignal) {
+      if (!Buffer.isBuffer(bytes) || bytes.length !== NATIVE_BOOTSTRAP_BYTES) denied();
+      const input = Buffer.from(bytes);
+      try {
+        operationSignal.throwIfAborted(); await verifyBroker(operationSignal); operationSignal.throwIfAborted();
+        await runNativeMcpSessionOperation(broker, operation, file, input, operationSignal);
+      } finally { input.fill(0); }
+    }, async prepareWorker(reservation: string, callerSignal: AbortSignal) {
     canonical(reservation);
     const stage = join(reservation, "worker"), target = join(stage, "package");
     if (basename(reservation) !== "native-session-reserved" || overlaps(root, reservation) || target.length > 258 || join(target, "node.exe").length > 259) denied();

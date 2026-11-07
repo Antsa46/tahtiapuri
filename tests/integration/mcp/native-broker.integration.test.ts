@@ -6,7 +6,8 @@ import { fileURLToPath } from "node:url";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { NativeDevelopmentHost, type NativeHostOutcome } from "../../../apps/desktop/src/main/native-development-host.js";
 import { loadNativeMcpRuntime } from "../../../apps/desktop/src/main/native-mcp-resources.js";
-import { decodeNativeBootstrap } from "../../../apps/desktop/src/main/native-development-bootstrap.js";
+import { securePrivateDirectory } from "../../../apps/desktop/src/main/private-directory.js";
+import { decodeNativeBootstrap, encodeNativeBootstrap } from "../../../apps/desktop/src/main/native-development-bootstrap.js";
 import { childEnvironment } from "../../../apps/desktop/src/main/child-environment.js";
 import type { BackendController } from "../../../apps/desktop/src/main/backend-controller.js";
 import { DevelopmentService } from "../../../apps/backend/src/modules/development/application/development-service.js";
@@ -28,6 +29,9 @@ async function bounded<T>(work: Promise<T>, ms: number, label: string): Promise<
     const result = await Promise.race([work, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(label + " deadline")), ms); })]);
     if (performance.now() >= end) throw new Error(label + " late completion");
     return result;
+  } catch (error) {
+    if (performance.now() >= end) throw new Error(label + " late completion");
+    throw error;
   } finally { clearTimeout(timer); }
 }
 class McpPeer {
@@ -133,22 +137,76 @@ test("round trips real MCP status and Main STOP through the native broker candid
   };
   const host = new NativeDevelopmentHost({ development }, control, runtime);
   let peer: McpPeer | undefined, outcome: NativeHostOutcome | undefined, exited: Exit | undefined;
-  let context: { generation: string; pid: number; creation: string } | undefined;
+  let context: { generation: string; pid: number; creation: string; descriptorDigest: string } | undefined;
   let stopping: Promise<NativeHostOutcome> | undefined;
   const requestStop = () => stopping ??= host.stop().then(value => { outcome = value; return value; });
   let stdinOpenAtMainStop = false, mainStopIssuedByTest = false, workerPresentAtEnabled = false;
   let success = false, original: unknown;
   const cleanupErrors: string[] = []; let phase = "enable";
+  const rejectedPeers: McpPeer[] = [];
+  const rejectBroker = async (file: string, stage: string, code: number) => {
+    if (performance.now() >= routineEnd) throw new Error("No rejected broker spawn after deadline");
+    const rejected = new McpPeer(spawn(runtime.broker, [file], { windowsHide: true,
+      stdio: ["pipe", "pipe", "pipe"], env: childEnvironment(process.env) }));
+    rejectedPeers.push(rejected);
+    expect(await routine(() => rejected.closed, 8000, "rejected-broker-exit")).toEqual({ code: 1, signal: null });
+    expect(rejected.forced).toBe(false); expect(rejected.stdoutEnded).toBe(true); expect(rejected.replies).toEqual([]);
+    expect(JSON.parse(Buffer.concat(rejected.stderr).toString("utf8"))).toEqual({ stage, code });
+  };
   try {
+    phase = "generic-publication-bypass";
+    const bypassControl = join(runRoot!, "bypass-control"), bypassFile = join(bypassControl, "main-bootstrap.bin");
+    await routine(() => securePrivateDirectory(bypassControl), 6000, "bypass-control");
+    const main = await routine(() => runtime.helpers.identity(), 6000, "bypass-identity");
+    const bypass = encodeNativeBootstrap({ main, pipeNonce: "11".repeat(16), ticket: { generation: "22".repeat(16), token: "33".repeat(32) } });
+    try {
+      await routine(() => runtime.helpers.operate("publish", bypassFile, bypass), 6000, "generic-publish");
+      await rejectBroker(bypassFile, "mcp-session-lease-open", 2);
+      expect((await routine(() => readFile(bypassFile), 3000, "bypass-descriptor")).equals(bypass)).toBe(true);
+      for (const name of ["native-session.lease", "native-session.bin", "native-session-reserved"])
+        await expect(routine(() => access(join(bypassControl, name)), 3000, "bypass-absent")).rejects.toMatchObject({ code: "ENOENT" });
+    } finally { bypass.fill(0); }
+    phase = "enable";
     expect(await routine(() => host.setEnabled(true), 35000, "host-enable")).toMatchObject({ ok: true, status: { enabled: true } });
     const launch = await routine(() => readFile(join(control, "main-bootstrap.bin")), 3000, "bootstrap-read"), decoded = decodeNativeBootstrap(launch);
-    context = { generation: decoded.ticket.generation, pid: decoded.main.pid, creation: decoded.main.creationTime.toString() }; launch.fill(0);
+    context = { generation: decoded.ticket.generation, pid: decoded.main.pid, creation: decoded.main.creationTime.toString(), descriptorDigest: digest(launch) };
     // The production Host prepared the entire worker before publishing the
     // bootstrap. This fixture no longer copies or repairs a worker package.
     const staged = await routine(() => readdir(reservation), 3000, "prepared-reservation");
     expect(staged).toEqual(["worker"]); workerPresentAtEnabled = true;
     const stageStat = await routine(() => lstat(join(reservation, "worker"), { bigint: true }), 3000, "stage-identity");
     const reservationStat = await routine(() => lstat(reservation, { bigint: true }), 3000, "reservation-identity");
+    const sessionPath = join(control, "native-session.bin"), leasePath = join(control, "native-session.lease");
+    const ready = await routine(() => readFile(sessionPath), 3000, "ready-session");
+    expect(ready.length).toBe(1024); expect(ready.subarray(0, 8).equals(Buffer.from([84, 77, 67, 83, 69, 83, 49, 0]))).toBe(true);
+    expect(ready.readUInt32LE(8)).toBe(1); expect(ready.readUInt32LE(12)).toBe(1024); expect(ready.readUInt32LE(16)).toBe(1);
+    expect(ready.readUInt32LE(20)).toBe(context.pid); expect(ready.readBigUInt64LE(24).toString()).toBe(context.creation);
+    expect(ready.subarray(32, 48).toString("hex")).toBe(context.generation);
+    expect(ready.subarray(384, 416).toString("hex")).toBe(context.descriptorDigest);
+    expect(ready.subarray(112, 176).toString("ascii")).toBe(runtime.packageDigest);
+    expect(ready.subarray(992).equals(createHash("sha256").update(ready.subarray(0, 992)).digest())).toBe(true);
+    const leaseHeader = await routine(() => readFile(leasePath), 3000, "lease-header");
+    expect(leaseHeader.length).toBe(32); expect(leaseHeader.subarray(0, 8).toString("ascii")).toBe("TMCLEAS1");
+    const leaseStat = await routine(() => lstat(leasePath, { bigint: true }), 3000, "lease-identity");
+    const controlStat = await routine(() => lstat(control, { bigint: true }), 3000, "control-identity");
+    for (const [offset, stat] of [[48, controlStat], [60, reservationStat], [72, stageStat], [84, leaseStat]] as const) {
+      expect(BigInt(ready.readUInt32LE(offset))).toBe(stat.dev);
+      expect((BigInt(ready.readUInt32LE(offset + 4)) << 32n) | BigInt(ready.readUInt32LE(offset + 8))).toBe(stat.ino);
+    }
+    phase = "wrong-descriptor-binding";
+    const foreign = Buffer.from(launch); foreign[32] = foreign[32]! ^ 1;
+    try {
+      await routine(() => runtime.helpers.operate("consume", join(control, "main-bootstrap.bin"), launch), 6000, "consume-original");
+      await routine(() => runtime.helpers.operate("publish", join(control, "main-bootstrap.bin"), foreign), 6000, "publish-foreign");
+      await rejectBroker(join(control, "main-bootstrap.bin"), "mcp-session-context", 5);
+      expect((await routine(() => readFile(sessionPath), 3000, "unchanged-ready")).equals(ready)).toBe(true);
+      await expect(routine(() => access(join(reservation, "broker-journal.bin")), 3000, "no-rejected-journal")).rejects.toMatchObject({ code: "ENOENT" });
+      expect(operations).not.toContain("development.attach");
+      // Only a known rejected child exit and unchanged READY allow restoring
+      // this test's original descriptor. No ambiguous state is repaired.
+      await routine(() => runtime.helpers.operate("consume", join(control, "main-bootstrap.bin"), foreign), 6000, "consume-foreign");
+      await routine(() => runtime.session("publish", join(control, "main-bootstrap.bin"), launch, new AbortController().signal), 7000, "publish-original");
+    } finally { launch.fill(0); foreign.fill(0); }
     phase = "spawn";
     // Single descriptor argument, stdio transport, no model or network endpoint.
     if (performance.now() >= routineEnd) throw new Error("No broker spawn after deadline");
@@ -168,6 +226,8 @@ test("round trips real MCP status and Main STOP through the native broker candid
     expect(invocations).toEqual([{ operation: "status", inputIsNull: true }]); expect(runs).toBe(0);
     stdinOpenAtMainStop = !child.stdin.writableEnded && !child.stdin.destroyed && !peer.events.includes("stdin-close");
     expect(stdinOpenAtMainStop).toBe(true); expect(peer.observedClose).toBe(false);
+    await expect(routine(() => readFile(leasePath), 3000, "exclusive-lease-read")).rejects.toMatchObject({ code: "EBUSY" });
+    await expect(routine(() => readFile(sessionPath), 3000, "exclusive-session-read")).rejects.toMatchObject({ code: "EBUSY" });
     peer.events.push("main-stop"); phase = "main-stop";
     [outcome, exited] = await routine(() => {
       mainStopIssuedByTest = true; return Promise.all([requestStop(), peer!.closed]);
@@ -202,12 +262,21 @@ test("round trips real MCP status and Main STOP through the native broker candid
     expect(journal.subarray(80, 144).toString("ascii")).toBe(runtime.packageDigest);
     expect(journal.subarray(992).toString("hex")).toBe(digest(journal.subarray(0, 992)));
     if (performance.now() >= routineEnd) throw new Error("No successful predicate after routine deadline");
+    const admitted = await routine(() => readFile(sessionPath), 3000, "admitted-session");
+    expect(admitted.readUInt32LE(16)).toBe(2); expect(admitted.readUInt32LE(96)).toBe(peer.child.pid);
+    expect(admitted.readBigUInt64LE(104)).toBeGreaterThan(0n);
+    expect(admitted.subarray(384, 416).toString("hex")).toBe(context.descriptorDigest);
+    expect(admitted.subarray(992).equals(createHash("sha256").update(admitted.subarray(0, 992)).digest())).toBe(true);
+    expect((await routine(() => readFile(leasePath), 3000, "released-lease")).equals(leaseHeader)).toBe(true);
     phase = "done"; success = true;
   } catch (error) { original = error; }
   finally {
     try { const alreadyRequested = !!stopping; outcome ??= await bounded(requestStop(), alreadyRequested ? 1000 : 35000, "cleanup-host-stop"); } catch (error) { cleanupErrors.push(String(error)); }
     if (peer) {
       try { await peer.stopOwned(); exited ??= await peer.closed; } catch (error) { cleanupErrors.push(String(error)); }
+    }
+    for (const rejected of rejectedPeers) {
+      try { await rejected.stopOwned(); } catch (error) { cleanupErrors.push(String(error)); }
     }
     service.configure(null); assistant.dispose();
     // Preserve every fixture, including a successful journal. No recovery or
@@ -220,6 +289,8 @@ test("round trips real MCP status and Main STOP through the native broker candid
       brokerStderr: Buffer.concat(peer?.stderr ?? []).toString("utf8"), error: original instanceof Error ? original.message : original ? String(original) : null,
       cleanupErrors, evidenceScope: "Functional Node-host/Main-STOP only; broker-reported cleanup and local post-state, no independent OS/network/profile proof",
       fixturePreserved: true, recoveryAttempted: false, inspectorExecuted: false, stdinEndedByTest: false,
+      nativeRejections: rejectedPeers.map(rejected => ({ actualClose: rejected.observedClose, forced: rejected.forced,
+        stderr: Buffer.concat(rejected.stderr).toString("utf8") })),
       stdinOpenAtMainStop, mainStopIssuedByTest, workerPresentAtEnabled, stdoutEnded: peer?.stdoutEnded ?? false,
       terminalSuccessRequires: "One passed Vitest case, actual process exit0, no timeout/cleanup errors; this receipt alone is not terminal success",
     }, null, 2) + "\n", { flag: "wx", signal: receiptAbort.signal }), 3000, "functional-receipt-write"); }

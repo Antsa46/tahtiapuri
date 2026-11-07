@@ -55,7 +55,7 @@ export class NativeDevelopmentHost {
   constructor(private readonly backend: Backend, private readonly directory: string, private readonly resources: NativeMcpHostResources) {
     if (process.platform !== "win32" || !/^[A-Z]:\\/.test(directory) || win32.normalize(directory) !== directory
       || directory.length > 200 || directory === win32.parse(directory).root) throw new Error("Invalid native development directory.");
-    if (typeof resources?.prepareWorker !== "function") throw new Error("Missing native MCP worker preparation.");
+    if (typeof resources?.prepareWorker !== "function" || typeof resources.session !== "function") throw new Error("Missing native MCP worker preparation.");
     claimDevelopmentBackend(backend);
     this.file = join(directory, "main-bootstrap.bin");
   }
@@ -108,12 +108,17 @@ export class NativeDevelopmentHost {
       try { if (await entries.read()) throw new Error("Native reservation is not empty."); } finally { await entries.close(); }
       await this.helper(() => this.resources.helpers.operate("recover", this.file, undefined, this.abort.signal));
       this.descriptorState = "absent"; this.alive();
-      // The descriptor is an executable launch opportunity for an external MCP
-      // client. Finish the fixed package before identity/configure/listen/publish.
-      // Cancellation never abandons this tracked promise or removes partial data.
-      await this.resources.prepareWorker(join(this.directory, "native-session-reserved"), this.abort.signal); this.alive();
+      // Identity/ticket construction is local; no backend configuration or
+      // admission listener exists until native preparation and sealing finish.
       const main = await this.helper(() => this.resources.helpers.identity(this.abort.signal)); this.alive();
       const epoch = randomBytes(32).toString("hex"), pipeNonce = randomBytes(16).toString("hex");
+      this.admission = new NativeDevelopmentAdmission(this.backend, epoch);
+      const ticket = this.admission.issueTicket();
+      if (!ticket) throw new Error("Native admission unavailable.");
+      this.descriptor = encodeNativeBootstrap({ main, pipeNonce, ticket });
+      await this.helper(() => this.resources.session("prepare", this.file, this.descriptor!, this.abort.signal)); this.alive();
+      await this.resources.prepareWorker(join(this.directory, "native-session-reserved"), this.abort.signal); this.alive();
+      await this.helper(() => this.resources.session("seal", this.file, this.descriptor!, this.abort.signal)); this.alive();
       // A failed acknowledgement can still mean the backend changed; revoke it.
       this.configuration = Promise.resolve().then(() => {
         this.alive(); this.epochConfigured = true;
@@ -121,10 +126,6 @@ export class NativeDevelopmentHost {
       });
       const configured = await this.configuration; this.alive();
       if (!configured.ok || !("status" in configured) || !configured.status.enabled) throw new Error("Native backend unavailable.");
-      this.admission = new NativeDevelopmentAdmission(this.backend, epoch);
-      const ticket = this.admission.issueTicket();
-      if (!ticket) throw new Error("Native admission unavailable.");
-      this.descriptor = encodeNativeBootstrap({ main, pipeNonce, ticket });
       const server = createServer(socket => this.accept(socket));
       server.maxConnections = 4; this.server = server;
       server.on("error", () => { this.failed = true; void this.stop(); });
@@ -137,7 +138,7 @@ export class NativeDevelopmentHost {
       });
       await this.listening; this.alive();
       this.descriptorState = "publishing";
-      this.descriptorWork = this.helper(() => this.resources.helpers.operate("publish", this.file, this.descriptor, this.abort.signal))
+      this.descriptorWork = this.helper(() => this.resources.session("publish", this.file, this.descriptor!, this.abort.signal))
         .then(() => { this.descriptorState = "published"; }, error => { this.descriptorState = "uncertain"; throw error; });
       // The descriptor may become visible before the publisher exits. A claimed
       // connection must await publication settlement before consuming it.
