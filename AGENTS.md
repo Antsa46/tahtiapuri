@@ -71,7 +71,7 @@ Lue tehtävän mukaan:
   [MCP:n stream-koostaminen ja rajat](docs/experiments/mcp-stream-composition.md) sekä
   [MCP-työntekijän kaksikanavainen kuljetus ja natiivipaketti](docs/architecture/mcp-native-transport.md) sekä
   [liittyneen MCP-sessionin vapautus](docs/architecture/mcp-clean-release.md)
-- natiiviapurien käynnistyksen säievalvonta, atominen valtuusportti, myöhäinen käynnistys/sulku tai Node-koesarjan omistus ja loppuraportti:
+- natiiviapurien käynnistyksen säievalvonta, samassa omistajassa tapahtuva tiedostovalmistelu, atominen valtuusportti, myöhäinen käynnistys/sulku tai Node-koesarjan omistus ja loppuraportti:
   [natiiviapurien käynnistysvalvoja](docs/architecture/native-launch-supervisor.md)
 - toiminnallinen muutos, testit, testien sijainti tai paketointi:
   [testausohje](docs/ai/testing-rules.md)

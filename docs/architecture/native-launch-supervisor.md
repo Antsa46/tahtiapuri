@@ -1,14 +1,18 @@
 # Natiiviapurien käynnistysvalvoja
 
-Tila: Main-valvoja, oikean säikeen sovitin ja worker-core ovat lähteessä.
-Desktop-build, testityypit ja 180 tapausta ovat läpäisseet: 154 determinististä
-mocktapausta ja 26 tiedostoresurssitapausta, yhteensä 11 tiedostoa.
-Mukana ovat gate/aikabudjetti 10, valvoja 29, worker-core 22, config 7,
-worker-loader 6, myöhäinen havainto 7, identity-codec 7, semanttinen sovitin 23,
-resurssiomistaja 23, resurssitehdas 20 ja tiedostoresurssit 26.
-Suljettu valinta on tests/support/mcp/native-launch-resources-vitest.config.mjs.
-Aiemmat 170/106/81/70/56 sarjat ovat osin samoja testejä, eikä niitä summata.
-56 sisälsi erilliset 20 suoran bootstrapin tapausta.
+Tila: Main-valvoja, Worker-sovitin ja Hostin pakollinen resurssilataaja
+jakavat saman pakettiin sidotun omistajan. BC:n 306 tapauksen mock-/Node-
+komponenttivalinnan jälkeen hyväksyttiin myös BD:n rajattu hakemistoskriptikoe,
+BE:n kolmen resurssikutsun koe ja BF:n kaksi erillistä oikeaa Host-tapausta.
+BF:n Host-ajot käyttivät suoraa compiled-importia. Nykyisellä lazy-import-
+fixturellä on tyypitys-, keräily- ja import-only-näyttö, ei uutta oikeaa Host-ajoa.
+Ajantasaisen näyttörajan omistaa [BF:n rajattu näyttö](#node-isännän-rajattu-testinäyttö).
+Oletus-Electron-koostaminen ja koko sovelluksen oikeusmatriisi ovat edelleen
+avoinna. Alla vanhan vaiheen ajamattomuusväite koskee vain nimettyä vaihetta.
+
+BC:n suljettu valinta on tests/support/mcp/native-directory-grant-vitest.config.mjs.
+Aiemmat 199/93/180/170/106/81/70/56 sarjat ovat osin samoja testejä,
+eikä niiden tapausmääriä summata.
 
 Aiempaa käynnistyssovitinta käyttänyt oikea identity–recover-Node/Worker-koe läpäisi molemmat
 operaatiot todellisilla lapsen close- ja säikeen exit0-havainnoilla. Ensimmäinen
@@ -28,7 +32,7 @@ worker_threads-säie omistaa yhden apurin koko ChildProcess-elinkaaren.
 Main omistaa pyynnön, alkuperäisen absoluuttisen määräajan, peruutuksen ja
 valtuustiedon. Kutsuissa ei ole vapaata ohjelmaa, argv:tä, ympäristöä tai
 worker-URL:ia. Pakettiin sidottu composition muodostaa kiinteän adapterin
-identity-, bootstrap- tai session-operaatioille.
+identity-, directory-, bootstrap- tai session-operaatioille.
 
 Saman Mainin elinkaariomistaja säilytetään myös epävarmuuden jälkeen.
 Yksi pyyntö saa olla keskeneräinen; odotusjonoa, omistajan nollausta,
@@ -68,8 +72,9 @@ määräaika säilyy. `started` ei aloita uutta budjettia. Tämä on uusi
 käynnistyssopimus; aiempia neljän/kuuden sekunnin kokeita ei tulkita sen avulla
 uudelleen. Havaittu viive ei osoita sen aiheuttajaa.
 
-Mainin alkuperäinen 30 sekunnin sulku ja natiivin oma viiden sekunnin
-watchdog stdin-odotuksineen säilyvät. Myöhempi composition välittää sulun
+Mainin alkuperäinen 30 sekunnin sulku ja C++-natiiviapurien oma viiden
+sekunnin watchdog stdin-odotuksineen säilyvät. Directory-roolin PowerShelliä
+rajaa sama Main/Worker-määräaika; sille ei väitetä C++-apurien sisäistä watchdogia. Myöhempi composition välittää sulun
 jäljellä olevan alkuperäisen ajan; uusi 20 sekunnin allowance ei jatka sitä.
 Timeout tai cancel ennen commitia estää syötteen. Commitin jälkeen
 mahdollinen vaikutus ja epävarmuus säilyvät myös myöhäisen sulkuhavainnon jälkeen.
@@ -77,18 +82,27 @@ mahdollinen vaikutus ja epävarmuus säilyvät myös myöhäisen sulkuhavainnon 
 ## Kiinteä worker ja rajattu ajonäyttö
 
 Sovitin lataa vain compiled `native-launch-worker.js`-entryn. Sen todellinen
-runtime-ketju on core → config, gate ja recovery-grant; Main-puoli sitoo lisäksi
-portin, valvojan sekä validation/public-riippuvuuden. Worker käyttää tyhjää
-execArgv:tä, argv:tä ja ympäristöä. Lapselle välitetään vain erikseen hyväksytyt
-neljä ympäristöavainta ja kiinteän paketin yhdeksän operaatiomuotoa.
+runtime-ketju on core → config, gate, recovery-grant ja directory-grant;
+Main-puoli sitoo lisäksi portin, valvojan sekä validation/public-riippuvuuden.
+Worker käyttää tyhjää execArgv:tä, argv:tä ja ympäristöä. Muut lapsiroolit saavat
+enintään neljä erikseen hyväksyttyä ympäristöavainta. Directory-rooli saa lisäksi
+sidotun TAHTIAPURI_PRIVATE_DIR-avaimen. Suljettuja operaatiomuotoja on nyt
+kymmenen: aiemmat yhdeksän ja directory. SystemRoot sidotaan kanonisesta,
+luotetusta Main-ympäristöstä, eikä operaatiopyyntö valitse järjestelmäohjelmaa.
 
 Yksi loader-kutsu varaa Main-moduulin elinkaaren ennen validointia tai I/O:ta.
 Lähde-/eval-entryä, omistajan resettiä tai Worker.terminate/unref-varareittiä
-ei ole. Kolmen natiiviohjelman ja viiden worker-tiedoston koko/hash tarkistetaan
+ei ole. Kolmen natiiviohjelman ja kuuden worker-tiedoston koko/hash tarkistetaan
 riippumattomasti hyväksytyistä pinneistä. Saman käyttäjän tai ylläpitäjän
 sovelluskoodin muutos on luottamusrajan sisällä; tarkistus ei ole Windowsin
 kirjoittamisen/poiston estävä ohjelmakahva. Worker on luotettua sovelluskoodia,
 ei käyttöjärjestelmän eristysraja.
+
+Alla olevien aiempien oikeiden kokeiden Worker-sulkeumassa oli viisi moduulia,
+eikä niissä ollut directory-roolia. Uuden roolin rajattu mock-/controller-näyttö on mukana edellä mainitussa
+306 tapauksen BC-sarjassa. Tämä sarja ei yksin todista grant-/ACL- tai
+Worker–Host-ketjua. Myöhemmän BD-/BE-/BF-näytön rajaus on
+[BF:n yhteenvedossa](#node-isännän-rajattu-testinäyttö).
 
 Ensimmäinen oikea Node-koe käynnisti vain identity-pyynnön ja pysähtyi noin
 neljän sekunnin rajaan. Recoveriin, fixturekirjoitukseen tai valtuutukseen ei
@@ -131,8 +145,9 @@ sovelluksen oikeusrajoja.
 
 ## Semanttinen kutsusovitin (kesken)
 
-NativeLaunchOperations on vielä kytkemätön lähdeosa. Sen kutsuissa on vain
-identity, bootstrap- tai session-operaatio, tarvittaessa oma 96 tavun descriptor,
+NativeLaunchOperations kuuluu nyt pakettiin sidottuun resurssipolkuun;
+sovelluksen oletuskoostaminen on vielä avoin. Sen kutsuissa on vain
+directory-, identity-, bootstrap- tai session-operaatio, tarvittaessa oma 96 tavun descriptor,
 alkuperäinen omistajan bigint-määräaika ja peruutussignaali. Resurssikoostamisen
 on muodostettava omistajan alkuperäinen budjetti jo ennen uudelleenvarmennusta;
 sovitin ei anna sille uutta aikaa. Varattu bridge estää rinnakkaisen dispatchin
@@ -169,11 +184,12 @@ koko 106 tapauksen mockvalinta läpäisivät; riippumaton tarkastaja vahvisti
 rajatun näytön. Tässä 106 tapauksen vaiheessa tiukennettua oikeaa worker-probea
 tai uutta sovitinketjua ei vielä ajettu. Myöhempi resurssipolun ajonäyttö on
 kuvattu erikseen alla; tiukennettu vanha worker-probe säilyy ajamatta.
-Main/Host/resurssikerroksen oletusliitosta ei ole tehty.
+Sovelluksen oletusliitosta ei ole tehty; myöhemmät rajatut Host-kokeet on
+erotettu [BF:n näytössä](#node-isännän-rajattu-testinäyttö).
 
 ## Pakettiin sidottu resurssiomistaja (kesken)
 
-Uusi, vielä kytkemätön tehdas muodostaa verifierin ja Worker/Operations-omistajan
+Tehdas muodostaa verifierin ja Worker/Operations-omistajan
 samasta ulkoisella descriptor-hashilla hyväksytystä paketista. Config ei valitse
 niitä erikseen. Recovery-hyväksyntä kohdistuu nimenomaisesti samaan descriptoriin;
 THREC001:tä ei päätellä paketin omasta ilmoituksesta. ControlFile sidotaan kerran
@@ -186,8 +202,8 @@ resolve/reject ei korvaa jo palautunutta virhettä, luovuta uutta omistajaa tai
 käynnistä seuraavaa latausvaihetta. Monotonic-raja tarkistetaan luovutushetkellä
 myös ilman timer-dispatchia. Taustalla odottavaa I/O:ta ei väitetä peruuntuneeksi.
 
-Jokainen resurssikutsu varaa omistajan synkronisesti ja kopioi descriptorin
-ennen verifierin awaitia. Kellomuunnos lukee hrtime-arvon ensin ja performance-
+Natiiviapurille menevä resurssikutsu varaa omistajan synkronisesti ja kopioi
+tarvittavan descriptorin ennen verifierin awaitia. Kellomuunnos lukee hrtime-arvon ensin ja performance-
 arvon vasta sen jälkeen; jäljellä oleva aika pyöristetään alaspäin ja rajataan
 20 sekuntiin kerran ennen I/O:ta. Sama bigint-raja kulkee Operationsille.
 Myöhäinen verify-tulos tai abortti ei aloita natiividispatchia. Alkuperäinen
@@ -198,18 +214,20 @@ Lukuvarmennin tarkistaa alkuperäisen descriptor-pinnin, build-manifestin sekä
 kolme kiinteää ohjelmaa. Se ei kutsu legacy-helpereitä tai palauta uusia
 polkuvalintoja. Saman käyttäjän/ylläpitäjän luottamusraja ja native-handle-pinnin
 puuttuminen säilyvät. Vanha NativeMcpRuntime palauttaa edelleen saman rajapinnan;
-uusi launch-source ei altista sen suoritus- tai staging-metodeja.
+uusi launch-source ei altista sen suoria suoritusmetodeja. Samaan pakettiin
+sidottu uusi staging-kyvykkyys kuvataan erikseen alla.
 
 Resurssiosan lähde- ja raakanäyttökatselmus, desktop-build sekä kymmenen
 TS-testitiedoston tyypitys läpäisivät. Uudet 18 resurssiomistajan ja 20 tehtaan
 mockia sekä laajennettu 26 tiedostoresurssin sarja läpäisivät osana 170 valintaa.
 Ensimmäinen AW-putki pysähtyi testin readonly-delete-tyypitykseen ennen
 koesarjaa; vain fixturetyypin korjaus edelsi uutta onnistunutta ajoa.
-Hostin/defaultin käyttöönottoa ei ole tehty. Oikean resurssitehtaan kahden
-apurikutsun näyttö on kuvattu erikseen alla.
-Avaamisen kokonaisbudjetti on erillinen avoin valinta. Hostin alkuperäinen
-30 sekunnin cleanup-raja säilyy; staging tarvitsee alkuperäisen määräajan
-ennen jokaista mkdir/copy-operaatiota ja jokaisen awaitin jälkeen.
+AW:n tässä vaiheessa Host-liitosta ei ollut tehty. Myöhemmän rajatun
+Host-liitoksen omistaa [BF:n näyttö](#node-isännän-rajattu-testinäyttö);
+sovelluksen oletuspolku säilyy avoimena. Kahden resurssikutsun AY-näyttö
+on kuvattu erikseen alla. Sovelluksen oletuspolun avausbudjetti on avoin
+valinta. Host säilyttää alkuperäisen 30 sekunnin cleanup-rajan, ja staging
+käyttää nyt samaa alkuperäistä avausrajaa pakollisen loader-portin kautta.
 
 ## Kutsukohtainen havaintokahva (kesken)
 
@@ -252,7 +270,252 @@ verify ilman dispatchia, unavailable-havainto sekä reentrant verifieri.
 Tämä 180 tapauksen sarja ei yksin lisää todellista resurssi/Worker-, Host-
 tai oletuskoostamisnäyttöä.
 
+## Valmistelun yhteinen elinkaariportti (kesken)
+
+Sama ulkoa hyväksytty paketti antaa nyt myös sisäisen staging-kyvykkyyden.
+Lataus ja launch-varmennus pysyvät vain lukevina. Erillinen stageWorker
+valmistelee täsmälleen saman kahdeksan tiedoston kohortin; se ei käynnistä
+prosessia, myönnä ACL-oikeuksia tai poista jälkiä. Tehdas johtaa reservationin
+kerran sidotun controlFile-hakemistosta. prepareWorker-kutsulle annetaan vain
+alkuperäinen omistajamääräaika ja peruutussignaali, ei uutta kohdepolkua.
+
+Valmistelu ja natiivikutsut jakavat saman aktiivisen työn portin sekä pysyvän
+epäonnistumistilan. Stagingin alkuperäinen raja on pienempi omistajarajasta ja
+valmistelun alusta + 30 sekuntia. Apurikäynnistyksen 20 sekunnin katto säilyy
+erillisenä. Hrtime luetaan ennen performance-arvoa. Sama kerran muodostettu
+bigint-raja välitetään paketin stagingiin; siellä ei muodosteta uutta aikaa.
+Sitä ja peruutusta tarkistetaan ennen jokaista mkdir-/copyFile_EXCL-kutsua,
+jokaisen staging-vaiheen awaitin jälkeen ja ennen onnistumisen luovutusta.
+
+Julkinen tulos voi epäonnistua ennen kesken olevan kopion päättymistä.
+Alkuperäinen staging-lupaus ja havaintoketju säilyvät aktiivisessa työssä.
+Myöhäinen tulos ei aloita seuraavaa kopiota tai natiivikutsua. Osittainen
+puu säilytetään ja omistaja jää epäonnistuneeksi; uutta omistajaa, resettiä
+tai legacy-varareittiä ei käytetä. Vanha runtime-rajapinta säilyttää aiemman
+signal-/timeout-politiikkansa ja käyttää samaa tiedostovalmistelun toteutusta.
+
+Kutsukohtaisen bindingin kind erottaa native- ja stage-kutsun. Stage sisältää
+alkuperäisen staging-Promisen, ei keksittyä native-settled- tai sulkutodistetta.
+Sen exitVerified kertoo vain, ettei tämä tiedostovalmistelu käynnistä prosessia;
+se ei todista keskeneräisen tiedostotyön päättymistä tai aiempien lasten sulkua.
+StagingPending/pending säilyvät alkuperäisen I/O:n päättymiseen. Outcome pitää
+alkuperäisen tulosrajan virheen erillään myöhäisen tiedostotyön tuloksesta.
+
+Staging-lähdeosan, täsmällisen koereseptin ja raakatulosten riippumaton
+katselmus sekä desktop-build ja testityypitys läpäisivät. Yhteensä 199/199
+tapausta läpäisi ilman ohituksia tai uusintaa: aiemmat 180 ja uudet 11
+omistajan, yksi tehtaan ja seitsemän tiedostovalmistelun tapausta.
+Tiedostotestit käyttivät omaa koepuutaan ja sovellusprosessien käynnistys
+oli estetty. Ne eivät ajaneet oikeaa staging–Host–Worker-ketjua tai hyväksy
+sen käyttöjärjestelmärajoja. Tämä on AZ-vaiheen rajaus; myöhemmät
+Host-tulokset erotetaan [BF:n näytössä](#node-isännän-rajattu-testinäyttö).
+
+Hostin liitos vaatii alkuperäisen avausrajan ennen hakemiston valmistelua,
+saman rajan koko avausketjuun ja consume-toiminnolle omistajan
+autentikointirajan ennen publication-odotusta. Nämä rajat on kytketty
+pakolliseen loader-porttiin. PrivateDirectoryn suora käynnistys korvattiin
+saman omistajan directory-roolilla; alkuperäisten töiden omistus säilyy.
+Terveen omistajan normaali cleanup voi käyttää alkuperäistä 30 sekunnin rajaa;
+epäonnistunut tai keskeneräinen työ estää uudet tiedosto-/natiivimutaatiot.
+Backendin detach/revoke ja listenerin sulku etenevät siitä riippumatta.
+Uusi erillinen cleanup-omistaja tai resetti ei ole varareitti.
+
+## Hostin pakollinen resurssilataaja (kesken)
+
+Sama NativeDevelopmentHost käyttää nyt pakollista luotettua loader-porttia.
+Tuotantoon ei lisätä valinnaista legacy-lifecycle-hookia tai suorien apurien
+varareittiä. Constructor varaa backendin elinikäisen omistajuuden ennen
+lataajacallbackeja. setEnabled(true, openingDeadline) tarvitsee alkuperäisen
+absoluuttisen performance-rajan ennen hakemiston valmistelua. Alkuperäinen
+opening-Promise julkaistaan ennen callbackeja ja säilyy erillään määräajassa
+päättyvästä julkisesta tuloksesta. Myöhäinen työ ei aloita seuraavaa vaihetta.
+
+Pakettiin sidottu factory palauttaa saman muuttuvan resurssiomistajan ja
+muuttumattoman controlFile-metadatan. Koko owner-instanssia ei jäädytetä,
+eikä metodeihin lisätä Promise-identiteetin vaihtavia async-kääreitä.
+Host tarkistaa controlFilen täsmäosuman ennen ensimmäistä operaatiota.
+Operaatioihin ei anneta erillisiä tiedostopolkuja. Loader tarkistaa nyt olemassa olevan välittömän vanhemman ja sallii vain
+puuttuvan kontrollilehden. Host tarkistaa sidonnan ja kutsuu saman omistajan
+prepareDirectory-operaatiota ennen varausta tai muita operaatioita.
+Hakemistovalmistelun jatkomuutos kuuluu hyväksyttyyn rajattuun 306 tapauksen
+BC-sarjaan. Sen mock-rajaus ei yksin hyväksy oikeaa grant-/ACL- tai
+Worker–Host-ketjua; myöhemmät tulokset on erotettu
+[BF:n näytössä](#node-isännän-rajattu-testinäyttö).
+
+NativeDevelopmentResourceCall säilyttää kutsun alkuperäisen Promisen ja sen
+result-havainnot ennen observeCall-hakua. Host lisää tietueen omaan elinkaareen
+ennen hakucallbackia. Myös falsy-poikkeama jää havaintopuutteeksi. Tietue
+odottaa alkuperäistä verify-/stage-/operaatiotyötä sekä sidottuja native-
+result/settled-havaintoja. Promise.allSettled ei muuta hylkäyksiä onnistumiseksi;
+alkuperäiset tuloslajit ja syyobjektit säilyvät. Vanhan kutsun settlementiä
+tai nykyistä statuslast-arvoa ei lainata uuden kutsun sulkutodisteeksi.
+
+Sulku pitää alkuperäisen close-Promisen ja 30 sekunnin rajan. Backendin
+irrotus/mitätöinti ja listenerin sulku käynnistyvät odottamatta resurssityötä.
+Consume/release tarvitsee täsmäävän sidonnan, päättyneet alkuperäiset työt,
+terveen omistajan sekä positiiviset alkuperäiset sulkuhavainnot. Myös täyttynyt
+mutta uncertain-settlement estää mutaation. Julkinen myöhäinen sulkutulos ei
+korvaa aiempaa aikakatkaisua. Havainnointi ei käynnistä uutta aktoria tai
+pidennä onnistumisen määräaikaa.
+
+Testisiirto säilyttää vanhojen 44 tapausten vastuut: 38 controller-tapausta
+siirtyy uuteen synteettiseen resurssiporttiin ja kuusi helper-paketin oraakkelia
+helperin omiin testeihin. Controller-fixture käyttää oikeita Node-tiedostoja,
+paikallisia putkia ja backend-palveluja mutta synteettisiä resurssi-/sulku-
+havaintoja. ACL-valmistelu on fixture-mkdir, eikä sovellusprosessia käynnistetä.
+Se ei ole C++-julkaisun, Windowsin oikeuksien tai todellisen Workerin näyttöä.
+Fixturen alkuperäiset työt odotetaan ennen oman koepuun poistoa.
+Ennen directory-valmistelua ajettu suljettu 93 tapauksen valinta sisältää 50 controller-, 12 ledger-,
+22 factory- ja yhdeksän helper-tapausta. Desktop-build, testityypitys ja
+kaikki 93 tapausta läpäisivät yhden rajatun ajon ilman ohituksia tai uusintoja.
+Riippumaton lähde- ja raakakuittien katselmus hyväksyi tämän rajatun näytön.
+BB:n 93 tapauksen vaiheessa tyypitykseen sisältyvä oikea broker-fixture jäi
+ajamatta. Prosessikuitit eivät
+vahvista jälkeläisten sulkua, eikä controller-koe hyväksy Windowsin eristystä.
+
+BB-vaiheessa broker-fixturen rajapinta siirrettiin uuteen loaderiin ilman
+uuden oikean ajon hyväksyntää. BF:n suoran import-version kaksi myöhempää
+Host-ajoa sekä nykyisen lazy-import-version erillinen näyttöraja ovat
+[BF:n yhteenvedossa](#node-isännän-rajattu-testinäyttö). Jokainen oikea tapaus tarvitsee tuoreen Main-
+prosessin sekä ajoreseptin erikseen hyväksymän launch-binding.json-syötteen;
+THREC001-lupaa tai compiled-pinneja ei päätellä paketin omasta ilmoituksesta.
+Vanhaa reseptiä ei käytetä omistajan nollaamiseen. Suoran
+securePrivateDirectory-kutsun korvaava saman valvojan directory-rooli on nyt
+lähteessä ja hyväksytyssä rajatussa BC:n 306 tapauksen sarjassa. Tässä vaiheessa
+todellinen grant-/ACL-käyttäytyminen ja Worker–Host-ketju jäivät avoimiksi;
+myöhemmät BD-/BE-/BF-kokeet eivät laajenna tämän mock-sarjan todistusvoimaa.
+Mock-näyttö ei ole oikean Host-kokeen, OS-eristyksen tai oletuskoostamisen hyväksyntä.
+
+Hakemistovalmistelu käyttää kiinteää järjestelmän PowerShell-polkua ja
+pinneihin kuuluvaa kiinteää script/grant-moduulia. PowerShell on erillinen
+luotettu Windows-resurssi; kolme natiiviohjelmapinniä eivät hyväksy sitä.
+Ainoa operaatiopyyntö on directory, ilman polkua, ohjelmaa tai caller-inputia.
+Sovitin muodostaa THDIR001-kehyksen, ja sama valvoja luovuttaa sen vain
+alkuperäisen määräajan/CAS-portin kautta. Script odottaa täsmälleen kahdeksan
+raakatavua ja EOF:n ennen ensimmäistä tarkoituksellista tiedostomutaatiota.
+Kuitti kelpaa vasta alkuperäisen lapsen close- ja Workerin exit0-havaintojen jälkeen.
+
+Vain kontrollilehti saa puuttua. Script tarkistaa polkuketjun uudelleen grantin
+jälkeen ja vaatii välittömälle vanhemmalle valmiin Mainin omistaman, periytymisen
+sulkevan owner/System-DACL:n. Samat ehdot tarkistetaan olemassa olevalta lehdeltä
+ennen luontikutsua ja lopputilasta ennen kuittia. Väärää omistajaa tai DACL:ää
+ei korjata. Luotettu Main-koostaminen vastaa myös vanhemman ja olemassa olevien
+esi-isien suojaamisesta muiden käyttäjien vaihdoilta: Node/.NET-polkuhavainnot
+eivät ole native-handleen sidottu identiteettilukko. Saman käyttäjän/adminin
+sovellus- tai polkumuutoksia ei rajata tällä mekanismilla. Täysi grant voi jo
+sallia vaikutuksen; sen jälkeinen abortti säilyttää authorityCommitted-tiedon
+eikä poista hakemistoa tai käynnistä uutta yritystä.
+
+Erillinen aito script-koe läpäisi 19 tapausta: kaksi luonnollista exit0-
+onnistumista, 16 odotettua luonnollista exit1-torjuntaa ja yksi suunniteltu
+no-EOF-katkaisu. Kaikkien lapsien alkuperäinen päättyminen ja putkilukujen
+valmistuminen sekä 22 ulomman vaiheen exit0 havaittiin. Riippumaton lähde- ja
+raakakuittien katselmus hyväksyi rajatun näytön. Node varmisti fixturejen
+identiteetit/sisällöt ja junction-kohteiden canaryt ennen vain linkkien poistoa.
+
+Koe käyttää samaa pinneihin sidottua script/grant-arvoa ja kuuden compiled-
+moduulin sulkeumaa. Windowsin Framework-stdin-kirjoittajan alkutavujen on oltava
+tyhjät ennen Startia ja palautuneessa writerissä; konsolin asetuksia ei muuteta.
+Peruste näkyy Microsoftin [Process-toteutuksessa](https://raw.githubusercontent.com/microsoft/referencesource/main/System/services/monitoring/system/diagnosticts/Process.cs)
+ja [StreamWriter-toteutuksessa](https://raw.githubusercontent.com/microsoft/referencesource/main/mscorlib/system/io/streamwriter.cs). Synkronisen Start/Write/Flush/EOF-vaiheen myöhästyminen jää pysyväksi
+virheeksi. Writerillä on yksi sulkija. No-EOF-kokeen tarkoituksellinen omistetun
+lapsen tappaminen erotetaan luonnollisista suluista, eikä yksittäinen
+puuttumisnäyte todista scriptin lukukohdan saavuttamista. Junctionien kohteiden
+sisältö ja oikeudet tarkistetaan ennen vain itse linkkien poistamista.
+Väärä omistaja, laaja ACL-matriisi ja vihamielinen polunvaihtokilpailu jäävät
+rajauksen ulkopuolelle; nämä tapaukset eivät hyväksy Worker/Host-ketjua.
+
+Node-isännän testiapu säilyttää nyt alkuperäiset loader-, factory-, kutsu-,
+Worker- ja tiedosto-I/O-havainnot. Delegaatti palauttaa täsmälleen alkuperäisen
+Promisen ja lisää kutsun elinikäiseen luetteloon ennen havaintokahvan hakua.
+Fyysinen sulkeutuminen erotetaan alkuperäisestä onnistumisesta: myöhäinen
+child-close/Worker-exit ei korota alkuperäistä exitVerified-epävarmuutta.
+Stage vaatii alkuperäisen tiedosto-I/O:n valmistumisen ilman prosessiväitettä.
+
+Ennen käynnistyksiä asennettu elävä kahva säilyttää keskeneräisen työn
+ulomman prosessipuuomistajan saavutettavana. Näissä erillisissä tapauksissa
+framework-aikaraja on nolla; alkuperäiset operaatio- ja kuuden sekunnin
+sulkuhavainnon rajat säilyvät. Epäonnistunut ensisijainen kuitti jää
+muuttumattomaksi ja myöhäinen havainto erilliseksi. Myös Main-tracen
+historiallinen uncertain-lippu estää konservatiivisesti kahvan vapautuksen;
+kyse ei tällöin ole vain luetteloitujen lasten fyysisen sulun odottamisesta.
+
+Generic-bypass-hakemiston valmistelee rajattu parent. Hostin oma control on
+alussa poissa, ja sen valmistelee sama tuotantoresurssiomistaja. Mainin
+negatiiviset kontrollit säilyvät erillään Worker-kutsuista.
+Completion-uusinta käyttää samaa jo ladattua omistajaa.
+
+### Node-isännän rajattu testinäyttö
+
+Havaintoavun 11 ja ledgerin 12 synteettistä tapausta läpäisivät samassa
+rajatussa 23 tapauksen ajossa. Sama 23 tapauksen valinta läpäisi myös
+tavallisen root-konfiguraation kautta: havaintoavun täsmällinen testipolku on
+mukana sen include-valinnassa. Tämä ei ole koko root-sarjan ajo eikä uusi
+yksilöllinen testijoukko. Desktop-build ja kohdistettu testityypitys
+läpäisivät. Näyttö todentaa alkuperäisten lupausten ja havaintojen käsittelyä.
+
+Suoraa käännetyn factoryn runtime-tuontia käyttävä lähdeversio läpäisi kaksi
+erillistä oikeaa Host-tapausta, kumpikin tuoreessa Main-prosessissa:
+
+- MCP-tilakierros ja Main-STOP: yhdeksän native-kutsua, yksi stage-I/O sekä
+  saman completionin uusinta samalla omistajalla. Mainin yhdeksän erillistä
+  kontrolli-/broker-lasta sulkeutuivat: seitsemän exit0:aan ja kaksi odotettua
+  hylkäystä exit1:een.
+- Liittymättömän, sinetöidyn istunnon Host-disable: kahdeksan native-kutsua ja
+  yksi stage-I/O. Suoria Main-lapsia tai broker-asiakasta ei käynnistetty.
+
+Kaikista 17 native-kutsusta havaittiin alkuperäiset fulfilled-tulokset,
+child-close ja Worker-exit0. Molempien omistaja jäi terveeksi; stage-I/O
+valmistui erikseen. Alkuperäiset SDK-/broker-/STOP-/stdin-/journal-/release-
+oraakkelit säilyivät. Molemmat testiprosessit päättyivät luonnollisesti
+exit0:aan ilman myöhäistä kuittia, pakkosulkua tai uusintaa. Release-pyynnön
+hetkellä broker-close-havainto sai olla false; se ei yksin todista natiivin
+lease-odotuksen toteutumista. Lopullinen broker-exit0 ja vapautuksen omat
+sulkuhavainnot vaadittiin.
+
+Nykyinen fixture lataa saman kiinteän compiled-URLin vasta eksplisiittisen
+koekäynnistyksen sisällä. Alkuperäinen loader-Promise omistaa myös importin;
+deadline/abort tarkistetaan ennen sitä ja sen jälkeen. Tavalliseen keräilyyn
+ei lisätä desktop-dist-riippuvuutta, source-fallbackia, valittavaa URLia tai
+uutta factorya. Tämä viimeinen fixtureversio läpäisi tyypityksen, erillisen
+kopion keräilyn ilman desktop-distiä (kaksi tarkoituksella skipattua tapausta,
+nolla suoritettua) sekä fixed compiled import-only -tarkistuksen ilman
+factoryn kutsumista. Edellä mainitut kaksi oikeaa Host-ajoa ovat aiemman
+suoran import-version näyttöä; nykyistä lazy-import-versiota ei ajettu
+uudelleen oikeana Host-ketjuna.
+
+Näyttö käyttää synteettistä backendia. Se ei hyväksy oletus-Electron-
+koostamista, rearm/recovery-kokonaisuutta, riippumatonta kaikkien OS-
+jälkeläisten tai profiilivaraston inventointia eikä koko CPU/GPU/FMI-
+minimipakettia. Aiemmat epäonnistumiset puuttuvine historiallisine
+sulkuhavaintoineen säilyvät. Karanteenin apureita ei ajettu tai palautettu,
+eikä uusia natiiveja tarkistusohjelmia tehty.
+
 ## Pakettiin sidotun resurssipolun rajattu ajonäyttö
+
+Uudempi kolmen kutsun koe läpäisi saman tuotantotehtaan ja resurssiomistajan
+kautta directory → identity → recover -ketjun. Kaikki 18 alkuperäistä havaintoa
+valmistuivat: kolme lapsisulun ja kolme Worker-exit0:n kuittia, valtuusjärjestys
+true / false / true. Omistaja jäi terveeksi ja valmistelluksi ilman pending-
+työtä. Node varmisti puuttuneen kontrollilehden luonnin, fyysisen polun sekä
+vanhemman identiteetin säilymisen. Erilliseen hash-/allekirjoitushyväksyntään
+sidottu PowerShell ja lopullinen owner/System-ACL:n vastaavuus tarkistettiin.
+Native recover poisti synteettisen pending-fixturen. Molemmat ulommat Node-
+vaiheet päättyivät exit0:aan ilman pakkosulkua, stderr-tulostetta tai uusintaa.
+Riippumaton lähde- ja raakakuittien katselmus hyväksyi rajatun näytön.
+
+75 sekuntia on tämän uuden kolmen kutsun koefikstuuren alkuperäinen kokonaisraja;
+se ei muuta Mainin avauspolitiikkaa tai aiempien kokeiden tulkintaa. Valmistelun
+10 s ja yksittäisen kutsun enintään 20 s rajat käyttävät jäljellä olevaa
+alkuperäistä aikaa. Epävarman työn aikana koordinaattori säilyy ulomman
+prosessipuun omistajan saavutettavana; myöhäinen sulku ei korjaa vanhaa tulosta.
+BE:n kolmen kutsun koe ei yksin osoita Hostia tai staging–Host-yhteisajoa;
+myöhempi suoran import-version Host-näyttö on erotettu
+[BF:n yhteenvedossa](#node-isännän-rajattu-testinäyttö). Electron, oletuskoostaminen,
+aidot virhepolut ja riippumaton kaikkien jälkeläisten inventointi jäävät avoimiksi.
+
+Alla oleva kahden kutsun näyttö on aiemmasta AY-versiosta omine pinneineen.
+Sitä ei tulkita uuden directory-roolin näytöksi.
 
 Erillinen suora Node-koe käytti oikeaa käännettyä resurssitehdasta,
 semanttista Operations-sovitinta ja kiinteää Worker-käynnistintä. Riippumaton
@@ -281,9 +544,10 @@ hyväksyi tämän rajatun onnistumispolun.
 Koe ei käyttänyt vanhoja suoria suoritusmetodeja eikä erillisiä natiiveja
 tarkistusbinäärejä. Se ei käynnistänyt broker-operaatiota, MCP-workeria,
 mallia, GPU:ta, sää-APIa tai Electronia. Myöhäiskuitteja ei syntynyt, joten
-uusia todellisia virhe-/myöhästymispolkuja ei hyväksytty. Hostin ja oletuspolun
-kytkentä sekä koko minimipaketin CPU/GPU/FMI-, tiedosto-, virhe- ja
-sulkukokeet ovat edelleen kesken. Aiempien epäonnistuneiden ajojen tuntematon
+uusia todellisia virhe-/myöhästymispolkuja ei hyväksytty. AY-vaiheessa Hostin
+kytkentää ei ollut tehty; myöhempi rajattu näyttö on
+[BF:n yhteenvedossa](#node-isännän-rajattu-testinäyttö). Oletuspolku ja koko
+minimipaketin CPU/GPU/FMI-, tiedosto-, virhe- ja sulkukokeet ovat kesken. Aiempien epäonnistuneiden ajojen tuntematon
 sulku ja viiveen syy säilyvät avoimina.
 
 ## Integraation portit ja näyttö
@@ -358,12 +622,13 @@ apuria ei todista kirjoitus-awaitin valmistumista, apurin käynnistymistä,
 syötteen toimittamista tai historiallista sulkua. Ne ja viiveen syy pysyvät
 tuntemattomina; uusi läpäisy ei muuta niitä tunnetuiksi.
 
-Nykyisen versionoidun Host-reseptin lähdevalinta on päivitetty 103 tapaukseen
+AQ/AR/AS/AT-osajulkaisun historiallisessa AT-valmistelussa Host-reseptin
+lähdevalinta päivitettiin 103 tapaukseen
 (44 Host + 42 connection + 12 wire + 2 development-host + 3 helper).
 Bootstrapin lähdelista, sitä vastaava Hostin receipt-ehto ja Hostin omat
 pinnit sisältävät uuden recover-grantin; Host sitoo myös release-policy-lähteen.
-Koko 103 tapauksen reseptiä tai vanhan bootstrap-proben rakentamista ja ajoa
-ei tehty tässä vaiheessa. Aiempi ajamaton 97 tapauksen Host-valinta ja
+Tätä vanhaa 103 tapauksen reseptiä ei hyväksytä nykyisten rajapintojen ajoksi.
+Koko reseptiä tai vanhan bootstrap-proben rakentamista ja ajoa ei tehty AT-valmistelussa. Aiempi ajamaton 97 tapauksen Host-valinta ja
 historiallinen 47 tapauksen bootstrap-näyttö eivät ole uuden protokollapaketin
 nykyhyväksyntä.
 

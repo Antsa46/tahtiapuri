@@ -29,7 +29,7 @@ vastuurajan, lue myös toisen osapuolen sopimus.
 | MCP:n autentikoidut streamit, sisäänottorajat, lähtörajat ja sulku | [experiments/mcp-stream-composition.md](experiments/mcp-stream-composition.md) |
 | MCP-työntekijän kaksikanavainen viestimuoto, puskurit, sulku ja natiivipaketin rakentaminen | [architecture/mcp-native-transport.md](architecture/mcp-native-transport.md) |
 | Liittyneen MCP-sessionin natiivi vapautus, pysyvä intent, poistoprefix ja profiilin näyttöraja | [architecture/mcp-clean-release.md](architecture/mcp-clean-release.md) |
-| Natiiviapurien säiekäynnistys, valtuusportti sekä Node-koesarjan omistus ja loppuraportti | [architecture/native-launch-supervisor.md](architecture/native-launch-supervisor.md) |
+| Natiiviapurien säiekäynnistys, saman omistajan tiedostovalmistelu, valtuusportti sekä Node-koesarjan omistus ja loppuraportti | [architecture/native-launch-supervisor.md](architecture/native-launch-supervisor.md) |
 | Natiivin CPU-sovittimen toteutus, rakentaminen, viestirajat ja sulkuportti | [architecture/native-model-runtime.md](architecture/native-model-runtime.md) |
 | Natiivin CPU-runtimen rajattu viestiyhteys ilman mallia | [experiments/native-transport-probe.md](experiments/native-transport-probe.md) |
 | Oikea 4B-malli natiivissa CPU-työntekijässä: alkuperä, lukot ja elinkaari | [experiments/native-cpu-model-probe.md](experiments/native-cpu-model-probe.md) |

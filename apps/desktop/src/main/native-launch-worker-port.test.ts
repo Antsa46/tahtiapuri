@@ -4,6 +4,7 @@ import { basename } from "node:path";
 
 const state = vi.hoisted(() => ({ opened: [] as string[], closed: 0, workerCalls: 0,
   corrupt: undefined as string | undefined, reparse: undefined as string | undefined,
+  pathError: undefined as { leaf: string; code: string } | undefined, nonDirectory: undefined as string | undefined,
   hold: undefined as Promise<void> | undefined }));
 const bytes = (path: string) => Buffer.from("Synthetic non-executable fixture: " + basename(path));
 vi.mock("node:worker_threads", () => ({ Worker: class {
@@ -12,10 +13,10 @@ vi.mock("node:worker_threads", () => ({ Worker: class {
 vi.mock("node:fs/promises", () => {
   const file = (path: string) => /\.(exe|js)$/.test(path);
   const info = (path: string) => ({ dev: 1, ino: path.length, size: file(path) ? bytes(path).length : 0,
-    nlink: 1, mtimeMs: 1, ctimeMs: 1, isFile: () => file(path), isDirectory: () => !file(path),
+    nlink: 1, mtimeMs: 1, ctimeMs: 1, isFile: () => file(path), isDirectory: () => !file(path) && basename(path) !== state.nonDirectory,
     isSymbolicLink: () => basename(path) === state.reparse });
   return {
-    lstat: async (path: string) => info(path),
+    lstat: async (path: string) => { if (basename(path) === state.pathError?.leaf) throw Object.assign(new Error("Synthetic path failure"), { code: state.pathError.code }); return info(path); },
     realpath: async (path: string) => path,
     open: async (path: string) => {
       state.opened.push(path);
@@ -46,15 +47,15 @@ async function setup() {
   return { module, input };
 }
 const turn = () => new Promise<void>(resolve => setImmediate(resolve));
-beforeEach(() => { vi.resetModules(); state.opened = []; state.closed = 0; state.workerCalls = 0; state.corrupt = undefined; state.reparse = undefined; state.hold = undefined; });
+beforeEach(() => { vi.resetModules(); state.opened = []; state.closed = 0; state.workerCalls = 0; state.corrupt = undefined; state.reparse = undefined; state.hold = undefined; state.pathError = undefined; state.nonDirectory = undefined; });
 afterEach(() => { expect(state.workerCalls).toBe(0); });
 const test = process.platform === "win32" ? it : it.skip;
-test("verifies the three program bytes and five compiled runtime files without starting a Worker", async () => {
+test("verifies the three program bytes and six compiled runtime files without starting a Worker", async () => {
   const f = await setup(), owner = await f.module.loadNativeLaunchWorkerSupervisor(f.input, new AbortController().signal);
   expect(owner.status()).toEqual({ pending: false, uncertain: false });
   expect(state.opened.map(path => basename(path)).sort()).toEqual([
     "main-identity.exe", "main-bootstrap.exe", "mcp-broker.exe", ...f.module.NATIVE_LAUNCH_WORKER_FILES].sort());
-  expect(state.closed).toBe(8); expect(Object.isFrozen(f.module.NATIVE_LAUNCH_WORKER_FILES)).toBe(true);
+  expect(state.closed).toBe(9); expect(Object.isFrozen(f.module.NATIVE_LAUNCH_WORKER_FILES)).toBe(true);
 });
 test("failed program verification closes its file and permanently claims this Main lifetime", async () => {
   const f = await setup(); state.corrupt = "main-identity.exe";
@@ -86,4 +87,29 @@ test("rejects redirected program files without opening them", async () => {
   const f = await setup(); state.reparse = "main-identity.exe";
   await expect(f.module.loadNativeLaunchWorkerSupervisor(f.input, new AbortController().signal)).rejects.toThrow();
   expect(state.opened).toEqual([]);
+});
+
+test("only an absent control leaf with an existing parent is allowed before directory preparation", async () => {
+  const f = await setup(); state.pathError = { leaf: "control", code: "ENOENT" };
+  const owner = await f.module.loadNativeLaunchWorkerSupervisor(f.input, new AbortController().signal);
+  expect(owner.status()).toEqual({ pending: false, uncertain: false }); expect(state.closed).toBe(9);
+});
+for (const [leaf, code] of [["synthetic", "ENOENT"], ["control", "EACCES"], ["control", "EIO"]] as const)
+  test("directory loader rejects " + leaf + " " + code + " without starting a Worker", async () => {
+    const f = await setup(); state.pathError = { leaf, code };
+    await expect(f.module.loadNativeLaunchWorkerSupervisor(f.input, new AbortController().signal)).rejects.toMatchObject({ code });
+    expect(state.opened).toEqual([]);
+  });
+test("an existing non-directory control leaf is rejected", async () => {
+  const f = await setup(); state.nonDirectory = "control";
+  await expect(f.module.loadNativeLaunchWorkerSupervisor(f.input, new AbortController().signal)).rejects.toThrow("Redirected"); expect(state.opened).toEqual([]);
+});
+test("an existing redirected control leaf is rejected", async () => {
+  const f = await setup(); state.reparse = "control";
+  await expect(f.module.loadNativeLaunchWorkerSupervisor(f.input, new AbortController().signal)).rejects.toThrow("Redirected"); expect(state.opened).toEqual([]);
+});
+test("directory script bytes require their own approved compiled pin", async () => {
+  const f = await setup(); state.corrupt = "native-directory-grant.js";
+  await expect(f.module.loadNativeLaunchWorkerSupervisor(f.input, new AbortController().signal)).rejects.toThrow("bytes differ");
+  expect(state.opened).toHaveLength(9); expect(state.closed).toBe(9);
 });

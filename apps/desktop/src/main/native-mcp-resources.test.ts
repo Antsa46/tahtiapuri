@@ -11,7 +11,7 @@ const processGuard = vi.hoisted(() => {
 });
 vi.mock("node:child_process", () => ({ execFile: processGuard.invoke, spawn: processGuard.invoke }));
 vi.mock("node:fs/promises", async original => {
-  const real = await original<typeof import("node:fs/promises")>(); return { ...real, copyFile: vi.fn(real.copyFile), open: vi.fn(real.open) };
+  const real = await original<typeof import("node:fs/promises")>(); return { ...real, copyFile: vi.fn(real.copyFile), open: vi.fn(real.open), mkdir: vi.fn(real.mkdir) };
 });
 const roots: string[] = [];
 const sha = (value: Buffer | string) => createHash("sha256").update(value).digest("hex");
@@ -24,6 +24,7 @@ beforeEach(async () => {
   const real = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
   vi.mocked(copyFile).mockImplementation(real.copyFile); vi.mocked(copyFile).mockClear();
   vi.mocked(open).mockImplementation(real.open); vi.mocked(open).mockClear();
+  vi.mocked(mkdir).mockImplementation(real.mkdir); vi.mocked(mkdir).mockClear();
 });
 afterEach(async () => {
   try { expect(processGuard.attempts()).toBe(0); }
@@ -191,4 +192,80 @@ it("an aborted readonly launch verification does not start file reads or dispatc
   vi.mocked(open).mockClear(); const abort = new AbortController(); abort.abort();
   await expect(source.verifyLaunch(abort.signal)).rejects.toThrow();
   expect(open).not.toHaveBeenCalled(); expect(copyFile).not.toHaveBeenCalled(); expect(processGuard.attempts()).toBe(0);
+});
+
+it("stages only the same approved eight files through the explicit original-deadline capability", async () => {
+  const f = await fixture(), source = await loadNativeMcpLaunchPackage(f.config, signal());
+  const deadline = process.hrtime.bigint() + 60_000_000_000n;
+  await source.stageWorker(f.reservation, signal(), deadline);
+  expect(copyFile).toHaveBeenCalledTimes(8);
+  expect(await readdir(join(f.reservation, "worker/scratch"))).toEqual([]);
+  expect(await readFile(join(f.reservation, "worker/package/runtime-manifest.json"))).toEqual(await readFile(join(f.pkg, "runtime-manifest.json")));
+  await expect(source.stageWorker(f.reservation, signal(), deadline)).rejects.toThrow();
+  expect(copyFile).toHaveBeenCalledTimes(8); expect(processGuard.attempts()).toBe(0);
+});
+it("missing or expired explicit staging deadlines forbid the first file operation", async () => {
+  const f = await fixture(), source = await loadNativeMcpLaunchPackage(f.config, signal());
+  vi.mocked(open).mockClear(); vi.mocked(mkdir).mockClear();
+  for (const deadline of [0n, undefined as unknown as bigint])
+    await expect(source.stageWorker(f.reservation, signal(), deadline)).rejects.toMatchObject({ exitVerified: true });
+  expect(open).not.toHaveBeenCalled(); expect(mkdir).not.toHaveBeenCalled(); expect(copyFile).not.toHaveBeenCalled();
+  expect(await readdir(f.reservation)).toEqual([]);
+});
+it("a staging deadline expiring in verification forbids all mkdir and copy operations without timer dispatch", async () => {
+  const f = await fixture(), source = await loadNativeMcpLaunchPackage(f.config, signal());
+  const real = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+  let enter!: () => void, resume!: () => void;
+  const entered = new Promise<void>(done => { enter = done; }), resumed = new Promise<void>(done => { resume = done; });
+  const deadline = process.hrtime.bigint() + 60_000_000_000n;
+  vi.mocked(mkdir).mockClear();
+  vi.mocked(open).mockImplementation(async (...args) => {
+    if (args[0] === join(f.runtime, "bin/mcp-broker.exe")) { enter(); await resumed; }
+    return real.open(...args);
+  });
+  const original = source.stageWorker(f.reservation, signal(), deadline), failure = original.catch(error => error);
+  let restore: (() => void) | undefined;
+  try {
+    await entered;
+    const clock = vi.spyOn(process.hrtime, "bigint").mockReturnValue(deadline + 1n); restore = () => { clock.mockRestore(); };
+    resume(); expect(await failure).toMatchObject({ exitVerified: true });
+    expect(mkdir).not.toHaveBeenCalled(); expect(copyFile).not.toHaveBeenCalled();
+  } finally { restore?.(); resume(); await failure; vi.mocked(open).mockImplementation(real.open); }
+  expect(await readdir(f.reservation)).toEqual([]);
+});
+it("an original deadline crossed by mkdir leaves one partial directory and admits no later mkdir or copy", async () => {
+  const f = await fixture(), source = await loadNativeMcpLaunchPackage(f.config, signal());
+  const real = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+  const deadline = process.hrtime.bigint() + 60_000_000_000n; let restore: (() => void) | undefined;
+  vi.mocked(mkdir).mockClear();
+  vi.mocked(mkdir).mockImplementationOnce(async (...args) => {
+    const result = await real.mkdir(...args);
+    const clock = vi.spyOn(process.hrtime, "bigint").mockReturnValue(deadline + 1n); restore = () => { clock.mockRestore(); }; return result;
+  });
+  try {
+    await expect(source.stageWorker(f.reservation, signal(), deadline)).rejects.toMatchObject({ exitVerified: true });
+    expect(mkdir).toHaveBeenCalledOnce(); expect(copyFile).not.toHaveBeenCalled();
+  } finally { restore?.(); vi.mocked(mkdir).mockImplementation(real.mkdir); }
+  expect(await readdir(f.reservation)).toEqual(["worker"]);
+  expect(await readdir(join(f.reservation, "worker"))).toEqual([]);
+});
+it.each(["abort", "deadline"] as const)("a copy completing after %s never begins the next copy", async mode => {
+  const f = await fixture(), source = await loadNativeMcpLaunchPackage(f.config, signal());
+  const real = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises"), abort = new AbortController();
+  const deadline = process.hrtime.bigint() + 60_000_000_000n; let restore: (() => void) | undefined;
+  vi.mocked(copyFile).mockImplementationOnce(async (...args) => {
+    await real.copyFile(...args);
+    if (mode === "abort") abort.abort();
+    else { const clock = vi.spyOn(process.hrtime, "bigint").mockReturnValue(deadline + 1n); restore = () => { clock.mockRestore(); }; }
+  });
+  try {
+    await expect(source.stageWorker(f.reservation, abort.signal, deadline)).rejects.toThrow(); expect(copyFile).toHaveBeenCalledOnce();
+  } finally { restore?.(); vi.mocked(copyFile).mockImplementation(real.copyFile); }
+  expect(await readdir(join(f.reservation, "worker/package/licenses"))).toEqual(["mcp-core-LICENSE.txt"]);
+});
+it("an unbound staging reservation name is rejected before writes", async () => {
+  const f = await fixture(), source = await loadNativeMcpLaunchPackage(f.config, signal());
+  vi.mocked(mkdir).mockClear();
+  await expect(source.stageWorker(join(dirname(f.reservation), "other"), signal(), process.hrtime.bigint() + 60_000_000_000n)).rejects.toThrow();
+  expect(mkdir).not.toHaveBeenCalled(); expect(copyFile).not.toHaveBeenCalled(); expect(await readdir(f.reservation)).toEqual([]);
 });

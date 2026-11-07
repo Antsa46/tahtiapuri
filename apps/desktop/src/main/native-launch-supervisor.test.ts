@@ -239,3 +239,27 @@ it("recover cancelled before started never releases its fixed frame", async () =
   peer.closed({ code: 1, failed: true }); peer.exited(0);
   expect(await failure).toMatchObject({ authorityCommitted: false }); await task.settled;
 });
+
+it("directory sends only fixed metadata and its exact raw grant after the original start acknowledgement", async () => {
+  const f = fixture(), { task, peer } = f.launch({ kind: "directory" });
+  expect(peer.start.request).toEqual({ kind: "directory" }); expect(peer.authorizations()).toEqual([]);
+  peer.started(); const message = peer.authorizations()[0]!;
+  if (message.type !== "authorize") throw new Error("Missing directory authorization");
+  expect(Buffer.from(message.input).toString("ascii")).toBe("THDIR001");
+  peer.commit(f.clock); peer.closed({ stdout: Buffer.from("directory-ready\n") }); peer.exited(0);
+  expect((await task.result).authorityCommitted).toBe(true); expect((await task.settled).uncertain).toBe(false);
+});
+it("directory cannot obtain a grant from a late start acknowledgement without timer dispatch", async () => {
+  const f = fixture(), { task, peer } = f.launch({ kind: "directory" }), rejected = task.result.catch(error => error);
+  f.tick(1_000_000_001n); peer.started(); expect(peer.authorizations()).toEqual([]);
+  peer.closed({ code: null, signal: "SIGTERM", failed: true }); peer.exited(0);
+  expect(await rejected).toMatchObject({ exitVerified: false, authorityCommitted: false });
+  expect((await task.settled).uncertain).toBe(true);
+});
+it("a directory cancellation after grant retains its committed authority and original failed result", async () => {
+  const f = fixture(), abort = new AbortController(), { task, peer } = f.launch({ kind: "directory" }, abort.signal);
+  const rejected = task.result.catch(error => error); peer.started(); expect(peer.commit(f.clock)).toBe(true); abort.abort();
+  peer.closed({ code: null, signal: "SIGTERM", failed: true }); peer.exited(0);
+  expect(await rejected).toMatchObject({ exitVerified: false, authorityCommitted: true });
+  expect(await task.settled).toMatchObject({ authorityCommitted: true, uncertain: true });
+});

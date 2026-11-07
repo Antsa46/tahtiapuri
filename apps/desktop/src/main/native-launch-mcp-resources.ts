@@ -15,10 +15,12 @@ export interface NativeLaunchMcpResourceConfig {
    * Never infer THREC001 support from a colocated package's own claim. */
   readonly recoveryApproval: Readonly<{ descriptorSha256: string; protocol: "THREC001" }>;
 }
+/** Bound metadata is immutable; the owner's private lifecycle remains mutable. */
+export type NativeLaunchMcpResources = NativeLaunchResourceOwner & Readonly<{ controlFile: string }>;
 const hash = (value: unknown): value is string => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
 let claimed = false;
-let preparation: Promise<NativeLaunchResourceOwner> | undefined;
-let preparationResult: Promise<NativeLaunchResourceOwner> | undefined;
+let preparation: Promise<NativeLaunchMcpResources> | undefined;
+let preparationResult: Promise<NativeLaunchMcpResources> | undefined;
 function snapshot(value: unknown) {
   if (!launchRecord(value) || !launchKeys(value, ["runtimeRoot", "descriptorSha256", "controlFile", "compiled", "recoveryApproval"])
     || typeof value.runtimeRoot !== "string" || !hash(value.descriptorSha256) || typeof value.controlFile !== "string"
@@ -53,20 +55,28 @@ async function prepare(approved: ReturnType<typeof snapshot>, signal: AbortSigna
     programs: source.programs, compiled: approved.compiled }, signal);
   check();
   const operations = new NativeLaunchOperations(owner);
-  return new NativeLaunchResourceOwner(Object.freeze({ verify: (operationSignal: AbortSignal) => source.verifyLaunch(operationSignal), operations }));
+  const reservation = win32.join(win32.dirname(approved.worker.controlFile), "native-session-reserved");
+  const resources = new NativeLaunchResourceOwner(Object.freeze({
+    verify: (operationSignal: AbortSignal) => source.verifyLaunch(operationSignal),
+    stage: (operationSignal: AbortSignal, deadline: bigint) => source.stageWorker(reservation, operationSignal, deadline),
+    operations,
+  }));
+  return Object.defineProperty(resources, "controlFile", { value: approved.worker.controlFile,
+    enumerable: true, writable: false, configurable: false }) as NativeLaunchMcpResources;
 }
 /** Unwired trusted-Main factory. Claim precedes IO/config callbacks. The
  * original preparation promise and resulting owner are retained for this Main
  * module lifetime; failure has no replacement/root-alias/reset route.
- * This does not expose legacy helpers, staging or default Host composition. */
+ * Staging and native calls share that owner; no legacy execution methods or
+ * selectable reservation are exposed. Default Host composition is still separate. */
 export function loadNativeLaunchMcpResources(config: NativeLaunchMcpResourceConfig, ownerDeadline: number,
-  signal: AbortSignal): Promise<NativeLaunchResourceOwner> {
+  signal: AbortSignal): Promise<NativeLaunchMcpResources> {
   if (claimed) return Promise.reject(new Error("Native launch resource lifetime already claimed"));
   claimed = true;
-  let resolve!: (owner: NativeLaunchResourceOwner) => void, reject!: (error: unknown) => void;
+  let resolve!: (owner: NativeLaunchMcpResources) => void, reject!: (error: unknown) => void;
   let done = false, failed = false, timer: NodeJS.Timeout | undefined;
   const abort = new AbortController(), validSignal = signal instanceof AbortSignal;
-  preparationResult = new Promise<NativeLaunchResourceOwner>((yes, no) => { resolve = yes; reject = no; });
+  preparationResult = new Promise<NativeLaunchMcpResources>((yes, no) => { resolve = yes; reject = no; });
   const cleanup = () => { clearTimeout(timer); if (validSignal) signal.removeEventListener("abort", onAbort); };
   const fail = (error: unknown) => {
     failed = true;

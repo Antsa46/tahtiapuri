@@ -47,20 +47,30 @@ export class NativeDevelopmentAdmission {
   }
 
   /** Claim is synchronous: the ticket and the single client slot are consumed
-   * before any asynchronous backend work. No legacy epoch authentication. */
-  claim(generation: unknown, token: unknown): NativeDevelopmentLease | undefined {
+   * before any asynchronous backend work. Connection passes its original
+   * authentication deadline; the local attach cap may only shorten it. A direct
+   * trusted caller without one retains the local cap. No legacy epoch auth. */
+  claim(generation: unknown, token: unknown, ownerDeadline?: number): NativeDevelopmentLease | undefined {
+    const observed = performance.now();
+    if (ownerDeadline !== undefined && (!Number.isFinite(ownerDeadline) || ownerDeadline <= observed)) return undefined;
+    const deadline = Math.min(ownerDeadline ?? Infinity, observed + this.timeoutMs);
     if (this.disabled || this.phaseValue !== "available" || this.session || !this.token
       || generation !== this.generation || !isCapability(token)
       || !timingSafeEqual(Buffer.from(token, "hex"), Buffer.from(this.token, "hex"))) return undefined;
     this.previousToken = this.token; this.token = undefined; this.phaseValue = "attaching";
     const identity = { epoch: this.epoch, clientId: randomUUID() };
     const session: Session = { identity, active: false, closing: false,
-      attaching: Promise.resolve().then(() => this.backend.development("development.attach", identity)) };
+      attaching: Promise.resolve().then(() => {
+        if (this.disabled || session.closing || this.session !== session || performance.now() >= deadline)
+          throw new Error("Native attachment fenced before dispatch.");
+        return this.backend.development("development.attach", identity);
+      }) };
     this.session = session;
-    const ready = this.bounded(session.attaching).then(result => {
+    const ready = this.bounded(session.attaching, deadline).then(result => {
       if (!result?.ok || !("status" in result) || !result.status.enabled || !result.status.connected) {
         this.fail(); void this.closeSession(session); return false;
       }
+      if (performance.now() >= deadline) { this.fail(); void this.closeSession(session); return false; }
       if (this.disabled || session.closing || this.session !== session) { void this.closeSession(session); return false; }
       session.active = true; this.phaseValue = "active"; return true;
     });
@@ -121,11 +131,15 @@ export class NativeDevelopmentAdmission {
     });
     return session.closed;
   }
-  private bounded<T>(work: Promise<T>): Promise<T | undefined> {
+  private bounded<T>(work: Promise<T>, originalDeadline?: number): Promise<T | undefined> {
     return new Promise(resolve => {
       let finished = false;
-      const finish = (value: T | undefined) => { if (!finished) { finished = true; clearTimeout(timer); resolve(value); } };
-      const timer = setTimeout(() => finish(undefined), this.timeoutMs);
+      const finish = (value: T | undefined) => {
+        if (!finished) { finished = true; clearTimeout(timer);
+          resolve(originalDeadline !== undefined && performance.now() >= originalDeadline ? undefined : value); }
+      };
+      const timer = setTimeout(() => finish(undefined), originalDeadline === undefined ? this.timeoutMs
+        : Math.max(0, originalDeadline - performance.now()));
       void work.then(finish, () => finish(undefined));
     });
   }

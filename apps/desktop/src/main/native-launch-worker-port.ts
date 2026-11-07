@@ -8,7 +8,7 @@ import { NativeLaunchSupervisor, type NativeLaunchPort } from "./native-launch-s
 import { launchKeys, launchRecord, nativeLaunchWorkerConfig, type NativeLaunchWorkerConfig } from "./native-launch-worker-config.js";
 
 export const NATIVE_LAUNCH_WORKER_FILES = Object.freeze(["native-launch-worker.js", "native-launch-worker-core.js",
-  "native-launch-worker-config.js", "native-launch-gate.js", "native-recovery-grant.js"] as const);
+  "native-launch-worker-config.js", "native-launch-gate.js", "native-recovery-grant.js", "native-directory-grant.js"] as const);
 type FilePin = Readonly<{ bytes: number; sha256: string }>;
 export interface NativeLaunchBinding {
   readonly config: NativeLaunchWorkerConfig;
@@ -86,7 +86,9 @@ function port(config: NativeLaunchWorkerConfig): NativeLaunchPort {
   } satisfies NativeLaunchPort);
 }
 /** Call exactly once from trusted Main composition, before constructing a Host.
- * The control directory already exists and is Main-owned. Retain this returned
+ * The immediate control parent already exists and is Main-trusted/private;
+ * only its control leaf may be absent. The same resource owner must prepare
+ * that leaf before other operations. Retain this returned
  * supervisor through failure/shutdown; never call this loader to reset it.
  * Caller owns the in-flight preparation promise even when its UI times out.
  * No application resource loader or default runtime selects this adapter yet. */
@@ -99,7 +101,16 @@ export async function loadNativeLaunchWorkerSupervisor(binding: NativeLaunchBind
   const config = nativeLaunchWorkerConfig(binding.config);
   const programs = pins(binding.programs, ["identity", "bootstrap", "broker"] as const, 4 * 1024 ** 2);
   const compiled = pins(binding.compiled, NATIVE_LAUNCH_WORKER_FILES, 128 * 1024);
-  signal.throwIfAborted(); await directory(dirname(config.controlFile), signal); signal.throwIfAborted();
+  // Only the control leaf may be absent. Its existing immediate parent and
+  // every ancestor remain mandatory; only true ENOENT means an absent leaf.
+  const controlDirectory = dirname(config.controlFile);
+  signal.throwIfAborted(); await directory(dirname(controlDirectory), signal); signal.throwIfAborted();
+  let existingLeaf = true;
+  try { await lstat(controlDirectory); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; existingLeaf = false; }
+  signal.throwIfAborted();
+  if (existingLeaf) await directory(controlDirectory, signal);
+  signal.throwIfAborted();
   for (const name of ["identity", "bootstrap", "broker"] as const) await verifyFile(config[name], programs[name], signal);
   const root = dirname(fileURLToPath(import.meta.url));
   for (const name of NATIVE_LAUNCH_WORKER_FILES) await verifyFile(join(root, name), compiled[name], signal);

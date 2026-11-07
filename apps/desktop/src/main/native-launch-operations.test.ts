@@ -203,3 +203,16 @@ it("no-task records preserve an uncertain start error instead of claiming no OS 
   expect(await observation.binding).toEqual({ kind: "no-task" });
   expect(await observation.outcome).toEqual({ status: "rejected", reason: failure }); expect(failure.exitVerified).toBe(false);
 });
+
+it("directory retains its original deadline, waits for actual settlement, and verifies the exact receipt", async () => {
+  const f = fixture(), original = f.bridge.prepareDirectory(f.deadline, f.controller.signal);
+  expect(f.start.mock.calls[0]![0]).toEqual({ kind: "directory" }); expect(f.start.mock.calls[0]![1]).toBe(f.deadline);
+  let done = false; void original.then(() => { done = true; });
+  f.result.resolve({ stdout: Buffer.from("directory-ready\n"), authorityCommitted: true }); await turn(); expect(done).toBe(false);
+  f.settled.resolve({ childCloseObserved: true, workerExited: true, workerExitCode: 0, authorityCommitted: true, uncertain: false });
+  await original; expect(done).toBe(true); expect((await f.bridge.observeCall(original).binding).kind).toBe("task");
+});
+it.each(["", "published\n", "directory-ready\nextra"])("directory rejects an invalid receipt %s after the original clean close", async receipt => {
+  const f = fixture(), original = f.bridge.prepareDirectory(f.deadline, f.controller.signal); f.done(receipt);
+  await expect(original).rejects.toMatchObject({ exitVerified: true, authorityCommitted: true }); expect(f.bridge.status().failed).toBe(true);
+});

@@ -228,7 +228,11 @@ osoita niiden poistumista. Nykyinen `DevelopmentHost` ei vielä käytä sitä.
 Yksi käynnistyssukupolvi myöntää yhden kertakäyttöisen tunnuksen kerrallaan.
 Tunnus on eri salaisuus kuin backendin istuntotunnus; vanha istuntotunnus
 ei kelpaa vaihtoehtoiseksi autentikoinniksi. Tunnus kulutetaan ja asiakkaan
-paikka varataan synkronisesti ennen backendin liittämistä. Tilat ovat
+paikka varataan synkronisesti ennen backendin liittämistä. Jonoutunut attach tarkistaa ennen backend-
+kutsua myös disabled-, closing- ja alkuperäisen sessionin tilan; sulku voi
+siis estää vielä aloittamattoman liitoksen. Jo aloitettu alkuperäinen attach
+säilyy omistettuna ja irrotetaan sen valmistuttua. Estetty tai aikakatkaistu
+liitos ei avaa suljettua sukupolvea uudelleen. Tilat ovat
 `idle → available → attaching → active → detaching → idle`; epävarma
 liittäminen tai irrotus päättää sukupolven `disabled`-tilaan.
 
@@ -408,6 +412,35 @@ yksittäisistä lisätavuista.
 HELLO kuluttaa tunnuksen synkronisesti. ACCEPT voidaan lähettää vasta,
 kun kuvaustiedoston poistaminen ja backend-asiakkaan liittäminen ovat
 onnistuneet. Koko tunnistautumisella on kolmen sekunnin määräaika.
+Se muodostetaan Connection-constructorin alussa ennen ulkoisia callbackeja.
+HELLO, consume, backendin attach ja ACCEPT eivät aloita uutta aikaa.
+Connection välittää saman absoluuttisen performance-rajan consume-porttiin
+ennen julkaisulupauksen odotusta. Host tarkistaa sen ennen odotusta ja sen
+jälkeen sekä välittää sen natiivitoiminnon varmennukseen ja käynnistykseen.
+Admission voi vain lyhentää aikaa omalla attach-katollaan; sen jonoutunut
+attach tarkistaa rajan ennen backend-kutsua ja ennen aktiivisen leasen palautusta.
+Määräajan ylitys estetään kellolla myös ilman ajastincallbackin suorittumista.
+
+ACCEPTin fyysisen kirjoituksen ollessa kesken alkuperäinen tunnistautumisraja
+suojaa myös jo kuittauksen nähneen vastapuolen pyyntöjä. Fyysisen
+kirjoituksen onnistuminen alkuperäisessä ajassa päättää normaalin
+aloitusvaiheen. Ajoissa vastaanotettu terminaalinen CLEAN voi kuitenkin
+päättää yhteyden ja perua loogisen ACK-odotuksen, vaikka fyysinen callback
+olisi vielä kesken. Tämä protokollatulos ei väitä callbackin valmistumista.
+Jo vanhentunutta keskeneräistä tunnistautumista ei voi muuttaa onnistuneeksi
+STOPin ja CLEANin kautta. Keskeneräisen tunnistautumisen alkuperäinen raja
+säilyy myös STOP-tilassa. Valmiiksi autentikoidun istunnon normaali STOP-grace
+ja pyyntörajat ovat erillisiä. Uusi 78 tapauksen yhteys-/admission-valinta on
+toteutunut: 53 yhteyden ja 25 admissionin mocktapausta läpäisivät ilman
+ohituksia tai uusintaa. Desktop-build, kahden testitiedoston tyypitys sekä
+riippumaton lähde-, resepti- ja raakatuloskatselmus läpäisivät.
+BA:n 78 tapauksen vaiheessa Hostin consume-muutoksella oli käännös- ja
+lähdenäyttö, eikä siinä ajettu oikeaa Host-/Worker-/natiiviketjua. Myöhemmät
+BF:n suoran import-version Host-ajot ja nykyisen lazy-import-fixturen
+rajattu keräily-/import-näyttö erotetaan
+[käynnistysvalvojan yhteenvedossa](native-launch-supervisor.md#node-isännän-rajattu-testinäyttö).
+Oletuspolkua tämä yhteys-/admission-sarja ei hyväksy.
+
 Pyynnön lähettäminen HELLO:n perässä ennen ACCEPTia hylätään. Tila vaihtuu
 ACCEPTin lähettämiseksi ennen fyysistä write-kutsua: vastapuoli voi nähdä
 kuittauksen ennen paikallisen kirjoituscallbackin valmistumista. Fyysisen
@@ -572,6 +605,14 @@ Windows-sopimukset:
 `NativeDevelopmentHost` liittää tunnistautumisen, oikean kuvaustiedoston
 käsittelyn ja paikallisen putken samaan elinkaareen. Se on vielä erillinen
 koostamisvaihtoehto; oletusentry käyttää edelleen aiempaa isäntää.
+Uusi lähdepolku käyttää pakollista sidottua resurssilataajaa ja alkuperäistä
+avausrajaa. Sen sopimuksen, kutsukohtaiset havainnot, testisiirron ja
+hakemistovalmistelun rajatun näytön omistaa
+[natiiviapurien käynnistysvalvoja](native-launch-supervisor.md#hostin-pakollinen-resurssilataaja-kesken).
+Alla oleva vanha generic-helper-näyttö ei hyväksy tätä uutta liitosta.
+Uudempi suoran import-version Host-näyttö sekä nykyisen lazy-import-fixturen
+ajamaton oikea Host-ketju erotetaan
+[BF:n näyttörajassa](native-launch-supervisor.md#node-isännän-rajattu-testinäyttö).
 `development-owner.ts` sallii yhdelle backend-oliolle vain yhden legacy-
 tai native-isännän koko olion eliniän ajan. Sulku tai statuskysely ei
 vapauta tätä omistusta. Koostamisen ei pidä kiertää sitä portin aliasolioilla.
@@ -640,15 +681,16 @@ Uudelleenavaus, toimitettavan apupaketin rakentaminen, oikea natiivibrokeri,
 workerin käyttöjärjestelmärajat ja itsenäinen siivousnäyttö sekä Electronin
 oletuspolku ja alkuperäinen FMI/verkko/CPU/GPU-minimipaketti ovat kesken.
 
-Main-isännän julkinen koeresepti on
-`tests/integration/mcp/run-native-host.ps1`. Sen `-BootstrapRun`-argumentti
+Main-isännän historiallinen koeresepti on
+`tests/integration/mcp/run-native-host.ps1`. Sen aiempi `-BootstrapRun`-argumentti
 valitsee aiemman onnistuneen `run-native-bootstrap.ps1`-ajon run-hakemiston.
-Resepti tarkistaa sen 47 tapauksen kuitin, molemmat apubinäärit ja lähdepinnit,
-ajaa nykyisen 84 tapauksen valinnan yhdellä suorittimella ja kirjoittaa uuden
-yksityisen kuitin. Valinta on 26 Host-, 42 yhteys-, 12 viestikehys-, kaksi
+Reseptin oli tarkoitus tarkistaa 47 tapauksen kuitti, molemmat apubinäärit
+ja lähdepinnit sekä ajaa silloinen 84 tapauksen valinta yhdellä suorittimella
+ja kirjoittaa yksityinen kuitti. Historiallinen valinta oli 26 Host-, 42 yhteys-, 12 viestikehys-, kaksi
 legacy-isännän ja kaksi apupaketin tapausta. Puuttuvat ympäristöehdot tai
 ohitetut tapaukset eivät kelpaa onnistumiseksi. Aiempi 71/71 on historiallista
-näyttöä; korjatun 84 tapauksen kokonaisreseptin ajoa ei ole tehty tässä muutoksessa.
+näyttöä; tämän vanhan 84 tapauksen kokonaisreseptin ajoa ei tehty kyseisessä
+vaiheessa, eikä reseptiä hyväksytä nykyisten rajapintojen uudeksi ajoksi.
 
 
 ## Jaetut Windowsin omistus- ja sulkutarkistukset

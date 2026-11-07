@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
-import { lstat, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { link, lstat, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { loadNativeMcpHelpers } from "./native-mcp-helpers.js";
 import { queryNativeMainIdentity } from "./native-main-identity.js";
@@ -16,13 +16,17 @@ afterEach(async () => {
   vi.mocked(lstat).mockImplementation(real.lstat); vi.mocked(queryNativeMainIdentity).mockClear(); vi.mocked(runNativeBootstrapOperation).mockClear();
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
 });
-async function fixture() {
+async function packageFixture() {
   await mkdir(".artifacts/tests", { recursive: true });
   const root = await mkdtemp(join(process.cwd(), ".artifacts/tests/mcp-helper-cancel-")); roots.push(root);
+  const helpers = join(root, "helpers"); await mkdir(helpers);
   const bytes = Buffer.from("synthetic helper bytes: never executed");
-  for (const name of ["main-identity.exe", "main-bootstrap.exe"]) await writeFile(join(root, name), bytes);
+  for (const name of ["main-identity.exe", "main-bootstrap.exe"]) await writeFile(join(helpers, name), bytes);
   const pin = { bytes: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") };
-  return loadNativeMcpHelpers(root, { "main-identity.exe": pin, "main-bootstrap.exe": pin });
+  return { root, helpers, pins: { "main-identity.exe": pin, "main-bootstrap.exe": pin } };
+}
+async function fixture() {
+  const value = await packageFixture(); return loadNativeMcpHelpers(value.helpers, value.pins);
 }
 it("does not query identity when already cancelled", async () => {
   const helper = await fixture(), abort = new AbortController(); abort.abort();
@@ -54,4 +58,23 @@ it("does not dispatch consume when its deadline expires during verification", as
     const clock = vi.spyOn(performance, "now").mockReturnValue(deadline + 1); restore = () => { clock.mockRestore(); };
     release(); expect(await result).toMatchObject({ exitVerified: true }); expect(runNativeBootstrapOperation).not.toHaveBeenCalled();
   } finally { restore?.(); release(); await result; }
+});
+
+// Six package-validation oracles migrated from the old Host integration suite.
+// All binaries are synthetic bytes and all invocation methods remain mocked.
+it.each(["extra", "missing", "bytes", "hash", "hardlink"] as const)("helper package rejects %s before invocation", async mutation => {
+  const f = await packageFixture(); let pins = f.pins;
+  if (mutation === "extra") await writeFile(join(f.helpers, "extra"), "extra");
+  if (mutation === "missing") await rm(join(f.helpers, "main-identity.exe"));
+  if (mutation === "bytes") await writeFile(join(f.helpers, "main-identity.exe"), "changed");
+  if (mutation === "hash") pins = { ...pins, "main-identity.exe": { ...pins["main-identity.exe"], sha256: "0".repeat(64) } };
+  if (mutation === "hardlink") await link(join(f.helpers, "main-identity.exe"), join(f.root, "retained-link"));
+  await expect(loadNativeMcpHelpers(f.helpers, pins)).rejects.toThrow();
+  expect(queryNativeMainIdentity).not.toHaveBeenCalled(); expect(runNativeBootstrapOperation).not.toHaveBeenCalled();
+});
+it("an already loaded helper package is rechecked before each invocation", async () => {
+  const f = await packageFixture(), helper = await loadNativeMcpHelpers(f.helpers, f.pins);
+  await writeFile(join(f.helpers, "extra"), "unexpected");
+  await expect(helper.identity()).rejects.toThrow("package rejected");
+  expect(queryNativeMainIdentity).not.toHaveBeenCalled(); expect(runNativeBootstrapOperation).not.toHaveBeenCalled();
 });

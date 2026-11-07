@@ -1,14 +1,15 @@
 import { randomBytes } from "node:crypto";
+import { createNativeDirectoryGrant } from "./native-directory-grant.js";
 import { createNativeRecoveryGrant } from "./native-recovery-grant.js";
 import { exactKeys, isRecord } from "@tahtiapuri/validation/public";
 import { NATIVE_LAUNCH_MAX_BUDGET_NS, cancelNativeLaunchGate, createNativeLaunchGate, nativeLaunchGateState } from "./native-launch-gate.js";
 
 type BootstrapMode = "publish" | "consume" | "recover";
 type SessionMode = "prepare" | "seal" | "publish" | "release-pristine" | "release-clean";
-export type NativeLaunchMetadata = Readonly<{ kind: "identity" }>
+export type NativeLaunchMetadata = Readonly<{ kind: "identity" }> | Readonly<{ kind: "directory" }>
   | Readonly<{ kind: "bootstrap"; operation: BootstrapMode }>
   | Readonly<{ kind: "session"; operation: SessionMode }>;
-export type NativeLaunchRequest = Readonly<{ kind: "identity" }>
+export type NativeLaunchRequest = Readonly<{ kind: "identity" }> | Readonly<{ kind: "directory" }>
   | Readonly<{ kind: "bootstrap"; operation: "recover" }>
   | Readonly<{ kind: "bootstrap"; operation: "publish" | "consume"; input: Uint8Array }>
   | Readonly<{ kind: "session"; operation: SessionMode; input: Uint8Array }>;
@@ -48,7 +49,7 @@ type Closed = { code: number | null; signal: string | null; stdout: Buffer; stde
 function snapshot(request: NativeLaunchRequest) {
   if (!isRecord(request)) throw new Error("Invalid native launch request");
   let metadata: NativeLaunchMetadata, length = 0;
-  if (request.kind === "identity" && exactKeys(request, ["kind"])) metadata = { kind: "identity" };
+  if ((request.kind === "identity" || request.kind === "directory") && exactKeys(request, ["kind"])) metadata = { kind: request.kind };
   else if (request.kind === "bootstrap" && ["publish", "consume", "recover"].includes(request.operation)) {
     if (!exactKeys(request, request.operation === "recover" ? ["kind", "operation"] : ["kind", "operation", "input"]))
       throw new Error("Invalid native launch request");
@@ -57,7 +58,8 @@ function snapshot(request: NativeLaunchRequest) {
     && exactKeys(request, ["kind", "operation", "input"])) {
     metadata = { kind: "session", operation: request.operation }; length = 96;
   } else throw new Error("Invalid native launch request");
-  let input = metadata.kind === "bootstrap" && metadata.operation === "recover" ? createNativeRecoveryGrant() : Buffer.alloc(0);
+  let input = metadata.kind === "directory" ? createNativeDirectoryGrant()
+    : metadata.kind === "bootstrap" && metadata.operation === "recover" ? createNativeRecoveryGrant() : Buffer.alloc(0);
   if (length) {
     if (!("input" in request) || !(request.input instanceof Uint8Array) || request.input.byteLength !== length
       || request.input.buffer instanceof SharedArrayBuffer) throw new Error("Invalid native launch input");

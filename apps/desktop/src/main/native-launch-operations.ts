@@ -47,6 +47,11 @@ export class NativeLaunchOperations {
     return Object.freeze({ pending: !!this.active || status.pending, failed: this.failed || status.uncertain,
       lastSettlement: this.last ?? null });
   }
+  prepareDirectory(ownerDeadline: bigint, signal: AbortSignal): Promise<void> {
+    return this.tracked(record => this.invoke(record, "directory", undefined, undefined, ownerDeadline, signal, output => {
+      if (!output.equals(Buffer.from("directory-ready\n"))) throw new Error("Unexpected private directory receipt");
+    }));
+  }
   identity(ownerDeadline: bigint, signal: AbortSignal): Promise<NativeMainIdentity> {
     return this.tracked(record => this.invoke(record, "identity", undefined, undefined, ownerDeadline, signal, bytes => decodeNativeMainIdentity(bytes, process.pid)));
   }
@@ -67,7 +72,7 @@ export class NativeLaunchOperations {
     signal.throwIfAborted();
     if (this.failed || this.now() >= deadline) throw new Error("Native semantic owner fenced");
   }
-  private async invoke<T>(record: NativeCallRecord<NativeLaunchTaskBinding>, kind: "identity" | "bootstrap" | "session", operation: string | undefined,
+  private async invoke<T>(record: NativeCallRecord<NativeLaunchTaskBinding>, kind: "identity" | "directory" | "bootstrap" | "session", operation: string | undefined,
     bytes: Uint8Array | undefined, ownerDeadline: bigint, signal: AbortSignal, decode: (output: Buffer) => T): Promise<T> {
     if (this.active || this.failed) throw new NativeLaunchSemanticError(false, kind !== "identity");
     const context: Operation = { record, task: undefined, result: undefined, settlement: undefined, settled: undefined, returned: false };
@@ -79,7 +84,7 @@ export class NativeLaunchOperations {
       const status = this.owner.status();
       if (status.pending || status.uncertain) throw new NativeLaunchSemanticError(false, kind !== "identity");
       const bootstrap = kind === "bootstrap";
-      if (kind !== "identity" && (typeof operation !== "string" || !(bootstrap
+      if ((kind === "bootstrap" || kind === "session") && (typeof operation !== "string" || !(bootstrap
         ? ["publish", "consume", "recover"] : ["prepare", "seal", "publish", "release-pristine", "release-clean"]).includes(operation)))
         throw new Error("Invalid native semantic operation");
       const needsDescriptor = kind === "session" || bootstrap && operation !== "recover";
@@ -89,7 +94,7 @@ export class NativeLaunchOperations {
         input = Buffer.from(bytes); // Copy BEFORE decoding or any asynchronous work.
         if (decodeNativeBootstrap(input).main.pid !== process.pid) throw new Error("Foreign native Main descriptor");
       } else if (bytes !== undefined) throw new Error("Unexpected native semantic descriptor");
-      const request = kind === "identity" ? { kind: "identity" as const }
+      const request = kind === "identity" || kind === "directory" ? { kind }
         : kind === "bootstrap" && operation === "recover" ? { kind: "bootstrap" as const, operation: "recover" as const }
         : { kind, operation, input: input! } as NativeLaunchRequest;
       this.check(deadline, signal);

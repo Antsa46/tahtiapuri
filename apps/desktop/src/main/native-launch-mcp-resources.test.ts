@@ -2,12 +2,12 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { NativeLaunchBinding } from "./native-launch-worker-port.js";
 import type { NativeLaunchMcpResourceConfig } from "./native-launch-mcp-resources.js";
 import type { NativeMcpLaunchPackage } from "./native-mcp-resources.js";
-import type { NativeLaunchSupervisor } from "./native-launch-supervisor.js";
+import type { NativeLaunchSupervisor, NativeLaunchRequest } from "./native-launch-supervisor.js";
 const state = vi.hoisted(() => ({ package: vi.fn(), worker: vi.fn(), handoff: undefined as (() => void) | undefined,
   actor: vi.fn(() => { throw new Error("Actual native/Worker actor forbidden in factory mocks"); }) }));
 vi.mock("./native-mcp-resources.js", () => ({ loadNativeMcpLaunchPackage: state.package }));
 vi.mock("./native-launch-worker-port.js", () => ({ loadNativeLaunchWorkerSupervisor: state.worker,
-  NATIVE_LAUNCH_WORKER_FILES: Object.freeze(["native-launch-worker.js", "native-launch-worker-core.js", "native-launch-worker-config.js", "native-launch-gate.js", "native-recovery-grant.js"]) }));
+  NATIVE_LAUNCH_WORKER_FILES: Object.freeze(["native-launch-worker.js", "native-launch-worker-core.js", "native-launch-worker-config.js", "native-launch-gate.js", "native-recovery-grant.js", "native-directory-grant.js"]) }));
 vi.mock("./native-launch-resource-owner.js", async original => {
   const actual = await original<typeof import("./native-launch-resource-owner.js")>();
   return { ...actual, NativeLaunchResourceOwner: class extends actual.NativeLaunchResourceOwner {
@@ -20,7 +20,7 @@ const deferred = <T>() => { let resolve!: (value: T) => void, reject!: (error: u
   const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
 const turn = async () => { for (let i = 0; i < 12; ++i) await Promise.resolve(); };
 const root = "C:\\synthetic\\runtime", control = "C:\\synthetic\\control\\main-bootstrap.bin", digest = "a".repeat(64);
-const compiledNames = ["native-launch-worker.js", "native-launch-worker-core.js", "native-launch-worker-config.js", "native-launch-gate.js", "native-recovery-grant.js"] as const;
+const compiledNames = ["native-launch-worker.js", "native-launch-worker-core.js", "native-launch-worker-config.js", "native-launch-gate.js", "native-recovery-grant.js", "native-directory-grant.js"] as const;
 const config = (): NativeLaunchMcpResourceConfig => ({ runtimeRoot: root, descriptorSha256: digest, controlFile: control,
   compiled: Object.fromEntries(compiledNames.map(name => [name, { bytes: 100, sha256: "b".repeat(64) }])) as NativeLaunchBinding["compiled"],
   recoveryApproval: { descriptorSha256: digest, protocol: "THREC001" } });
@@ -36,15 +36,17 @@ async function fixture() {
   const packageGate = deferred<NativeMcpLaunchPackage>(), workerGate = deferred<Pick<NativeLaunchSupervisor, "start" | "status">>();
   const pin = Object.freeze({ bytes: 100, sha256: "c".repeat(64) });
   const verify = vi.fn(async (_signal: AbortSignal) => {});
+  const staged = deferred<void>(), stageWorker = vi.fn((_reservation: string, _signal: AbortSignal, _deadline: bigint) => staged.promise);
   const source: NativeMcpLaunchPackage = { runtimeRoot: root, descriptorSha256: digest,
-    programs: Object.freeze({ identity: pin, bootstrap: pin, broker: pin }), verifyLaunch: verify };
-  const start = vi.fn(() => ({ result: Promise.resolve({ stdout: Buffer.from('{"pid":' + process.pid + ',"creationTime":"0000000000000001"}\n'), authorityCommitted: false }),
-    settled: Promise.resolve({ childCloseObserved: true, workerExited: true, workerExitCode: 0, authorityCommitted: false, uncertain: false }) }));
+    programs: Object.freeze({ identity: pin, bootstrap: pin, broker: pin }), verifyLaunch: verify, stageWorker };
+  const start = vi.fn((request: NativeLaunchRequest) => ({ result: Promise.resolve({
+    stdout: Buffer.from(request.kind === "directory" ? "directory-ready\n" : '{"pid":' + process.pid + ',"creationTime":"0000000000000001"}\n'), authorityCommitted: request.kind === "directory" }),
+    settled: Promise.resolve({ childCloseObserved: true, workerExited: true, workerExitCode: 0, authorityCommitted: request.kind === "directory", uncertain: false }) }));
   const owner = { start, status: () => ({ pending: false, uncertain: false }) };
   state.package.mockImplementation(() => packageGate.promise); state.worker.mockImplementation(() => workerGate.promise);
   const module = await import("./native-launch-mcp-resources.js");
   const controller = new AbortController();
-  return { module, controller, packageGate, workerGate, source, owner, start, verify,
+  return { module, controller, packageGate, workerGate, source, owner, start, verify, stageWorker, staged,
     load: (value = config()) => module.loadNativeLaunchMcpResources(value, 10_000, controller.signal) };
 }
 it("constructs verifier and native pins from the same approved package without running an actor", async () => {
@@ -55,6 +57,7 @@ it("constructs verifier and native pins from the same approved package without r
   expect(binding.config.identity).toBe(root + "\\helpers\\main-identity.exe"); expect(binding.recoverProtocol).toBe("THREC001");
   f.workerGate.resolve(f.owner); const resource = await done;
   expect(f.start).not.toHaveBeenCalled(); expect(f.verify).not.toHaveBeenCalled();
+  await resource.prepareDirectory(20_000, new AbortController().signal); f.start.mockClear(); f.verify.mockClear();
   expect(await resource.identity(20_000, new AbortController().signal)).toEqual({ pid: process.pid, creationTime: 1n });
   expect(f.verify).toHaveBeenCalledOnce(); expect(f.start).toHaveBeenCalledOnce();
 });
@@ -148,4 +151,38 @@ it("checks the final public handoff after preparation completed without a timer 
   const done = f.load(); f.packageGate.resolve(f.source); await turn(); f.workerGate.resolve(f.owner);
   await expect(done).rejects.toMatchObject({ exitVerified: true, authorityCommitted: false });
   expect(f.start).not.toHaveBeenCalled(); await expect(f.load()).rejects.toThrow("already claimed");
+});
+
+it("binds staging to the same package and original fixed control reservation", async () => {
+  const f = await fixture(), input = config(), done = f.load(input);
+  Object.assign(input, { controlFile: "C:\\changed\\main-bootstrap.bin" });
+  f.packageGate.resolve(f.source); await turn(); f.workerGate.resolve(f.owner); const resources = await done;
+  await resources.prepareDirectory(10_000, f.controller.signal); f.start.mockClear(); f.verify.mockClear();
+  const original = resources.prepareWorker(10_000, f.controller.signal);
+  expect(f.stageWorker).toHaveBeenCalledOnce();
+  expect(f.stageWorker.mock.calls[0]![0]).toBe("C:\\synthetic\\control\\native-session-reserved");
+  expect(f.stageWorker.mock.calls[0]![2]).toBe(10_000_000_000n);
+  expect(f.start).not.toHaveBeenCalled();
+  f.staged.resolve(); await original;
+  expect((await resources.observeCall(original).binding).staging).toBe(f.staged.promise);
+});
+
+it("exposes immutable original control metadata without freezing mutable owner state", async () => {
+  const f = await fixture(), input = config(), done = f.load(input);
+  Object.assign(input, { controlFile: "C:\\changed\\main-bootstrap.bin" });
+  f.packageGate.resolve(f.source); await turn(); f.workerGate.resolve(f.owner); const resources = await done;
+  expect(resources.controlFile).toBe(control);
+  expect(Object.getOwnPropertyDescriptor(resources, "controlFile")).toMatchObject({ writable: false, configurable: false });
+  expect(Reflect.set(resources, "controlFile", "C:\\other\\main-bootstrap.bin")).toBe(false);
+  expect(Object.isFrozen(resources)).toBe(false);
+  await resources.prepareDirectory(10_000, f.controller.signal);
+  await expect(resources.identity(10_000, f.controller.signal)).resolves.toEqual({ pid: process.pid, creationTime: 1n });
+  expect(resources.status()).toMatchObject({ pending: false, failed: false });
+});
+
+it("loaded resources cannot bypass directory preparation", async () => {
+  const f = await fixture(), loading = f.load(); f.packageGate.resolve(f.source); await turn(); f.workerGate.resolve(f.owner);
+  const resources = await loading;
+  await expect(resources.identity(10_000, f.controller.signal)).rejects.toMatchObject({ exitVerified: true, authorityCommitted: false });
+  expect(f.verify).not.toHaveBeenCalled(); expect(f.start).not.toHaveBeenCalled(); expect(resources.status()).toMatchObject({ failed: true, directoryPrepared: false });
 });

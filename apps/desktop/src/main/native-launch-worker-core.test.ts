@@ -3,6 +3,7 @@ import { EventEmitter } from "node:events";
 import { PassThrough, Writable } from "node:stream";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { NativeLaunchWorkerCore, type NativeLaunchWorkerIo } from "./native-launch-worker-core.js";
+import { NATIVE_DIRECTORY_SCRIPT } from "./native-directory-grant.js";
 import { createNativeLaunchGate, cancelNativeLaunchGate, nativeLaunchGateState } from "./native-launch-gate.js";
 import { NativeLaunchSupervisor, type NativeLaunchPort, type NativeLaunchMetadata } from "./native-launch-supervisor.js";
 
@@ -40,16 +41,16 @@ afterEach(() => { for (const f of fixtures.splice(0)) { f.child.stdin.destroy();
 it("does not start a process from construction or workerData", () => {
   const f = make(); expect(f.spawn).not.toHaveBeenCalled(); expect(f.messages).toEqual([]);
 });
-it("uses only the nine fixed role and argument forms including its own Main PID", () => {
-  const roles: NativeLaunchMetadata[] = [{ kind: "identity" },
+it("uses only the ten fixed role and argument forms including its own Main PID", () => {
+  const roles: NativeLaunchMetadata[] = [{ kind: "identity" }, { kind: "directory" },
     ...(["publish", "consume", "recover"] as const).map(operation => ({ kind: "bootstrap" as const, operation })),
     ...(["prepare", "seal", "publish", "release-pristine", "release-clean"] as const).map(operation => ({ kind: "session" as const, operation }))];
   for (const role of roles) {
     const f = make(); f.start(role);
     const [file, args, options] = f.spawn.mock.calls[0]!;
-    expect(file).toBe(role.kind === "identity" ? config().identity : role.kind === "bootstrap" ? config().bootstrap : config().broker);
-    expect(args).toEqual(role.kind === "identity" ? ["--identity", String(process.pid)] : ["--" + role.operation, config().controlFile]);
-    expect(options).toEqual({ windowsHide: true, stdio: ["pipe", "pipe", "pipe"], env: config().env });
+    expect(file).toBe(role.kind === "directory" ? "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" : role.kind === "identity" ? config().identity : role.kind === "bootstrap" ? config().bootstrap : config().broker);
+    expect(args).toEqual(role.kind === "directory" ? ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", NATIVE_DIRECTORY_SCRIPT] : role.kind === "identity" ? ["--identity", String(process.pid)] : ["--" + role.operation, config().controlFile]);
+    expect(options).toEqual({ windowsHide: true, stdio: ["pipe", "pipe", "pipe"], env: { ...config().env, ...(role.kind === "directory" ? { TAHTIAPURI_PRIVATE_DIR: "C:\\synthetic\\control" } : {}) } });
     expect(f.sent).toEqual([]); f.close(1);
   }
 });
@@ -189,4 +190,28 @@ it("accepts at most the original twenty-second cold-launch cap without releasing
   over.core.receive({ type: "start", version: 1, id, request: { kind: "bootstrap", operation: "recover" },
     deadline: 20_000_000_001n, gate: over.gate });
   expect(over.spawn).not.toHaveBeenCalled(); expect(over.retire).toHaveBeenCalledWith(true);
+});
+
+it("directory launches only bound system PowerShell and withholds stdin until an explicit exact grant", () => {
+  const f = make(); f.start({ kind: "directory" });
+  const [file, args, options] = f.spawn.mock.calls[0]!;
+  expect(file).toBe("C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe");
+  expect(args.slice(0, 4)).toEqual(["-NoLogo", "-NoProfile", "-NonInteractive", "-Command"]);
+  expect(args).toHaveLength(5); expect(options.env).toEqual({ SystemRoot: "C:\\Windows", TAHTIAPURI_PRIVATE_DIR: "C:\\synthetic\\control" });
+  expect(f.sent).toEqual([]); f.authorize(Uint8Array.from(Buffer.from("THDIR001")).buffer);
+  expect(f.sent).toEqual([Buffer.from("THDIR001")]); expect(nativeLaunchGateState(f.gate).committed).toBe(true); f.close();
+});
+it("directory late synchronous spawn return with no timer dispatch never writes its grant", () => {
+  const f = make(); f.options.onSpawn = () => f.setNow(1_000_000_001n); f.start({ kind: "directory" });
+  f.authorize(Uint8Array.from(Buffer.from("THDIR001")).buffer);
+  expect(f.sent).toEqual([]); expect(f.child.kill).toHaveBeenCalledOnce(); expect(f.retire).not.toHaveBeenCalled();
+  f.close(); expect(nativeLaunchGateState(f.gate)).toEqual({ committed: false, cancelled: true });
+});
+it("directory cancellation before authorization keeps the gate closed without timer dispatch", () => {
+  const f = make(); f.start({ kind: "directory" }); cancelNativeLaunchGate(f.gate);
+  f.authorize(Uint8Array.from(Buffer.from("THDIR001")).buffer); expect(f.sent).toEqual([]); f.close();
+});
+it.each(["THREC001", "THDIR00", "THDIR001extra"])("directory rejects the wrong authority frame %s", input => {
+  const f = make(); f.start({ kind: "directory" }); f.authorize(Uint8Array.from(Buffer.from(input)).buffer);
+  expect(f.sent).toEqual([]); expect(nativeLaunchGateState(f.gate)).toEqual({ committed: false, cancelled: true }); f.close();
 });

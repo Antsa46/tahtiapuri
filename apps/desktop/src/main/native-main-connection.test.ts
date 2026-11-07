@@ -29,7 +29,7 @@ function fixture() {
   const development = vi.fn(async (operation: string): Promise<DevelopmentResult> => status(operation !== "development.detach"));
   const admission = new NativeDevelopmentAdmission({ development }, epoch, 50);
   const ticket = admission.issueTicket()!;
-  const owner = { consume: vi.fn(async (_ticket: NativeLaunchTicket, _signal: AbortSignal) => {}), revoke: vi.fn(async () => true) };
+  const owner = { consume: vi.fn(async (_ticket: NativeLaunchTicket, _signal: AbortSignal, _deadline: number) => {}), revoke: vi.fn(async () => true) };
   const connection = new NativeMainConnection(stream, admission, owner);
   let sequence = 1;
   const send = (kind: typeof ControlKind[keyof typeof ControlKind], body = Buffer.alloc(0)) =>
@@ -274,4 +274,93 @@ it("late requests do not renew the STOP deadline", async () => {
   const f = fixture(); await ready(f); const closed = f.connection.stop();
   await vi.advanceTimersByTimeAsync(NativeControl.shutdownTimeoutMs - 1); f.request();
   await vi.advanceTimersByTimeAsync(1); expect((await closed).failed).toBe(true);
+});
+
+async function withAuthenticationClock(run: (advance: (value: number) => void) => Promise<void>) {
+  const clock = vi.spyOn(performance, "now").mockReturnValue(0);
+  try { await run(value => { clock.mockReturnValue(value); }); } finally { clock.mockRestore(); }
+}
+it("passes the constructor-owned authentication deadline through a delayed HELLO without renewing it", async () => {
+  await withAuthenticationClock(async advance => {
+    const f = fixture(); advance(2000); await ready(f);
+    expect(f.owner.consume.mock.calls[0]![2]).toBe(NativeControl.authenticationTimeoutMs);
+    f.send(ControlKind.clean); expect((await f.connection.closed).failed).toBe(false);
+  });
+});
+it("rejects an expired HELLO before claim or consume even without timer dispatch", async () => {
+  await withAuthenticationClock(async advance => {
+    const f = fixture(); advance(NativeControl.authenticationTimeoutMs); f.hello();
+    expect((await f.connection.closed).failed).toBe(true); expect(f.owner.consume).not.toHaveBeenCalled();
+    expect(f.development.mock.calls.some(([op]) => op === "development.attach")).toBe(false);
+  });
+});
+it("a queue delay after HELLO cannot start consume or backend attachment after the original deadline", async () => {
+  await withAuthenticationClock(async advance => {
+    const f = fixture(); f.hello(); advance(NativeControl.authenticationTimeoutMs + 1);
+    await tick(); expect((await f.connection.closed).failed).toBe(true);
+    expect(f.owner.consume).not.toHaveBeenCalled();
+    expect(f.development.mock.calls.some(([op]) => op === "development.attach")).toBe(false);
+    expect(f.stream.sent).toEqual([]);
+  });
+});
+it("a late consume result cannot send ACCEPT without a timer callback", async () => {
+  await withAuthenticationClock(async advance => {
+    const f = fixture(), consumed = deferred<void>(); f.owner.consume.mockImplementation(() => consumed.promise);
+    f.hello(); await tick(); expect(f.owner.consume).toHaveBeenCalledOnce();
+    advance(NativeControl.authenticationTimeoutMs + 1); consumed.resolve();
+    expect((await f.connection.closed).failed).toBe(true); expect(f.stream.sent).toEqual([]);
+  });
+});
+for (const next of ["request", "callback"] as const)
+  it("an unfinished physical ACK remains fenced by the original authentication deadline: " + next, async () => {
+    await withAuthenticationClock(async advance => {
+      const f = fixture(); f.stream.hold = true; f.hello(); await tick();
+      expect(f.stream.sent.map(x => x[5])).toEqual([ControlKind.accept]);
+      advance(NativeControl.authenticationTimeoutMs + 1);
+      if (next === "request") f.request(); else f.stream.held.shift()!();
+      expect((await f.connection.closed).failed).toBe(true);
+      expect(f.development.mock.calls.some(([op]) => op === "development.invoke")).toBe(false);
+      expect(f.stream.sent).toHaveLength(1);
+    });
+  });
+it("completed authentication does not expire an active session at its old authentication deadline", async () => {
+  await withAuthenticationClock(async advance => {
+    const f = fixture(); await ready(f); advance(NativeControl.authenticationTimeoutMs + 1);
+    f.request(); await tick(); expect(f.stream.sent.map(x => x[5])).toEqual([ControlKind.accept, ControlKind.response]);
+    expect(f.development.mock.calls.some(([op]) => op === "development.invoke")).toBe(true);
+    f.send(ControlKind.clean); expect((await f.connection.closed).failed).toBe(false);
+  });
+});
+
+it("STOP cannot convert an expired unfinished ACK into successful CLEAN", async () => {
+  await withAuthenticationClock(async advance => {
+    const f = fixture(); f.stream.hold = true; f.hello(); await tick();
+    advance(NativeControl.authenticationTimeoutMs + 1); const stopped = f.connection.stop(); f.send(ControlKind.clean);
+    expect(await stopped).toMatchObject({ failed: true, brokerCleanupReported: false });
+  });
+});
+it("CLEAN during STOP still obeys the original unfinished authentication deadline", async () => {
+  await withAuthenticationClock(async advance => {
+    const f = fixture(); f.stream.hold = true; f.hello(); await tick();
+    advance(NativeControl.authenticationTimeoutMs - 1); const stopped = f.connection.stop();
+    advance(NativeControl.authenticationTimeoutMs + 1); f.send(ControlKind.clean);
+    expect(await stopped).toMatchObject({ failed: true, brokerCleanupReported: false });
+  });
+});
+it("timely terminal CLEAN may cancel logical ACK waiting without claiming physical callback completion", async () => {
+  await withAuthenticationClock(async () => {
+    const f = fixture(); f.stream.hold = true;
+    f.stream.react = bytes => { if (bytes[5] === ControlKind.accept) f.send(ControlKind.clean); };
+    f.hello();
+    expect(await f.connection.closed).toMatchObject({ failed: false, authenticated: true, brokerCleanupReported: true });
+    expect(f.stream.held).toHaveLength(1); // Physical callback is deliberately still pending.
+  });
+});
+it("fully authenticated STOP retains its independent shutdown grace after the old authentication deadline", async () => {
+  await withAuthenticationClock(async advance => {
+    const f = fixture(); await ready(f); advance(NativeControl.authenticationTimeoutMs + 1);
+    const stopped = f.connection.stop(); await tick();
+    advance(NativeControl.authenticationTimeoutMs + NativeControl.shutdownTimeoutMs - 1); f.send(ControlKind.clean);
+    expect(await stopped).toMatchObject({ failed: false, brokerCleanupReported: true });
+  });
 });

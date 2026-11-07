@@ -33,7 +33,8 @@ export function nativeLaunchWorkerConfig(value: unknown): NativeLaunchWorkerConf
     || !nativeLaunchPath(value.identity, "main-identity.exe") || !nativeLaunchPath(value.bootstrap, "main-bootstrap.exe")
     || !nativeLaunchPath(value.broker, "mcp-broker.exe") || !nativeLaunchPath(value.controlFile, "main-bootstrap.bin")
     || !launchRecord(value.env) || Object.keys(value.env).some(key => !["SystemRoot", "WINDIR", "TEMP", "TMP"].includes(key))
-    || Object.values(value.env).some(item => typeof item !== "string" || item.length > 32767 || item.includes("\0")))
+    || Object.values(value.env).some(item => typeof item !== "string" || item.length > 32767 || item.includes("\0"))
+    || typeof value.env.SystemRoot !== "string" || win32.normalize(value.env.SystemRoot) !== value.env.SystemRoot || !nativeLaunchPath(win32.join(value.env.SystemRoot, "System32/WindowsPowerShell/v1.0/powershell.exe"), "powershell.exe"))
     throw new Error("Invalid bound native launch configuration");
   const root = win32.dirname(win32.dirname(value.identity));
   if (value.identity !== win32.join(root, "helpers/main-identity.exe")

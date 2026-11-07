@@ -40,3 +40,7 @@ it("rejects accessor, symbol, array and custom-prototype records without reading
   expect(launchRecord({ [Symbol("extra")]: 1 })).toBe(false);
   expect(launchRecord([])).toBe(false); expect(launchRecord(new Date())).toBe(false);
 });
+
+it.each([{}, { SystemRoot: "relative" }, { SystemRoot: "c:\\Windows" }, { SystemRoot: "\\\\remote\\Windows" }, { SystemRoot: "C:\\Windows\\..\\Windows" }])("requires a canonical bound Windows root rather than an ambient command lookup %j", env => {
+  expect(() => nativeLaunchWorkerConfig({ ...input(), env })).toThrow();
+});

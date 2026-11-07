@@ -15,7 +15,7 @@ export interface NativeConnectionOutcome {
 }
 export interface NativeConnectionOwner {
   /** Remove only this claimed descriptor. Must not resolve before removal completes. */
-  consume(ticket: NativeLaunchTicket, signal: AbortSignal): Promise<void>;
+  consume(ticket: NativeLaunchTicket, signal: AbortSignal, deadline: number): Promise<void>;
   /** Revoke this generation's backend epoch. A later generation must never share this closure. */
   revoke(): Promise<boolean>;
 }
@@ -28,6 +28,8 @@ export class NativeMainConnection {
   private phase: "hello" | "authenticating" | "active" | "stopping" | "finishing" | "closed" = "hello";
   private lease: NativeDevelopmentLease | undefined;
   private authenticated = false;
+  private authenticationComplete = false;
+  private readonly authenticationDeadline: number;
   private cleanup = false;
   private failed = false;
   private streamClosed = false;
@@ -51,11 +53,12 @@ export class NativeMainConnection {
 
   constructor(private readonly stream: Duplex, private readonly admission: NativeDevelopmentAdmission,
     private readonly owner: NativeConnectionOwner) {
+    this.authenticationDeadline = performance.now() + NativeControl.authenticationTimeoutMs;
     this.closed = new Promise(resolve => { this.resolveClosed = resolve; });
     this.closeObserved = new Promise(resolve => { this.observedClose = resolve; });
     this.reader = new NativeControlReader("to-main", frame => this.receive(frame), () => this.fail());
     this.writer = new NativeControlWriter(stream, () => this.fail());
-    this.authenticationTimer = setTimeout(() => this.fail(), NativeControl.authenticationTimeoutMs);
+    this.authenticationTimer = setTimeout(() => this.fail(), Math.max(0, this.authenticationDeadline - performance.now()));
     stream.on("error", () => this.fail());
     stream.once("end", () => { this.reader.end(); if (!this.cleanup) this.fail(); });
     stream.once("close", () => {
@@ -69,9 +72,15 @@ export class NativeMainConnection {
   /** Revokes admission immediately, then gives an authenticated broker a bounded
    * opportunity to stop its worker and report CLEAN. Not a native cleanup proof. */
   stop(): Promise<NativeConnectionOutcome> {
-    if (this.phase === "closed" || this.phase === "finishing" || this.phase === "stopping") return this.closed;
+    if (this.phase === "closed" || this.phase === "finishing") return this.closed;
+    if (!this.authenticationComplete && performance.now() >= this.authenticationDeadline) { this.fail(); return this.closed; }
+    if (this.phase === "stopping") return this.closed;
     const active = this.authenticated;
-    this.phase = "stopping"; clearTimeout(this.authenticationTimer); this.abort.abort(); this.revoke();
+    this.phase = "stopping";
+    // STOP never renews an unfinished authentication. Only a completed one
+    // receives the independent shutdown grace.
+    if (this.authenticationComplete) clearTimeout(this.authenticationTimer);
+    this.abort.abort(); this.revoke();
     // Abort listeners may synchronously complete CLEAN or close the stream.
     if (this.finishStarted) return this.closed;
     if (!active) { this.finish(); return this.closed; }
@@ -81,9 +90,11 @@ export class NativeMainConnection {
   }
   private receive(frame: ControlFrame) {
     if (this.phase === "closed") return;
+    if (!this.authenticationComplete && (this.phase === "hello" || this.phase === "authenticating" || this.phase === "active" || this.phase === "stopping")
+      && performance.now() >= this.authenticationDeadline) { this.fail(); return; }
     if (this.phase === "hello" && frame.kind === ControlKind.hello) {
       const ticket = { generation: frame.body.subarray(0, 16).toString("hex"), token: frame.body.subarray(16).toString("hex") };
-      const lease = this.admission.claim(ticket.generation, ticket.token);
+      const lease = this.admission.claim(ticket.generation, ticket.token, this.authenticationDeadline);
       if (!lease) { this.fail(); return; }
       this.lease = lease; this.phase = "authenticating";
       void this.authenticate(ticket, lease); return;
@@ -114,15 +125,19 @@ export class NativeMainConnection {
   private async authenticate(ticket: NativeLaunchTicket, lease: NativeDevelopmentLease) {
     try {
       this.consumption = Promise.resolve().then(() => {
-        if (this.abort.signal.aborted) throw new Error("Native connection stopped before descriptor consumption.");
-        return this.owner.consume(ticket, this.abort.signal);
+        if (this.abort.signal.aborted || performance.now() >= this.authenticationDeadline)
+          throw new Error("Native connection stopped or expired before descriptor consumption.");
+        return this.owner.consume(ticket, this.abort.signal, this.authenticationDeadline);
       });
       const [, ready] = await Promise.all([this.consumption, lease.ready]);
       if (this.phase !== "authenticating") return;
-      if (!ready) { this.fail(); return; }
+      if (!ready || this.abort.signal.aborted || performance.now() >= this.authenticationDeadline) { this.fail(); return; }
       // ACK can reach the broker before the physical write callback fires.
       this.phase = "active"; this.authenticated = true;
       await this.writer.write({ kind: ControlKind.accept, body: Buffer.from(ticket.generation, "hex") });
+      if (this.phase !== "active") return;
+      if (this.abort.signal.aborted || performance.now() >= this.authenticationDeadline) { this.fail(); return; }
+      this.authenticationComplete = true;
       clearTimeout(this.authenticationTimer);
     } catch { this.failUnlessFinishing(); }
   }

@@ -28,7 +28,8 @@ it("issues one independent ticket and atomically rejects duplicate and legacy cl
 it("disconnect during attach waits for attach and detach before any replacement ticket", async () => {
   const attach = deferred<DevelopmentResult>(), detach = deferred<DevelopmentResult>(), f = fixture();
   f.development.mockImplementation(op => op === "development.attach" ? attach.promise : detach.promise);
-  const lease = f.claim(), closed = lease.close(); expect(lease.close()).toBe(closed);
+  const lease = f.claim(); await Promise.resolve(); // The raw attach has actually started.
+  const closed = lease.close(); expect(lease.close()).toBe(closed);
   expect(f.admission.issueTicket()).toBeUndefined(); await Promise.resolve();
   expect(f.development.mock.calls.map(([op]) => op)).toEqual(["development.attach"]);
   attach.resolve(status(true)); expect(await lease.ready).toBe(false); await Promise.resolve();
@@ -53,7 +54,8 @@ it("disable before claim burns the unpublished or outstanding ticket", async () 
 it("disable during attach cannot publish an active lease or revive the generation", async () => {
   const f = fixture(), attach = deferred<DevelopmentResult>();
   f.development.mockImplementation(op => op === "development.attach" ? attach.promise : Promise.resolve(status(false)));
-  const lease = f.claim(), stopped = f.admission.disable(); attach.resolve(status(true));
+  const lease = f.claim(); await Promise.resolve(); // Preserve the in-flight attach regression.
+  const stopped = f.admission.disable(); attach.resolve(status(true));
   expect(await lease.ready).toBe(false); expect(await stopped).toBe(true); expect(f.admission.phase).toBe("disabled");
   expect(f.admission.issueTicket()).toBeUndefined(); expect(f.claim()).toBeUndefined();
 });
@@ -145,3 +147,54 @@ it("retains the shared call reservations across detach and reconnect until old c
   expect(await next.invoke(command)).toEqual(status(true));
   expect(await next.close()).toBe(true); await f.admission.disable();
 });
+
+async function withAdmissionClock(run: (advance: (value: number) => void) => Promise<void>) {
+  const clock = vi.spyOn(performance, "now").mockReturnValue(0);
+  try { await run(value => { clock.mockReturnValue(value); }); } finally { clock.mockRestore(); }
+}
+it.each([0, NaN, Infinity])("rejects invalid original authentication deadline %s before claiming the ticket", async deadline => {
+  await withAdmissionClock(async () => {
+    const f = fixture(); expect(f.admission.claim(f.ticket.generation, f.ticket.token, deadline)).toBeUndefined();
+    expect(f.admission.phase).toBe("available"); expect(f.development).not.toHaveBeenCalled(); await f.admission.disable();
+  });
+});
+it("a shorter original authentication deadline rejects a late attach result without timer dispatch", async () => {
+  await withAdmissionClock(async advance => {
+    const f = fixture(), attached = deferred<DevelopmentResult>();
+    f.development.mockImplementation(op => op === "development.attach" ? attached.promise : Promise.resolve(status(false)));
+    const lease = f.admission.claim(f.ticket.generation, f.ticket.token, 10)!; await Promise.resolve();
+    expect(f.development).toHaveBeenCalledWith("development.attach", expect.any(Object));
+    advance(10); attached.resolve(status(true)); expect(await lease.ready).toBe(false); await lease.close();
+    expect(f.admission.phase).toBe("disabled"); expect(f.admission.issueTicket()).toBeUndefined();
+  });
+});
+it("an attach queued past its own original cap never starts backend work", async () => {
+  await withAdmissionClock(async advance => {
+    const f = fixture(), lease = f.admission.claim(f.ticket.generation, f.ticket.token, 1000)!;
+    advance(51); expect(await lease.ready).toBe(false); await lease.close();
+    expect(f.development.mock.calls.some(([op]) => op === "development.attach")).toBe(false);
+    expect(f.admission.phase).toBe("disabled");
+  });
+});
+it("an outer authentication deadline cannot extend the local attach cap or revive a timed-out lease", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  await withAdmissionClock(async advance => {
+    const f = fixture(), attached = deferred<DevelopmentResult>();
+    f.development.mockImplementation(op => op === "development.attach" ? attached.promise : Promise.resolve(status(false)));
+    const lease = f.admission.claim(f.ticket.generation, f.ticket.token, 1000)!; let returned = false;
+    void lease.ready.then(() => { returned = true; });
+    advance(49); await vi.advanceTimersByTimeAsync(49); expect(returned).toBe(false);
+    advance(50); await vi.advanceTimersByTimeAsync(1); expect(await lease.ready).toBe(false);
+    attached.resolve(status(true)); await lease.close(); expect(f.admission.phase).toBe("disabled");
+    expect(f.admission.issueTicket()).toBeUndefined();
+  });
+});
+
+for (const action of ["disable", "close"] as const)
+  it("does not start queued attach when " + action + " wins before dispatch", async () => {
+    const f = fixture(), lease = f.claim();
+    const stopped = action === "disable" ? f.admission.disable() : lease.close();
+    expect(await lease.ready).toBe(false); await stopped;
+    expect(f.development.mock.calls.some(([op]) => op === "development.attach")).toBe(false);
+    expect(f.admission.phase).toBe("disabled"); expect(f.admission.issueTicket()).toBeUndefined();
+  });

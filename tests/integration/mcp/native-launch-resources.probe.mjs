@@ -1,8 +1,8 @@
 /** Direct Node probe for the fixed compiled resource factory. Only a reviewed
- * pinned recipe may run it. Two synthetic helper calls, no broker/model/API. */
+ * pinned recipe may run it. One directory grant and two synthetic helper calls; no broker/model/API. */
 import assert from "node:assert/strict";
-import { open, lstat, writeFile } from "node:fs/promises";
-import { dirname, basename, join, resolve } from "node:path";
+import { open, lstat, realpath, writeFile } from "node:fs/promises";
+import { dirname, basename, join, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadNativeLaunchMcpResources } from "../../../apps/desktop/dist/main/native-launch-mcp-resources.js";
 import { NativeLaunchObservation } from "../../support/mcp/native-launch-observation.mjs";
@@ -11,11 +11,26 @@ const root = process.env.TAHTIAPURI_NATIVE_LAUNCH_RESOURCES_RUN_ROOT;
 if (process.platform !== "win32" || !root || resolve(root) !== root
   || dirname(root) !== join(project, ".artifacts/tests/native-launch-resources")
   || !/^run-[a-f0-9]{32}$/.test(basename(root))) throw new Error("Pinned Windows resource probe recipe required");
-const now = process.hrtime.bigint, began = now(), ownerDeadline = performance.now() + 55_000;
+const control = join(root, "control");
+const now = process.hrtime.bigint, began = now(), ownerDeadline = performance.now() + 75_000;
 const phaseDeadline = budget => Math.min(ownerDeadline, performance.now() + budget);
 const events = [], calls = [], pending = new Map(), controllers = [];
 let sequence = 0, nextWork = 0, firstFailure = null, closing = false, primarySealed = false;
 let owner, preparationRequested = false, preparationReturned = false, completed = 0, overflow = false;
+let systemPowerShellVerified = false;
+// Retain Main while original preparation or child/Worker ownership is unknown.
+// The outer reviewed owner can stop this owned tree; no Worker is terminated,
+// reset, unrefed or replaced to regain progress. A late close never upgrades failure.
+const quiescenceGuard = setInterval(() => {
+  if (!primarySealed || pending.size || preparationRequested && !preparationReturned || owner?.status().pending) return;
+  if (calls.some(record => !record.resultSettled || !record.observationFinished)) return;
+  const physical = calls.every(record => {
+    const native = record.nativeWatcher?.snapshot();
+    if (native?.settlementObserved) return native.settlement.childCloseObserved === true && native.settlement.workerExited === true;
+    return ["none", "no-task"].includes(record.nativeBinding) && record.originalOutcome?.status === "rejected" && record.error?.exitVerified === true;
+  });
+  if (physical) clearInterval(quiescenceGuard); // Failed primary still exits1.
+}, 25);
 function fail(reason) { if (!firstFailure) firstFailure = { reason, order: ++sequence, atNs: String(now() - began) }; }
 function mark(stage, label) {
   if (events.length >= 256) { overflow = true; fail("event-overflow"); return; }
@@ -52,20 +67,41 @@ async function absent(path) {
   try { await lstat(path); } catch (error) { if (error?.code === "ENOENT") return; throw error; }
   throw new Error("Synthetic control file unexpectedly exists");
 }
-async function input() {
-  const file = await open(join(root, "resource-binding.json"), "r");
+async function readBytes(path, maximum, oneLink = true) {
+  const named = await lstat(path); assert(named.isFile() && !named.isSymbolicLink() && (!oneLink || named.nlink === 1));
+  const file = await open(path, "r");
   try {
-    const before = await file.stat(); assert(before.isFile() && before.size > 0 && before.size <= 16 * 1024);
+    const before = await file.stat(); assert(before.isFile() && (!oneLink || before.nlink === 1) && before.size > 0 && before.size <= maximum);
     const bytes = Buffer.alloc(before.size + 1); let used = 0;
     while (used < bytes.length) {
       const read = await file.read(bytes, used, bytes.length - used, used); if (!read.bytesRead) break; used += read.bytesRead;
     }
     const after = await file.stat();
-    for (const key of ["dev", "ino", "size", "mtimeMs", "ctimeMs"]) assert.equal(before[key], after[key]);
-    assert.equal(used, before.size); const binding = JSON.parse(bytes.subarray(0, used).toString("utf8"));
-    assert.equal(binding.controlFile, join(root, "main-bootstrap.bin")); return binding;
+    for (const key of ["dev", "ino", "size", "mtimeMs", "ctimeMs", "nlink"]) { assert.equal(named[key], before[key]); assert.equal(before[key], after[key]); }
+    assert.equal(used, before.size); return bytes.subarray(0, used);
   } finally { await file.close(); }
 }
+async function input() {
+  const binding = JSON.parse((await readBytes(join(root, "resource-binding.json"), 16 * 1024)).toString("utf8"));
+  assert.equal(binding.controlFile, join(control, "main-bootstrap.bin")); return binding;
+}
+async function verifySystemPowerShell() {
+  const approval = JSON.parse((await readBytes(join(root, "os-binding.json"), 8192)).toString("utf8"));
+  assert.deepEqual(Object.keys(approval).sort(), ["powerShell", "schema", "sha256", "systemRoot"]); assert.equal(approval.schema, 1);
+  assert.equal(process.env.SystemRoot, approval.systemRoot); assert.match(approval.sha256, /^[a-f0-9]{64}$/);
+  const actual = join(process.env.SystemRoot, "System32/WindowsPowerShell/v1.0/powershell.exe");
+  assert.equal(actual.toLowerCase(), approval.powerShell.toLowerCase());
+  // Trusted Windows servicing may hard-link this separately approved OS image.
+  // File identity/size/link-count and approved bytes still remain stable.
+  const { createHash } = await import("node:crypto");
+  assert.equal(createHash("sha256").update(await readBytes(actual, 4 * 1024 ** 2, false)).digest("hex"), approval.sha256);
+  systemPowerShellVerified = true;
+}
+function sameParent(before, after) {
+  assert(before.isDirectory() && after.isDirectory() && !before.isSymbolicLink() && !after.isSymbolicLink());
+  for (const key of ["dev", "ino", "birthtimeNs"]) assert.equal(before[key], after[key]);
+}
+
 function outcome(promise, record, key) {
   const observed = promise.then(value => { record[key] = { status: "fulfilled" }; return value; }, error => {
     record[key] = { status: "rejected", reason: errorInfo(error) }; fail(record.label + ":" + key); throw error;
@@ -137,7 +173,8 @@ async function launch(label) {
     operation: null, nativeSemanticOutcome: null, nativeBinding: "pending", nativeWatcher: null,
     nativeSealed: false, nativePrimary: null, observationFinished: false, observationError: null, observerStatuses: [] };
   calls.push(record); mark("call-enter", label);
-  const original = label === "identity" ? owner.identity(deadline, controller.signal)
+  const original = label === "directory" ? owner.prepareDirectory(deadline, controller.signal)
+    : label === "identity" ? owner.identity(deadline, controller.signal)
     : owner.bootstrap("recover", undefined, deadline, controller.signal);
   record.original = original;
   // Own the semantic result BEFORE an observation lookup can synchronously fail.
@@ -168,27 +205,40 @@ async function launch(label) {
   assert(record.observerStatuses.every(item => item.status === "fulfilled"));
   assert.equal(native.resultSettled, true); assert.equal(native.settlementObserved, true); assert.equal(native.error, null);
   assert.deepEqual(native.settlement, { childCloseObserved: true, workerExited: true, workerExitCode: 0,
-    authorityCommitted: label === "recover", uncertain: false });
-  assert.equal(native.authorityCommitted, label === "recover");
+    authorityCommitted: label !== "identity", uncertain: false });
+  assert.equal(native.authorityCommitted, label !== "identity");
   assert.equal(owner.status().pending, false); assert.equal(owner.status().failed, false); return value;
 }
 try {
-  const preparationDeadline = phaseDeadline(20_000), binding = await work("read-binding", input, preparationDeadline);
+  // NEW fixture budget75s, not production Main policy or old run evidence.
+  const preparationDeadline = phaseDeadline(10_000);
+  const parentBefore = await work("parent-before", () => lstat(root, { bigint: true }), preparationDeadline);
+  await work("control-initial-absence", () => absent(control), preparationDeadline);
+  await work("system-powershell-binding", verifySystemPowerShell, preparationDeadline);
+  const binding = await work("read-binding", input, preparationDeadline);
   const controller = new AbortController(); controllers.push(controller);
   owner = await work("resource-factory", () => {
     preparationRequested = true; return loadNativeLaunchMcpResources(binding, preparationDeadline, controller.signal);
   }, preparationDeadline);
   preparationReturned = true;
+  assert.equal(owner.status().directoryPrepared, false);
+  assert.equal(await launch("directory"), undefined);
+  assert.equal(owner.status().directoryPrepared, true);
+  const directoryDeadline = phaseDeadline(2000);
+  const directory = await work("physical-control", () => lstat(control), directoryDeadline);
+  assert(directory.isDirectory() && !directory.isSymbolicLink());
+  assert.equal(relative(control, await work("physical-control-path", () => realpath(control), directoryDeadline)), "");
+  sameParent(parentBefore, await work("parent-after-directory", () => lstat(root, { bigint: true }), directoryDeadline)); ++completed;
   const identity = await launch("identity"); assert.equal(identity.pid, process.pid); assert(identity.creationTime > 0n); ++completed;
   const fixtureDeadline = phaseDeadline(2000);
-  await work("pending-absence", () => absent(join(root, "main-bootstrap.pending")), fixtureDeadline);
-  await work("final-absence", () => absent(join(root, "main-bootstrap.bin")), fixtureDeadline);
-  await work("pending-create", () => writeFile(join(root, "main-bootstrap.pending"),
+  await work("pending-absence", () => absent(join(control, "main-bootstrap.pending")), fixtureDeadline);
+  await work("final-absence", () => absent(join(control, "main-bootstrap.bin")), fixtureDeadline);
+  await work("pending-create", () => writeFile(join(control, "main-bootstrap.pending"),
     Buffer.from([84, 77, 66, 79, 79, 84, 49, 0]), { flag: "wx" }), fixtureDeadline);
   assert.equal(await launch("recover"), undefined);
   const afterDeadline = phaseDeadline(2000);
-  await work("native-pending-absent", () => absent(join(root, "main-bootstrap.pending")), afterDeadline);
-  await work("native-final-absent", () => absent(join(root, "main-bootstrap.bin")), afterDeadline); ++completed;
+  await work("native-pending-absent", () => absent(join(control, "main-bootstrap.pending")), afterDeadline);
+  await work("native-final-absent", () => absent(join(control, "main-bootstrap.bin")), afterDeadline); ++completed;
   await assert.rejects(loadNativeLaunchMcpResources(binding, ownerDeadline, new AbortController().signal), /already claimed/);
 } catch { fail("probe-operation-or-assertion"); }
 finally {
@@ -201,8 +251,8 @@ finally {
   const status = owner?.status() ?? null;
   if (!owner || status.pending || status.failed) fail("owner-not-clean");
   primarySealed = true; for (const record of calls) sealNative(record); mark("primary-sealed");
-  const passed = !firstFailure && !overflow && completed === 2;
-  const report = { schema: 1, passed, firstFailure, completed, ownerStatus: status,
+  const passed = !firstFailure && !overflow && completed === 3;
+  const report = { schema: 1, passed, firstFailure, completed, ownerStatus: status, originalFixtureOwnerBudgetMs: 75000, systemPowerShellVerified,
     pending: [...pending.values()].map(entry => entry.label), preparationReturned,
     preparationBackgroundUnknown: preparationRequested && !preparationReturned, calls: calls.map(snapshot), eventsOverflow: overflow, events,
     automaticRetries: 0, forcedWorkerTermination: false, modelExecuted: false, brokerOperationExecuted: false, networkRequested: false };

@@ -1,4 +1,4 @@
-import { requireNativeOperationDeadline } from "./native-operation-deadline.js";
+import { NativeOperationDeadlineError, requireNativeOperationDeadline } from "./native-operation-deadline.js";
 import { constants } from "node:fs";
 import { copyFile, lstat, mkdir, open, opendir, realpath } from "node:fs/promises";
 import { createHash } from "node:crypto";
@@ -30,14 +30,19 @@ export interface NativeMcpHostResources {
   prepareWorker(reservation: string, signal: AbortSignal): Promise<void>;
 }
 export interface NativeMcpRuntime extends NativeMcpHostResources { readonly broker: string; readonly packageDigest: string }
-/** Read-only launch source from the same externally pinned descriptor. It does
- * not start a helper or choose a control root/Worker. Only the launch factory
- * combines it with its package-derived Worker binding. */
+/** Trusted-Main capabilities from one externally pinned descriptor. Loading
+ * and revalidation are read-only; explicit staging writes only the fixed file
+ * cohort. Neither capability starts a helper. The launch factory binds both
+ * to one control root and its package-derived Worker. */
 export interface NativeMcpLaunchPackage {
   readonly runtimeRoot: string;
   readonly descriptorSha256: string;
   readonly programs: Readonly<Record<"identity" | "bootstrap" | "broker", Pin>>;
   verifyLaunch(signal: AbortSignal): Promise<void>;
+  /** Internal trusted-Main staging capability. The factory binds reservation
+   * once; no execution, ACL grant, deletion or recovery. Original hrtime cap
+   * is mandatory and never replaced by a fresh timeout here. */
+  stageWorker(reservation: string, signal: AbortSignal, deadline: bigint): Promise<void>;
 }
 
 const denied = (): never => { throw new Error("Native MCP runtime package rejected."); };
@@ -175,6 +180,27 @@ async function loadNativeMcpPackage(config: NativeMcpResourceConfig, signal: Abo
   };
   await verify(signal); signal.throwIfAborted();
   const helpers = await loadNativeMcpHelpers(join(root, "helpers"), metadata.helpers); signal.throwIfAborted();
+  const stageWorker = async (reservation: string, operationSignal: AbortSignal, check: () => void): Promise<void> => {
+    check(); canonical(reservation);
+    const stage = join(reservation, "worker"), target = join(stage, "package");
+    if (basename(reservation) !== "native-session-reserved" || overlaps(root, reservation) || target.length > 258 || join(target, "node.exe").length > 259) denied();
+    check(); await verify(operationSignal); check();
+    await children(reservation, [], operationSignal); check();
+    for (const path of [stage, target, join(target, "licenses"), join(stage, "scratch")]) {
+      check(); await mkdir(path); check(); await directory(path, operationSignal); check();
+    }
+    for (const file of files) {
+      check(); const source = join(root, "package", file.path), destination = join(target, file.path);
+      await read(source, operationSignal, file.bytes, file); check();
+      await copyFile(source, destination, constants.COPYFILE_EXCL); check();
+      await read(destination, operationSignal, file.bytes, file); check();
+    }
+    await children(reservation, ["worker"], operationSignal); check();
+    await children(stage, ["package", "scratch"], operationSignal); check();
+    await children(join(stage, "scratch"), [], operationSignal); check();
+    await verifyPackage(target, files, operationSignal); check();
+    await verify(operationSignal); check();
+  };
   const runtime: NativeMcpRuntime = Object.freeze({ broker, packageDigest: metadata.package.digest, helpers,
     async session(operation: NativeMcpSessionOperation, file: string, bytes: Buffer, operationSignal: AbortSignal, deadline?: number) {
       if (!Buffer.isBuffer(bytes) || bytes.length !== NATIVE_BOOTSTRAP_BYTES) denied();
@@ -185,26 +211,10 @@ async function loadNativeMcpPackage(config: NativeMcpResourceConfig, signal: Abo
         await runNativeMcpSessionOperation(broker, operation, file, input, operationSignal, deadline);
       } finally { input.fill(0); }
     }, async prepareWorker(reservation: string, callerSignal: AbortSignal) {
-    canonical(reservation);
-    const stage = join(reservation, "worker"), target = join(stage, "package");
-    if (basename(reservation) !== "native-session-reserved" || overlaps(root, reservation) || target.length > 258 || join(target, "node.exe").length > 259) denied();
-    // Abort/deadline forbids further side effects even if an uninterruptible
-    // copy finishes late. The caller must retain this promise until it settles.
+    // Legacy entry retains its existing signal/30s policy. New resource owners
+    // call the same package's explicit-deadline staging capability below.
     const operationSignal = AbortSignal.any([callerSignal, AbortSignal.timeout(30000)]);
-    operationSignal.throwIfAborted(); await verify(operationSignal); operationSignal.throwIfAborted();
-    await children(reservation, [], operationSignal); operationSignal.throwIfAborted();
-    for (const path of [stage, target, join(target, "licenses"), join(stage, "scratch")]) {
-      operationSignal.throwIfAborted(); await mkdir(path); operationSignal.throwIfAborted(); await directory(path, operationSignal);
-    }
-    for (const file of files) {
-      operationSignal.throwIfAborted(); const source = join(root, "package", file.path), destination = join(target, file.path);
-      await read(source, operationSignal, file.bytes, file); operationSignal.throwIfAborted();
-      await copyFile(source, destination, constants.COPYFILE_EXCL); operationSignal.throwIfAborted();
-      await read(destination, operationSignal, file.bytes, file); operationSignal.throwIfAborted();
-    }
-    await children(reservation, ["worker"], operationSignal); await children(stage, ["package", "scratch"], operationSignal);
-    await children(join(stage, "scratch"), [], operationSignal); await verifyPackage(target, files, operationSignal);
-    await verify(operationSignal); operationSignal.throwIfAborted();
+    await stageWorker(reservation, operationSignal, () => operationSignal.throwIfAborted());
   } });
   const launch: NativeMcpLaunchPackage = Object.freeze({ runtimeRoot: root, descriptorSha256,
     programs: Object.freeze({ identity: Object.freeze({ ...metadata.helpers["main-identity.exe"] }),
@@ -213,15 +223,24 @@ async function loadNativeMcpPackage(config: NativeMcpResourceConfig, signal: Abo
       await verifyBroker(operationSignal); operationSignal.throwIfAborted();
       await loadNativeMcpHelpers(join(root, "helpers"), metadata.helpers); operationSignal.throwIfAborted();
     },
+    stageWorker(reservation: string, operationSignal: AbortSignal, deadline: bigint) {
+      const check = () => {
+        operationSignal.throwIfAborted();
+        if (typeof deadline !== "bigint" || deadline <= 0n || process.hrtime.bigint() >= deadline)
+          throw new NativeOperationDeadlineError();
+      };
+      return stageWorker(reservation, operationSignal, check);
+    },
   });
   return Object.freeze({ runtime, launch });
 }
-/** Legacy runtime shape and execution behavior are unchanged. */
+/** Legacy runtime shape and existing timeout policy are retained. */
 export async function loadNativeMcpRuntime(config: NativeMcpResourceConfig, signal: AbortSignal): Promise<NativeMcpRuntime> {
   return (await loadNativeMcpPackage(config, signal)).runtime;
 }
-/** Verification only. Package paths/pins are captured together; no separate
- * verifier injection or legacy helper execution is exposed by the factory. */
+/** Same-package launch/staging capabilities. Package paths/pins are captured
+ * together; no separate verifier injection or legacy helper execution is
+ * exposed by the factory. Loading itself never stages or executes. */
 export async function loadNativeMcpLaunchPackage(config: NativeMcpResourceConfig, signal: AbortSignal): Promise<NativeMcpLaunchPackage> {
   return (await loadNativeMcpPackage(config, signal)).launch;
 }

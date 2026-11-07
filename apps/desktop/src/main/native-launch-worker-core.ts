@@ -2,6 +2,8 @@ import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import type { NativeLaunchMetadata } from "./native-launch-supervisor.js";
 import { NATIVE_LAUNCH_MAX_BUDGET_NS, cancelNativeLaunchGate, commitNativeLaunchGate, nativeLaunchGateState } from "./native-launch-gate.js";
 import { createNativeRecoveryGrant } from "./native-recovery-grant.js";
+import { createNativeDirectoryGrant, NATIVE_DIRECTORY_SCRIPT } from "./native-directory-grant.js";
+import { win32 } from "node:path";
 import { launchKeys, launchRecord, nativeLaunchWorkerConfig, type NativeLaunchWorkerConfig } from "./native-launch-worker-config.js";
 
 export interface NativeLaunchWorkerIo {
@@ -55,11 +57,12 @@ export class NativeLaunchWorkerCore {
         || run.metadata.kind === "identity" || !(value.input instanceof ArrayBuffer)) throw new Error("Invalid launch authority");
       run.authorized = true;
       const recovery = run.metadata.kind === "bootstrap" && run.metadata.operation === "recover";
-      if (value.input.byteLength !== (recovery ? 8 : 96)) throw new Error("Invalid native launch input size");
+      if (value.input.byteLength !== (recovery || run.metadata.kind === "directory" ? 8 : 96)) throw new Error("Invalid native launch input size");
       const wire = new Uint8Array(value.input), input = Buffer.from(wire);
       let handedOff = false;
       try {
-        if (recovery && !input.equals(createNativeRecoveryGrant())) throw new Error("Invalid native recovery grant");
+        if (recovery && !input.equals(createNativeRecoveryGrant())
+          || run.metadata.kind === "directory" && !input.equals(createNativeDirectoryGrant())) throw new Error("Invalid native authority grant");
         if (!this.allowed(run) || !commitNativeLaunchGate(run.gate, run.deadline, this.now)) { this.stop(run); return; }
         // CAS is immediately followed by its clock/cancel post-check and IO.
         run.input = input; handedOff = true;
@@ -78,7 +81,7 @@ export class NativeLaunchWorkerCore {
       throw new Error("Invalid native launch start");
     const request = value.request;
     let metadata: NativeLaunchMetadata;
-    if (request.kind === "identity" && launchKeys(request, ["kind"])) metadata = { kind: "identity" };
+    if ((request.kind === "identity" || request.kind === "directory") && launchKeys(request, ["kind"])) metadata = { kind: request.kind };
     else if (request.kind === "bootstrap" && launchKeys(request, ["kind", "operation"])
       && typeof request.operation === "string" && ["publish", "consume", "recover"].includes(request.operation))
       metadata = { kind: "bootstrap", operation: request.operation as "publish" | "consume" | "recover" };
@@ -92,10 +95,13 @@ export class NativeLaunchWorkerCore {
     const run: Run = { id: value.id as string, metadata, deadline: value.deadline, gate: value.gate,
       started: false, closed: false, authorized: false, failed: false, killed: false, input: undefined, stdout: Buffer.alloc(0), stderrBytes: 0 };
     this.run = run;
-    const file = metadata.kind === "identity" ? this.config.identity : metadata.kind === "bootstrap" ? this.config.bootstrap : this.config.broker;
-    const args = metadata.kind === "identity" ? ["--identity", String(process.pid)] : ["--" + metadata.operation, this.config.controlFile];
+    const directory = metadata.kind === "directory";
+    const file = directory ? win32.join(this.config.env.SystemRoot!, "System32/WindowsPowerShell/v1.0/powershell.exe")
+      : metadata.kind === "identity" ? this.config.identity : metadata.kind === "bootstrap" ? this.config.bootstrap : this.config.broker;
+    const args = metadata.kind === "directory" ? ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", NATIVE_DIRECTORY_SCRIPT]
+      : metadata.kind === "identity" ? ["--identity", String(process.pid)] : ["--" + metadata.operation, this.config.controlFile];
     try {
-      const child = this.io.spawn(file, args, { windowsHide: true, stdio: ["pipe", "pipe", "pipe"], env: { ...this.config.env } });
+      const child = this.io.spawn(file, args, { windowsHide: true, stdio: ["pipe", "pipe", "pipe"], env: { ...this.config.env, ...(directory ? { TAHTIAPURI_PRIVATE_DIR: win32.dirname(this.config.controlFile) } : {}) } });
       run.child = child; // Retain before any listener, message, stdin or callback.
       child.once("close", (code, signal) => this.closed(run, code, signal));
       child.on("error", () => this.stop(run));
