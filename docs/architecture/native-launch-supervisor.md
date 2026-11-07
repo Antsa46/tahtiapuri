@@ -1,17 +1,26 @@
 # Natiiviapurien käynnistysvalvoja
 
-Tila: Main-puolen lähde- ja mocktestipohja. Desktop-build, testityypit ja
-56 kohdennettua mocktapausta ovat läpäisseet (7 atomista porttia,
-29 valvojaa ja 20 suoran bootstrap-kuljetuksen tapausta). Oikean Node-säikeen
-kellokoe sekä uuden recover-kehyksen 13 tapauksen tuotanto-CLI-koe läpäisivät.
-Koesarjan yhteisen omistajan seitsemän mockregressiota läpäisivät.
-Oikea launch-worker ja sovellukseen kytkentä ovat tekemättä.
+Tila: Main-valvoja, oikean säikeen sovitin ja worker-core ovat lähteessä.
+Desktop-build, testityypit ja 81 mocktapausta ovat läpäisseet (10 atomista
+porttia/aikabudjettia, 29 valvojaa, 22 corea, 7 asetusta, 6 lataajaa ja
+7 myöhäisen havainnon tapausta). Suljettu kuuden tiedoston valinta on
+tests/support/mcp/native-launch-vitest.config.mjs; se ottaa mukaan myös
+suoran Node-kokeen .mjs-havaintoavun testit. Aiemmat 70 ja 56 tapauksen sarjat
+ovat osin samoja testejä; lukumääriä ei summata. 56 sisälsi erilliset
+20 suoran bootstrapin tapausta.
+
+Uuden sopimuksen oikea identity–recover-Node/Worker-koe läpäisi molemmat
+operaatiot todellisilla lapsen close- ja säikeen exit0-havainnoilla. Ensimmäinen
+neljän sekunnin identity-koe säilyy epäonnistuneena. Sovelluksen oletuspolkuun
+kytkentä, Electron ja oikean Workerin myöhäisten virhe-/sulkupolkujen näyttö
+ovat kesken. Aiempi Node-säikeen kellokoe, recover-kehyksen 13 CLI-tapausta
+ja koesarjan omistajan seitsemän mockregressiota ovat erillistä näyttöä.
 Tämä dokumentti omistaa valvojan sopimuksen. Käyttöjärjestelmän oikeudet
 kuuluvat [turvallisuussuunnitelmaan](security-and-permissions-plan.md).
 
 ## Vastuut ja tulokset
 
-Valvoja on Mainin luotettua koodia, ei uusi eristysraja. Tuleva
+Valvoja on Mainin luotettua koodia, ei uusi eristysraja.
 worker_threads-säie omistaa yhden apurin koko ChildProcess-elinkaaren.
 Main omistaa pyynnön, alkuperäisen absoluuttisen määräajan, peruutuksen ja
 valtuustiedon. Kutsuissa ei ole vapaata ohjelmaa, argv:tä, ympäristöä tai
@@ -47,11 +56,75 @@ Määräaika ja peruutus tarkistetaan vielä commitin jälkeen ennen kirjoitusta
 Jos commit voitti kilpailun, mahdollinen valtuuden toimitus säilyy
 konservatiivisena havaintona, vaikka myöhempi tarkistus estäisi kirjoituksen.
 
-Määräaika muodostetaan kerran ennen workerin luontia. Pohjan enimmäisrajat
-ovat identitylle neljä ja muille apuritoiminnoille kuusi sekuntia.
+Määräaika muodostetaan kerran ennen workerin luontia: pienempi omistajan
+alkuperäisestä absoluuttisesta määräajasta ja nykyhetkestä + 20 sekuntia.
+Main ja worker hylkäävät yli 20 sekunnin tulevaisuuteen annetun rajan.
+Katto kattaa säikeen latauksen, synkronisen spawnin, valtuutuksen ja
+onnistuneen lapsen sulun sekä säikeen päättymisen. Lyhyempi kutsujan
+määräaika säilyy. `started` ei aloita uutta budjettia. Tämä on uusi
+käynnistyssopimus; aiempia neljän/kuuden sekunnin kokeita ei tulkita sen avulla
+uudelleen. Havaittu viive ei osoita sen aiheuttajaa.
+
 Mainin alkuperäinen 30 sekunnin sulku ja natiivin oma viiden sekunnin
-watchdog stdin-odotuksineen eivät ala uudelleen. Mahdollinen pidempi
-avausvaiheen kokonaisbudjetti tarvitsee erillisen sopimuksen.
+watchdog stdin-odotuksineen säilyvät. Myöhempi composition välittää sulun
+jäljellä olevan alkuperäisen ajan; uusi 20 sekunnin allowance ei jatka sitä.
+Timeout tai cancel ennen commitia estää syötteen. Commitin jälkeen
+mahdollinen vaikutus ja epävarmuus säilyvät myös myöhäisen sulkuhavainnon jälkeen.
+
+## Kiinteä worker ja rajattu ajonäyttö
+
+Sovitin lataa vain compiled `native-launch-worker.js`-entryn. Sen todellinen
+runtime-ketju on core → config, gate ja recovery-grant; Main-puoli sitoo lisäksi
+portin, valvojan sekä validation/public-riippuvuuden. Worker käyttää tyhjää
+execArgv:tä, argv:tä ja ympäristöä. Lapselle välitetään vain erikseen hyväksytyt
+neljä ympäristöavainta ja kiinteän paketin yhdeksän operaatiomuotoa.
+
+Yksi loader-kutsu varaa Main-moduulin elinkaaren ennen validointia tai I/O:ta.
+Lähde-/eval-entryä, omistajan resettiä tai Worker.terminate/unref-varareittiä
+ei ole. Kolmen natiiviohjelman ja viiden worker-tiedoston koko/hash tarkistetaan
+riippumattomasti hyväksytyistä pinneistä. Saman käyttäjän tai ylläpitäjän
+sovelluskoodin muutos on luottamusrajan sisällä; tarkistus ei ole Windowsin
+kirjoittamisen/poiston estävä ohjelmakahva. Worker on luotettua sovelluskoodia,
+ei käyttöjärjestelmän eristysraja.
+
+Ensimmäinen oikea Node-koe käynnisti vain identity-pyynnön ja pysähtyi noin
+neljän sekunnin rajaan. Recoveriin, fixturekirjoitukseen tai valtuutukseen ei
+edetty. Ensisijaisen kuitin erillinen yhden sekunnin loppuhavainto jäi ilman
+settlement-tulosta. Node päättyi myöhemmin luonnolliseen exit1:een, mutta se
+ei korvaa puuttuvaa historiallista lapsen close-/worker-exit-kuittia.
+Ajossa kerätyt Main-sydämenlyöntinäytteet kattavat vain ensisijaisen
+raportoinnin havaintovälin. Ne eivät kuvaa koko prosessin myöhempää elinaikaa,
+pahimman tapauksen viivettä tai viiveen syytä. Konekohtaiset mittausluvut
+säilyvät paikallisina. Viiveen syy jää avoimeksi.
+
+Testiomistaja asentaa alkuperäisten result/settled-lupausten havainnot ennen
+odotuksia. Ensisijaisen kuitin jälkeen saapuva settlement voi kirjoittaa yhden
+erillisen myöhäisen kuitin operaatiota kohti. Kuitti ei korvaa alkuperäistä
+virhettä tai tiedostoa. Diagnostiikan oma yhden sekunnin katto ei jatka
+operaation onnistumisaikaa; keskeneräinen kirjoitus säilyy havaittuna ja
+kirjoitusvirhe tai puuttuva kuitti jättää näytön puutteelliseksi. Uutta aktoria
+ei käynnistetä. Seitsemän determinististä mockregressiota läpäisivät:
+molempien alkuperäisten lupausten havainto, myöhäinen sulkukuitti muuttamatta
+ensisijaista virhettä, kirjoitusvirhe, keskeneräinen kirjoitus yli oman rajan,
+settlementin hylkäys, ensisijaisen havainnon uudelleensulkemisen esto ja
+jonossa viivästyneen kirjoituksen estyminen ilman timer-dispatchia.
+Oikean Workerin myöhäistä kuittia ei vielä todennettu ajossa.
+
+Uusi oikea koe käytti kiinteää compiled-porttia ja samaa Main-valvojaa kahteen
+peräkkäiseen operaatioon. Identityn täsmällinen JSON-kuitti sisälsi oman PID:n
+ja ei-nollan FILETIME-arvon; LF/CRLF hyväksyttiin tuotannon parserin tavoin.
+Vasta onnistuneiden result/settled-havaintojen jälkeen luotiin synteettinen
+pending-fixture. Recover sai Mainin kiinteän THREC001-kehyksen, palautti tarkan
+kuittinsa ja poisti fixturen natiivisti. Molempien lapsien close ja säikeiden
+exit0 havaittiin; valtuusbitti oli identitylle false ja recoverille true.
+Loppukuitti ja ulompi prosessihavainto osoittivat onnistumisen, eikä omistajalle
+jäänyt keskeneräistä työtä tai epävarmuutta. Mitään ei lopetettu pakolla.
+
+Koe ei käynnistänyt broker-operaatiota, MCP-workeria, mallia, GPU:ta,
+sää-APIa tai Electronia. Yhden onnistuneen ajon nopeudesta ei päätellä
+cold-start-suorituskykyä tai aiemman viiveen ratkeamista. Se ei myöskään
+hyväksy oikeita cancel-/myöhäis-/crash-polkuja, Main-koostamista tai koko
+sovelluksen oikeusrajoja.
 
 ## Integraation portit ja näyttö
 

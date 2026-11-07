@@ -76,7 +76,7 @@ it("allows a new request only after a fully known clean settlement", async () =>
 });
 it("rejects invalid or expired deadlines before worker creation", () => {
   const f = fixture();
-  for (const deadline of [0n, 7_000_000_000n])
+  for (const deadline of [0n, 20_000_000_001n])
     expect(() => f.owner.start({ kind: "identity" }, deadline)).toThrow(NativeLaunchFailure);
   expect(f.factory).not.toHaveBeenCalled();
 });

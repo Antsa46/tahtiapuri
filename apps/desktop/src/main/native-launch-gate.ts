@@ -1,5 +1,14 @@
 /** Main and its trusted launch worker share one linearization word.
  * COMMITTED means native stdin may have been authorized, not delivery proof. */
+/** Trusted caller supplies its original owner deadline. Compute this once,
+ * before creating the Worker; started/authorization never renew it. */
+export const NATIVE_LAUNCH_MAX_BUDGET_NS = 20_000_000_000n;
+export function nativeLaunchDeadline(ownerDeadline: bigint, now: () => bigint = process.hrtime.bigint): bigint {
+  const at = now();
+  if (typeof ownerDeadline !== "bigint" || ownerDeadline <= at) throw new Error("Expired native launch owner deadline");
+  const cap = at + NATIVE_LAUNCH_MAX_BUDGET_NS;
+  return ownerDeadline < cap ? ownerDeadline : cap;
+}
 const CANCELLED = 1, COMMITTED = 2, MASK = CANCELLED | COMMITTED;
 function word(buffer: SharedArrayBuffer): Int32Array {
   if (!(buffer instanceof SharedArrayBuffer) || buffer.byteLength !== 4) throw new Error("Invalid native launch gate");

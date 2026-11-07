@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { createNativeRecoveryGrant } from "./native-recovery-grant.js";
 import { exactKeys, isRecord } from "@tahtiapuri/validation/public";
-import { cancelNativeLaunchGate, createNativeLaunchGate, nativeLaunchGateState } from "./native-launch-gate.js";
+import { NATIVE_LAUNCH_MAX_BUDGET_NS, cancelNativeLaunchGate, createNativeLaunchGate, nativeLaunchGateState } from "./native-launch-gate.js";
 
 type BootstrapMode = "publish" | "consume" | "recover";
 type SessionMode = "prepare" | "seal" | "publish" | "release-pristine" | "release-clean";
@@ -79,7 +79,7 @@ export class NativeLaunchSupervisor {
   start(request: NativeLaunchRequest, deadline: bigint, signal?: AbortSignal): NativeLaunchTask {
     const captured = snapshot(request), now = this.now();
     if (this.busy || this.uncertain) { captured.input.fill(0); throw new NativeLaunchFailure(false, false); }
-    const cap = captured.metadata.kind === "identity" ? 4_000_000_000n : 6_000_000_000n;
+    const cap = NATIVE_LAUNCH_MAX_BUDGET_NS;
     if (typeof deadline !== "bigint" || deadline <= now || deadline - now > cap || signal?.aborted) {
       captured.input.fill(0); throw new NativeLaunchFailure(true, false);
     }
