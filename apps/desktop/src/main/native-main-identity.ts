@@ -3,6 +3,7 @@ import { promisify } from "node:util";
 import { win32 } from "node:path";
 import { childEnvironment } from "./child-environment.js";
 import type { NativeMainIdentity } from "./native-development-bootstrap.js";
+import { decodeNativeMainIdentity } from "./native-main-identity-codec.js";
 
 const execute = promisify(execFile);
 export class NativeIdentityProcessError extends Error {
@@ -27,11 +28,7 @@ export async function queryNativeMainIdentity(helper: string): Promise<NativeMai
     ]);
     const result = await outcome;
     if (!result || result.stderr !== "") throw new NativeIdentityProcessError(true);
-    // Strict fixed output; bigint preserves all FILETIME bits above JS's safe integer range.
-    const match = /^\{"pid":([1-9][0-9]{0,9}),"creationTime":"([a-f0-9]{16})"\}\r?\n$/.exec(result.stdout);
-    if (!match || Number(match[1]) !== process.pid) throw new NativeIdentityProcessError(true);
-    const creationTime = BigInt("0x" + match[2]);
-    if (creationTime === 0n) throw new NativeIdentityProcessError(true);
-    return Object.freeze({ pid: process.pid, creationTime });
+    try { return decodeNativeMainIdentity(Buffer.from(result.stdout, "utf8"), process.pid); }
+    catch { throw new NativeIdentityProcessError(true); }
   } finally { clearTimeout(timer); }
 }

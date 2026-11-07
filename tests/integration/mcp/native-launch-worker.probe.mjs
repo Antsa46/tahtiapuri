@@ -7,6 +7,7 @@ import { dirname, basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadNativeLaunchWorkerSupervisor } from "../../../apps/desktop/dist/main/native-launch-worker-port.js";
 import { nativeLaunchDeadline } from "../../../apps/desktop/dist/main/native-launch-gate.js";
+import { decodeNativeMainIdentity } from "../../../apps/desktop/dist/main/native-main-identity-codec.js";
 import { NativeLaunchObservation } from "../../support/mcp/native-launch-observation.mjs";
 
 const project = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -120,17 +121,15 @@ try {
   const preparationAbort = new AbortController(); controllers.push(preparationAbort);
   owner = await work("verify-fixed-binding", () => loadNativeLaunchWorkerSupervisor(binding, preparationAbort.signal), preparationDeadline);
   const identity = await launch("identity", { kind: "identity" });
-  const text = identity.stdout.toString("ascii");
-  assert.match(text, /^\{"pid":[1-9][0-9]*,"creationTime":"[a-f0-9]{16}"\}\r?\n$/);
-  const parsed = JSON.parse(text); assert.equal(parsed.pid, process.pid);
-  assert.notEqual(parsed.creationTime, "0000000000000000"); ++completed;
+  const parsed = decodeNativeMainIdentity(identity.stdout, process.pid);
+  assert.equal(parsed.pid, process.pid); assert.notEqual(parsed.creationTime, 0n); ++completed;
   const fixtureDeadline = phaseDeadline(2_000_000_000n);
   await work("pending-absence", () => absent(join(root, "main-bootstrap.pending")), fixtureDeadline);
   await work("final-absence", () => absent(join(root, "main-bootstrap.bin")), fixtureDeadline);
   await work("pending-create", () => writeFile(join(root, "main-bootstrap.pending"),
     Buffer.from([84, 77, 66, 79, 79, 84, 49, 0]), { flag: "wx" }), fixtureDeadline);
   const recovered = await launch("recover", { kind: "bootstrap", operation: "recover" });
-  assert.equal(recovered.stdout.toString("ascii"), "descriptor-absent\n");
+  assert(recovered.stdout.equals(Buffer.from("descriptor-absent\n")));
   const afterDeadline = phaseDeadline(2_000_000_000n);
   // No test unlink: the native helper must have removed this pending fixture.
   await work("native-pending-absent", () => absent(join(root, "main-bootstrap.pending")), afterDeadline);

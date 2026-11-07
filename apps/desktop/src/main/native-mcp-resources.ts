@@ -30,6 +30,16 @@ export interface NativeMcpHostResources {
   prepareWorker(reservation: string, signal: AbortSignal): Promise<void>;
 }
 export interface NativeMcpRuntime extends NativeMcpHostResources { readonly broker: string; readonly packageDigest: string }
+/** Read-only launch source from the same externally pinned descriptor. It does
+ * not start a helper or choose a control root/Worker. Only the launch factory
+ * combines it with its package-derived Worker binding. */
+export interface NativeMcpLaunchPackage {
+  readonly runtimeRoot: string;
+  readonly descriptorSha256: string;
+  readonly programs: Readonly<Record<"identity" | "bootstrap" | "broker", Pin>>;
+  verifyLaunch(signal: AbortSignal): Promise<void>;
+}
+
 const denied = (): never => { throw new Error("Native MCP runtime package rejected."); };
 const sha = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
 const hash = (value: unknown): value is string => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
@@ -134,7 +144,9 @@ function overlaps(a: string, b: string): boolean {
  * starts only the reverified fixed broker's owner modes. No network, ACL grant,
  * deletion or recovery lives here. Ordinary owner/admin mutation is trusted;
  * byte/identity checks are not native write/delete-excluding executable pins. */
-export async function loadNativeMcpRuntime(config: NativeMcpResourceConfig, signal: AbortSignal): Promise<NativeMcpRuntime> {
+async function loadNativeMcpPackage(config: NativeMcpResourceConfig, signal: AbortSignal): Promise<{
+  readonly runtime: NativeMcpRuntime; readonly launch: NativeMcpLaunchPackage;
+}> {
   const root = config.runtimeRoot, descriptorSha256 = config.descriptorSha256;
   canonical(root); if (join(root, "helpers").length > 220 || !hash(descriptorSha256)) denied(); signal.throwIfAborted();
   const descriptorBytes = await read(join(root, "runtime-descriptor.json"), signal, 16384);
@@ -163,7 +175,7 @@ export async function loadNativeMcpRuntime(config: NativeMcpResourceConfig, sign
   };
   await verify(signal); signal.throwIfAborted();
   const helpers = await loadNativeMcpHelpers(join(root, "helpers"), metadata.helpers); signal.throwIfAborted();
-  return Object.freeze({ broker, packageDigest: metadata.package.digest, helpers,
+  const runtime: NativeMcpRuntime = Object.freeze({ broker, packageDigest: metadata.package.digest, helpers,
     async session(operation: NativeMcpSessionOperation, file: string, bytes: Buffer, operationSignal: AbortSignal, deadline?: number) {
       if (!Buffer.isBuffer(bytes) || bytes.length !== NATIVE_BOOTSTRAP_BYTES) denied();
       const input = Buffer.from(bytes);
@@ -194,4 +206,22 @@ export async function loadNativeMcpRuntime(config: NativeMcpResourceConfig, sign
     await children(join(stage, "scratch"), [], operationSignal); await verifyPackage(target, files, operationSignal);
     await verify(operationSignal); operationSignal.throwIfAborted();
   } });
+  const launch: NativeMcpLaunchPackage = Object.freeze({ runtimeRoot: root, descriptorSha256,
+    programs: Object.freeze({ identity: Object.freeze({ ...metadata.helpers["main-identity.exe"] }),
+      bootstrap: Object.freeze({ ...metadata.helpers["main-bootstrap.exe"] }), broker: Object.freeze({ ...metadata.broker }) }),
+    async verifyLaunch(operationSignal: AbortSignal) {
+      await verifyBroker(operationSignal); operationSignal.throwIfAborted();
+      await loadNativeMcpHelpers(join(root, "helpers"), metadata.helpers); operationSignal.throwIfAborted();
+    },
+  });
+  return Object.freeze({ runtime, launch });
+}
+/** Legacy runtime shape and execution behavior are unchanged. */
+export async function loadNativeMcpRuntime(config: NativeMcpResourceConfig, signal: AbortSignal): Promise<NativeMcpRuntime> {
+  return (await loadNativeMcpPackage(config, signal)).runtime;
+}
+/** Verification only. Package paths/pins are captured together; no separate
+ * verifier injection or legacy helper execution is exposed by the factory. */
+export async function loadNativeMcpLaunchPackage(config: NativeMcpResourceConfig, signal: AbortSignal): Promise<NativeMcpLaunchPackage> {
+  return (await loadNativeMcpPackage(config, signal)).launch;
 }

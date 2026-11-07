@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { copyFile, link, lstat, mkdir, mkdtemp, open, readFile, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { encodeNativeBootstrap } from "./native-development-bootstrap.js";
-import { loadNativeMcpRuntime } from "./native-mcp-resources.js";
+import { loadNativeMcpRuntime, loadNativeMcpLaunchPackage } from "./native-mcp-resources.js";
 
 const processGuard = vi.hoisted(() => {
   let attempts = 0;
@@ -166,4 +166,29 @@ it("an owner deadline expiring during broker verification prevents dispatch", as
     const clock = vi.spyOn(performance, "now").mockReturnValue(deadline + 1); restore = () => { clock.mockRestore(); };
     release(); expect(await result).toMatchObject({ exitVerified: true }); expect(processGuard.attempts()).toBe(0);
   } finally { restore?.(); release(); await result; bytes.fill(0); vi.mocked(open).mockImplementation(real.open); }
+});
+
+it("exposes a readonly launch source from the same external descriptor without staging or execution", async () => {
+  const f = await fixture(), source = await loadNativeMcpLaunchPackage(f.config, signal());
+  expect(source.runtimeRoot).toBe(f.runtime); expect(source.descriptorSha256).toBe(f.config.descriptorSha256);
+  expect(source.programs).toEqual({ identity: f.descriptor.helpers["main-identity.exe"],
+    bootstrap: f.descriptor.helpers["main-bootstrap.exe"], broker: f.descriptor.broker });
+  expect(Object.isFrozen(source)).toBe(true); expect(Object.isFrozen(source.programs)).toBe(true);
+  expect(Object.isFrozen(source.programs.identity)).toBe(true);
+  await source.verifyLaunch(signal()); expect(await readdir(f.reservation)).toEqual([]);
+  expect(copyFile).not.toHaveBeenCalled(); expect(processGuard.attempts()).toBe(0);
+});
+it.each(["runtime-descriptor.json", "build-manifest.json", "helpers/main-identity.exe", "helpers/main-bootstrap.exe", "bin/mcp-broker.exe"] as const)(
+  "readonly launch revalidation rejects changed %s before any native dispatch", async changed => {
+    const f = await fixture(), source = await loadNativeMcpLaunchPackage(f.config, signal());
+    await writeFile(join(f.runtime, changed), "Changed synthetic launch source; never execute");
+    await expect(source.verifyLaunch(signal())).rejects.toThrow();
+    expect(copyFile).not.toHaveBeenCalled(); expect(await readdir(f.reservation)).toEqual([]);
+    expect(processGuard.attempts()).toBe(0);
+  });
+it("an aborted readonly launch verification does not start file reads or dispatch", async () => {
+  const f = await fixture(), source = await loadNativeMcpLaunchPackage(f.config, signal());
+  vi.mocked(open).mockClear(); const abort = new AbortController(); abort.abort();
+  await expect(source.verifyLaunch(abort.signal)).rejects.toThrow();
+  expect(open).not.toHaveBeenCalled(); expect(copyFile).not.toHaveBeenCalled(); expect(processGuard.attempts()).toBe(0);
 });

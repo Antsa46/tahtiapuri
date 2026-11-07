@@ -1,18 +1,21 @@
 # Natiiviapurien käynnistysvalvoja
 
 Tila: Main-valvoja, oikean säikeen sovitin ja worker-core ovat lähteessä.
-Desktop-build, testityypit ja 81 mocktapausta ovat läpäisseet (10 atomista
-porttia/aikabudjettia, 29 valvojaa, 22 corea, 7 asetusta, 6 lataajaa ja
-7 myöhäisen havainnon tapausta). Suljettu kuuden tiedoston valinta on
-tests/support/mcp/native-launch-vitest.config.mjs; se ottaa mukaan myös
-suoran Node-kokeen .mjs-havaintoavun testit. Aiemmat 70 ja 56 tapauksen sarjat
-ovat osin samoja testejä; lukumääriä ei summata. 56 sisälsi erilliset
-20 suoran bootstrapin tapausta.
+Desktop-build, testityypit ja 180 tapausta ovat läpäisseet: 154 determinististä
+mocktapausta ja 26 tiedostoresurssitapausta, yhteensä 11 tiedostoa.
+Mukana ovat gate/aikabudjetti 10, valvoja 29, worker-core 22, config 7,
+worker-loader 6, myöhäinen havainto 7, identity-codec 7, semanttinen sovitin 23,
+resurssiomistaja 23, resurssitehdas 20 ja tiedostoresurssit 26.
+Suljettu valinta on tests/support/mcp/native-launch-resources-vitest.config.mjs.
+Aiemmat 170/106/81/70/56 sarjat ovat osin samoja testejä, eikä niitä summata.
+56 sisälsi erilliset 20 suoran bootstrapin tapausta.
 
-Uuden sopimuksen oikea identity–recover-Node/Worker-koe läpäisi molemmat
+Aiempaa käynnistyssovitinta käyttänyt oikea identity–recover-Node/Worker-koe läpäisi molemmat
 operaatiot todellisilla lapsen close- ja säikeen exit0-havainnoilla. Ensimmäinen
-neljän sekunnin identity-koe säilyy epäonnistuneena. Sovelluksen oletuspolkuun
-kytkentä, Electron ja oikean Workerin myöhäisten virhe-/sulkupolkujen näyttö
+neljän sekunnin identity-koe säilyy epäonnistuneena. Pakettiin sidotun
+resurssipolun kahden apurikutsun koe läpäisi myös;
+sen näyttö on kuvattu erikseen alla. Sovelluksen oletuspolkuun kytkentä,
+Electron ja oikean Workerin myöhäisten virhe-/sulkupolkujen näyttö
 ovat kesken. Aiempi Node-säikeen kellokoe, recover-kehyksen 13 CLI-tapausta
 ja koesarjan omistajan seitsemän mockregressiota ovat erillistä näyttöä.
 Tämä dokumentti omistaa valvojan sopimuksen. Käyttöjärjestelmän oikeudet
@@ -125,6 +128,163 @@ sää-APIa tai Electronia. Yhden onnistuneen ajon nopeudesta ei päätellä
 cold-start-suorituskykyä tai aiemman viiveen ratkeamista. Se ei myöskään
 hyväksy oikeita cancel-/myöhäis-/crash-polkuja, Main-koostamista tai koko
 sovelluksen oikeusrajoja.
+
+## Semanttinen kutsusovitin (kesken)
+
+NativeLaunchOperations on vielä kytkemätön lähdeosa. Sen kutsuissa on vain
+identity, bootstrap- tai session-operaatio, tarvittaessa oma 96 tavun descriptor,
+alkuperäinen omistajan bigint-määräaika ja peruutussignaali. Resurssikoostamisen
+on muodostettava omistajan alkuperäinen budjetti jo ennen uudelleenvarmennusta;
+sovitin ei anna sille uutta aikaa. Varattu bridge estää rinnakkaisen dispatchin
+ennen ensimmäistä callbackia. Transportti- tai semanttinen virhe sulkee sen
+pysyvästi, vaikka myöhäinen settlement myöhemmin saapuisi.
+
+Sovitin luottaa aidon NativeLaunchSupervisorin deadline- ja
+settlement-sopimukseen. Sen Owner-tyyppi ei ole yleinen plugin-rajapinta eikä
+sovitin itsenäinen mielivaltaisen kuljettajan aikakatkaisija.
+
+Sovitin säilyttää alkuperäisen task.result/task.settled-parin. Virhe voi palautua
+ennen sulkua; semanttinen onnistuminen vaatii molemmat, oikeat valtuusbitit ja
+saman deadlinen/abortin tarkistuksen vielä ennen palautusta. Väärä kuitti
+havaittujen child-close/Worker-exit0-tulosten jälkeen eroaa tuntemattomasta
+sulusta. Alkuperäisen transporttivirheen exitVerified/authorityCommitted-arvoja
+ei koroteta jälkikäteen.
+
+Identityn pure-codec tarkistaa tavut ennen tekstimuunnosta: vain ASCII,
+täsmällinen LF/CRLF, oma PID ja ei-nollainen 64-bittinen FILETIME. Vanhan
+execFile-polun käynnistys, timeout, stderr ja close-käsittely säilyvät; vain
+kuittidekoodaus on poimittu yhteiseksi. Muiden operaatioiden kuitit verrataan
+Buffer.equals-kutsulla. Proben aiempi ASCII-muunnos on myös korvattu tarkalla
+codecilla/tavuvertailulla. Tämä tiukennus ei selitä aiempaa viivettä tai kumoa
+pinnatun apurin aiempaa onnistumista. Muutettua probea ei ole ajettu uudelleen.
+
+Uusi identity-codec läpäisi seitsemän ja semanttinen sovitin 18 mocktapausta.
+Mukana ovat alkuperäinen lyhyempi omistajabudjetti, reentrant/rinnakkaisen
+dispatchin esto, yksityinen descriptor-kopio, molempien lupausten vaatimus,
+väärä kuitti tunnetun sulun jälkeen, virhe ja myöhäinen settlement,
+deadline/abortti transportin ja semanttisen palautuksen välissä,
+ristiriitaiset valtuusbitit, settlement-hylkäys sekä valmiiksi varattu tai
+epävarma omistaja. Desktop-build, seitsemän TS-testitiedoston tyypitys ja
+koko 106 tapauksen mockvalinta läpäisivät; riippumaton tarkastaja vahvisti
+rajatun näytön. Tässä 106 tapauksen vaiheessa tiukennettua oikeaa worker-probea
+tai uutta sovitinketjua ei vielä ajettu. Myöhempi resurssipolun ajonäyttö on
+kuvattu erikseen alla; tiukennettu vanha worker-probe säilyy ajamatta.
+Main/Host/resurssikerroksen oletusliitosta ei ole tehty.
+
+## Pakettiin sidottu resurssiomistaja (kesken)
+
+Uusi, vielä kytkemätön tehdas muodostaa verifierin ja Worker/Operations-omistajan
+samasta ulkoisella descriptor-hashilla hyväksytystä paketista. Config ei valitse
+niitä erikseen. Recovery-hyväksyntä kohdistuu nimenomaisesti samaan descriptoriin;
+THREC001:tä ei päätellä paketin omasta ilmoituksesta. ControlFile sidotaan kerran
+tehtaassa eikä sitä anneta operaatioiden argumenttina. Tehtaan Main-elinkaaren
+varaus tehdään ennen ensimmäistä async-työtä, eikä epäonnistuminen vapauta sitä.
+
+Tehdas säilyttää alkuperäisen valmistelulupauksen ja palauttaa erillisen,
+alkuperäiseen määräaikaan/peruutukseen sidotun tuloksen. Myöhäinen alkuperäinen
+resolve/reject ei korvaa jo palautunutta virhettä, luovuta uutta omistajaa tai
+käynnistä seuraavaa latausvaihetta. Monotonic-raja tarkistetaan luovutushetkellä
+myös ilman timer-dispatchia. Taustalla odottavaa I/O:ta ei väitetä peruuntuneeksi.
+
+Jokainen resurssikutsu varaa omistajan synkronisesti ja kopioi descriptorin
+ennen verifierin awaitia. Kellomuunnos lukee hrtime-arvon ensin ja performance-
+arvon vasta sen jälkeen; jäljellä oleva aika pyöristetään alaspäin ja rajataan
+20 sekuntiin kerran ennen I/O:ta. Sama bigint-raja kulkee Operationsille.
+Myöhäinen verify-tulos tai abortti ei aloita natiividispatchia. Alkuperäinen
+verify-lupaus säilyy omistettuna myös erillisen tulosrajan jälkeen. Natiivivaiheen
+määräajasta ja result/settled-kuiteista vastaa edelleen aito Operations/Supervisor.
+
+Lukuvarmennin tarkistaa alkuperäisen descriptor-pinnin, build-manifestin sekä
+kolme kiinteää ohjelmaa. Se ei kutsu legacy-helpereitä tai palauta uusia
+polkuvalintoja. Saman käyttäjän/ylläpitäjän luottamusraja ja native-handle-pinnin
+puuttuminen säilyvät. Vanha NativeMcpRuntime palauttaa edelleen saman rajapinnan;
+uusi launch-source ei altista sen suoritus- tai staging-metodeja.
+
+Resurssiosan lähde- ja raakanäyttökatselmus, desktop-build sekä kymmenen
+TS-testitiedoston tyypitys läpäisivät. Uudet 18 resurssiomistajan ja 20 tehtaan
+mockia sekä laajennettu 26 tiedostoresurssin sarja läpäisivät osana 170 valintaa.
+Ensimmäinen AW-putki pysähtyi testin readonly-delete-tyypitykseen ennen
+koesarjaa; vain fixturetyypin korjaus edelsi uutta onnistunutta ajoa.
+Hostin/defaultin käyttöönottoa ei ole tehty. Oikean resurssitehtaan kahden
+apurikutsun näyttö on kuvattu erikseen alla.
+Avaamisen kokonaisbudjetti on erillinen avoin valinta. Hostin alkuperäinen
+30 sekunnin cleanup-raja säilyy; staging tarvitsee alkuperäisen määräajan
+ennen jokaista mkdir/copy-operaatiota ja jokaisen awaitin jälkeen.
+
+## Kutsukohtainen havaintokahva (kesken)
+
+Operations ja resurssiomistaja säilyttävät jokaisen julkisen kutsun alkuperäisen
+Promisen WeakMap-avaimena. observeCall(original) palauttaa juuri siihen sidotun,
+jäädytetyn havaintokahvan. Tuntematon Promise hylätään. Julkiseen metodiin ei
+lisätä async-wrapperia, joka vaihtaisi palautetun Promisen identiteetin.
+Aktiivisen ja viimeksi palautuneen hyväksytyn kutsun tietueet säilyvät erikseen.
+Hylätty rinnakkainen yritys saa oman tietueensa korvaamatta aktiivisen kutsun
+viimeisintä tietoa. observeCurrentCall palauttaa vain hetkellisen sidotun
+snapshotin; resurssiomistaja sitoo alikutsunsa sen alkuperäisellä Promisella.
+
+Operationsin binding ratkaistaan kerran joko alkuperäiseen task.result/settled-
+pariin tai no-task-tietueeseen. no-task kertoo vain task-kahvan puuttumisesta;
+mahdollinen OS-prosessin synty arvioidaan alkuperäisestä virheestä ja muusta
+näytöstä. Ennen taskin sidontaa pyydetty havainto odottaa saman kutsun päätöstä.
+Aiemman kutsun settlementiä ei lainata uudelle epäonnistuneelle kutsulle.
+
+Resurssiomistaja ottaa native-havaintokahvan heti dispatchissa ennen odotuksia.
+Sen binding sisältää saman Work-tietueen alkuperäisen verify-lupauksen,
+operaatiolupauksen ja native-havainnon. Puuttuva operation merkitsee tämän
+kutsun tekemätöntä operaatiota. unavailable erottaa tilanteen, jossa operaatio
+aloitettiin mutta havaintokahvan haku epäonnistui. Alkuperäinen operaatio säilyy
+omistettuna tässäkin virheessä. Verify-vaiheen havainto voi jatkua kutsun A
+valmistuttua ja B:n alettua; kahva pysyy sidottuna A:han.
+
+Outcome säilyttää alkuperäisen fulfilled/rejected-havainnon ja hylkäysobjektin.
+Promise.allSettled-käyttäjä säilyttää kunkin alkuperäisen lupauksen tuloslajin;
+hylkäystä ei muuteta onnistumiseksi. Mahdollinen nykyinen omistajastatus on
+erillinen havainto ja eri asia kuin vanhan kutsun sulkutodiste. Havaitseminen ei
+käynnistä, peruuta tai nollaa työtä eikä muuta sen onnistumisdeadlinea.
+Diagnostiikan erillisen odotusrajan valitsee kutsuja.
+
+Uuden havaintorajapinnan lähde-, tyyppi- ja raakanäyttökatselmus läpäisivät.
+Kymmenen uutta regressiota sekä kaikki aiemmat tapaukset läpäisivät: yhteensä
+180/180, 11 tiedostoa. Mukana ovat Promisen identiteetti, vieras Promise,
+havainto ennen taskin sidontaa, aiemman settlementin lainaamisen esto,
+alkuperäinen settlement-hylkäys, epävarma no-task, A/B-kilpailu,
+verify ilman dispatchia, unavailable-havainto sekä reentrant verifieri.
+Tämä 180 tapauksen sarja ei yksin lisää todellista resurssi/Worker-, Host-
+tai oletuskoostamisnäyttöä.
+
+## Pakettiin sidotun resurssipolun rajattu ajonäyttö
+
+Erillinen suora Node-koe käytti oikeaa käännettyä resurssitehdasta,
+semanttista Operations-sovitinta ja kiinteää Worker-käynnistintä. Riippumaton
+katselmus tarkisti ennen ajoa lähteet, 23 käännetyn moduulin import-ketjun,
+pakettiviennit, työtilalinkit ja täsmällisen ajoreseptin. Sama ulkoa hyväksytty
+runtime-descriptor sitoi verifierin, kolme natiiviohjelmaa ja THREC001-luvan.
+
+Yksi hyväksytty ajo suoritti identityn ja recoverin sarjassa. Alkuperäinen
+55 sekunnin kokonaisraja rajasi valmistelun ja kumpaisenkin kutsun enintään
+20 sekuntiin; yksittäinen vaihe ei aloittanut kokonaisbudjettia uudelleen.
+Alkuperäisen tuloslupauksen havainnot asennettiin ennen kutsukohtaisen
+havaintokahvan hakua, ja molemmat alkuperäiset työt säilyivät loppuhavainnossa.
+Kumpikin kutsu palautti kaikki kuusi sidottua havaintoa onnistuneina:
+verify, operaatio, resurssin ja semanttisen sovittimen outcome sekä natiivin
+result ja settled. Molempien lasten todellinen close ja Worker-exit0
+havaittiin. Valtuus oli identitylle false ja recoverille true.
+
+Vasta identityn jälkeen luotu synteettinen pending-fixture poistui natiivin
+recover-operaatiossa. Lopullista bootstrap-tiedostoa, keskeneräistä työtä,
+verifiointia tai epävarmaa omistajatilaa ei jäänyt. Node ja ulompi ajuri
+päättyivät exit0:aan ilman pakotettua sulkua tai uusintaa. Lähde- ja
+linkkipinnit tarkistettiin ennen ajoa ja sen jälkeen. Raakakuitit sekä
+konekohtaiset mittaukset säilyvät paikallisina. Riippumaton jälkitarkastus
+hyväksyi tämän rajatun onnistumispolun.
+
+Koe ei käyttänyt vanhoja suoria suoritusmetodeja eikä erillisiä natiiveja
+tarkistusbinäärejä. Se ei käynnistänyt broker-operaatiota, MCP-workeria,
+mallia, GPU:ta, sää-APIa tai Electronia. Myöhäiskuitteja ei syntynyt, joten
+uusia todellisia virhe-/myöhästymispolkuja ei hyväksytty. Hostin ja oletuspolun
+kytkentä sekä koko minimipaketin CPU/GPU/FMI-, tiedosto-, virhe- ja
+sulkukokeet ovat edelleen kesken. Aiempien epäonnistuneiden ajojen tuntematon
+sulku ja viiveen syy säilyvät avoimina.
 
 ## Integraation portit ja näyttö
 
