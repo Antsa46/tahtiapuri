@@ -186,3 +186,31 @@ it("loaded resources cannot bypass directory preparation", async () => {
   await expect(resources.identity(10_000, f.controller.signal)).rejects.toMatchObject({ exitVerified: true, authorityCommitted: false });
   expect(f.verify).not.toHaveBeenCalled(); expect(f.start).not.toHaveBeenCalled(); expect(resources.status()).toMatchObject({ failed: true, directoryPrepared: false });
 });
+
+it("preparation observation is exact-request, status-only and never starts another actor", async () => {
+  const f = await fixture(), original = f.load(), observed = f.module.observeNativeLaunchMcpPreparation(original);
+  expect(Object.isFrozen(observed)).toBe(true);
+  expect(() => f.module.observeNativeLaunchMcpPreparation(Promise.resolve())).toThrow("Unknown native MCP preparation");
+  let prepEnded = false; void observed.preparation.then(() => { prepEnded = true; }); await turn(); expect(prepEnded).toBe(false);
+  f.packageGate.resolve(f.source); await turn(); f.workerGate.resolve(f.owner); await original;
+  expect(await observed.result).toEqual({ status: "fulfilled" });
+  expect(await observed.preparation).toEqual({ status: "fulfilled" }); expect(f.start).not.toHaveBeenCalled();
+});
+it("invalid admission observes no original preparation without treating rejection as success", async () => {
+  const f = await fixture(), input = { ...config(), recoveryApproval: { descriptorSha256: "f".repeat(64), protocol: "THREC001" as const } };
+  const original = f.load(input), observed = f.module.observeNativeLaunchMcpPreparation(original);
+  const reason = await original.catch(error => error);
+  expect(await observed.result).toEqual({ status: "rejected", reason });
+  expect(await observed.preparation).toEqual({ status: "not-started" }); expect(state.package).not.toHaveBeenCalled();
+});
+for (const stage of ["package", "worker"] as const) it("public timeout retains the original " + stage + " preparation outcome", async () => {
+  const f = await fixture(), original = f.load(), observed = f.module.observeNativeLaunchMcpPreparation(original);
+  if (stage === "worker") { f.packageGate.resolve(f.source); await turn(); }
+  let prepEnded = false; void observed.preparation.then(() => { prepEnded = true; });
+  hr = 10_000_000_000n; await vi.advanceTimersByTimeAsync(10_000);
+  const reason = await original.catch(error => error); expect(await observed.result).toEqual({ status: "rejected", reason });
+  expect(prepEnded).toBe(false); const late = new Error("Original preparation ended later");
+  if (stage === "package") f.packageGate.reject(late); else f.workerGate.reject(late);
+  expect(await observed.preparation).toEqual({ status: "rejected", reason: late });
+  expect(await observed.result).toEqual({ status: "rejected", reason }); expect(f.start).not.toHaveBeenCalled();
+});

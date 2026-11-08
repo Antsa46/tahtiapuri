@@ -10,6 +10,8 @@ import { NativeDevelopmentAdmission } from "./native-development-admission.js";
 import { encodeNativeBootstrap, NATIVE_PIPE_PREFIX } from "./native-development-bootstrap.js";
 import { NativeMainConnection, type NativeConnectionOutcome } from "./native-main-connection.js";
 import type { NativeLaunchMcpResources } from "./native-launch-mcp-resources.js";
+import { NativeDevelopmentLoadCall } from "./native-development-load-call.js";
+import type { ObservedNativeDevelopmentResourceLoader } from "./native-development-resource-loader.js";
 import { NativeDevelopmentResourceCall } from "./native-development-resource-call.js";
 import { assessNativeMcpRelease } from "./native-mcp-release-policy.js";
 
@@ -30,7 +32,7 @@ export type NativeDevelopmentResources = Pick<NativeLaunchMcpResources,
   "controlFile" | "prepareDirectory" | "identity" | "bootstrap" | "session" | "prepareWorker" | "observeCall" | "status">;
 /** Trusted composition/test seam. Production closes over one approved config;
  * no executable, argv, verifier or legacy-execution choice is an IPC input. */
-export type NativeDevelopmentResourceLoader = (deadline: number, signal: AbortSignal) => Promise<NativeDevelopmentResources>;
+export type NativeDevelopmentResourceLoader = ObservedNativeDevelopmentResourceLoader;
 const unavailable = (): DevelopmentResult => ({ ok: false, code: "ENGINE_UNAVAILABLE" });
 /** One-shot host. Fixed native release operations decide whether a pristine or
  * admitted-clean reservation may retire. Persistent ownership records remain.
@@ -44,6 +46,7 @@ export class NativeDevelopmentHost {
   private openingDeadline = 0;
   private openingResult: Promise<DevelopmentResult> | undefined;
   private loading: Promise<NativeDevelopmentResources> | undefined;
+  private loadingCall: NativeDevelopmentLoadCall | undefined;
   private resources: NativeDevelopmentResources | undefined;
   private bindingValid = false;
   private readonly resourceCalls: NativeDevelopmentResourceCall<unknown>[] = [];
@@ -74,7 +77,7 @@ export class NativeDevelopmentHost {
   constructor(private readonly backend: Backend, private readonly directory: string, private readonly loadResources: NativeDevelopmentResourceLoader) {
     if (process.platform !== "win32" || !/^[A-Z]:\\/.test(directory) || win32.normalize(directory) !== directory
       || directory.length > 200 || directory === win32.parse(directory).root) throw new Error("Invalid native development directory.");
-    if (typeof loadResources !== "function") throw new Error("Missing bound native MCP resource loader.");
+    if (typeof loadResources !== "function" || typeof loadResources.observe !== "function") throw new Error("Missing bound native MCP resource loader.");
     claimDevelopmentBackend(backend);
     this.file = join(directory, "main-bootstrap.bin");
   }
@@ -136,10 +139,10 @@ export class NativeDevelopmentHost {
       throw new Error("Native development opening stopped or expired.");
   }
   private resourceWorkSettled(): boolean {
-    return this.bindingValid && !!this.resources && this.resourceCalls.every(call => call.settled) && !this.resources.status().pending;
+    return this.loadingCall?.settled === true && this.bindingValid && !!this.resources && this.resourceCalls.every(call => call.settled) && !this.resources.status().pending;
   }
   private resourceOwnerHealthy(): boolean {
-    return this.bindingValid && !!this.resources && !this.resources.status().failed && this.resourceCalls.every(call => !call.failed && call.exitVerified);
+    return this.loadingCall?.settled === true && !this.loadingCall.failed && this.bindingValid && !!this.resources && !this.resources.status().failed && this.resourceCalls.every(call => !call.failed && call.exitVerified);
   }
   private mutationAllowed(): boolean {
     return this.cleanupWithinBudget() && this.helpersSettled && this.resourceWorkSettled() && this.resourceOwnerHealthy();
@@ -168,7 +171,14 @@ export class NativeDevelopmentHost {
     try {
       this.alive();
       this.loading = this.loadResources(this.openingDeadline, this.abort.signal);
-      this.resources = await this.loading; this.alive();
+      const loading = new NativeDevelopmentLoadCall(this.loading);
+      this.loadingCall = loading; // Retain original + both handlers BEFORE lookup.
+      loading.bind(this.loadResources);
+      if (!loading.observationAvailable) throw new Error("Native loader observation unavailable.");
+      const resources = await loading.result;
+      await loading.observed; this.alive(); // Original IO, under the original opening deadline.
+      if (!loading.settled || loading.failed) throw new Error("Original native preparation not verified.");
+      this.resources = resources; this.alive();
       if (this.resources.controlFile !== this.file) throw new Error("Native Host control binding differs.");
       this.bindingValid = true; this.alive();
       await this.resource(resources => resources.prepareDirectory(this.openingDeadline, this.abort.signal)); this.alive();
@@ -282,6 +292,8 @@ export class NativeDevelopmentHost {
     const detachedWork = this.admission?.disable() ?? Promise.resolve(true);
     const revokedWork = detachedWork.then(() => this.revoke());
     await this.opening?.catch(() => {});
+    // This is the retained original preparation, never the public timeout.
+    await this.bound(this.loadingCall?.observed ?? Promise.resolve(), 30000, this.cleanupDeadline);
     const stopped = await stoppedWork;
     const detached = await detachedWork;
     const revoked = await revokedWork;

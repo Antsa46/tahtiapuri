@@ -37,6 +37,7 @@ export function startDesktop(paths: DesktopPaths) {
   let observingPending = false;
   let rendererTimer: NodeJS.Timeout | undefined;
   let shutdownPromise: Promise<void> | undefined;
+  let exitCode = 0;
   const modelPaths = paths.model;
   const model = modelPaths?.kind === "native-cpu" ? createNativeModelHost({
     runtimeRoot: modelPaths.runtimeRoot, workRoot: modelPaths.workRoot, model: modelPaths.profile,
@@ -57,19 +58,21 @@ export function startDesktop(paths: DesktopPaths) {
   );
   const development = new DevelopmentHost(backend, join(paths.data, "mcp"));
   function shutdown(code: number): Promise<void> {
-    shutdownPromise ??= (async () => {
+    if (code !== 0) exitCode = 1; // A later failure cannot be lost behind an earlier graceful close.
+    // Publish the shared Promise BEFORE any cleanup callback can re-enter.
+    shutdownPromise ??= Promise.resolve().then(async () => {
       clearTimeout(rendererTimer);
       ipcMain.removeHandler(STATUS_CHANNEL);
       for (const channel of Object.values(OBSERVING_CHANNELS)) ipcMain.removeHandler(channel);
       for (const channel of Object.values(SKY_CHANNELS)) ipcMain.removeHandler(channel);
       for (const channel of Object.values(ASSISTANT_CHANNELS)) ipcMain.removeHandler(channel);
       for (const channel of Object.values(DEVELOPMENT_CHANNELS)) ipcMain.removeHandler(channel);
-      try { await development.stop(); } catch { code = 1; }
-      try { await backend.stop(); } catch { code = 1; }
-      try { await model?.stop(); } catch { code = 1; }
+      try { await development.stop(); } catch { exitCode = 1; }
+      try { await backend.stop(); } catch { exitCode = 1; }
+      try { await model?.stop(); } catch { exitCode = 1; }
       if (window && !window.isDestroyed()) window.destroy();
-      app.exit(code);
-    })();
+      app.exit(exitCode);
+    });
     return shutdownPromise;
   }
   app.on("before-quit", event => { event.preventDefault(); void shutdown(0); });

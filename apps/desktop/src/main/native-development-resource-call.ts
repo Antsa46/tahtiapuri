@@ -14,6 +14,7 @@ export class NativeDevelopmentResourceCall<T> {
   private observationFinished = false;
   private observationUnknown = false;
   private nativeExitKnown = false;
+  private physicalExitKnown = false;
   private originalExitUnknown = false;
   private bindingStarted = false;
   private resolveObserved!: () => void;
@@ -46,13 +47,15 @@ export class NativeDevelopmentResourceCall<T> {
   get observationAvailable(): boolean { return this.bindingStarted && !!this.observation && !this.observationUnknown; }
   get settled(): boolean { return !!this.originalOutcome && this.observationFinished && !this.observationUnknown; }
   get exitVerified(): boolean { return this.settled && this.nativeExitKnown && !this.originalExitUnknown; }
+  /** Original IO and physical child/Worker termination only; never semantic success. */
+  get physicalSettled(): boolean { return this.settled && this.physicalExitKnown; }
   get failed(): boolean { return this.originalOutcome?.status === "rejected" || this.observationUnknown
     || this.observationFinished && !this.nativeExitKnown
     || !!this.originalOutcomes?.some(item => item.status === "rejected"
       || item.status === "fulfilled" && !!item.value && typeof item.value === "object"
         && "status" in item.value && item.value.status === "rejected"); }
   private unknown(error: unknown) {
-    this.observationError = error; this.observationUnknown = true; this.observationFinished = true; this.nativeExitKnown = false;
+    this.observationError = error; this.observationUnknown = true; this.observationFinished = true; this.nativeExitKnown = false; this.physicalExitKnown = false;
   }
   private async collect(observation: NativeLaunchResourceObservation): Promise<void> {
     const binding = await observation.binding;
@@ -61,7 +64,7 @@ export class NativeDevelopmentResourceCall<T> {
     if (binding.kind === "stage") {
       if (binding.staging) work.push(binding.staging);
       // This operation starts no process; its FILE IO still has to settle.
-      this.nativeExitKnown = true;
+      this.nativeExitKnown = true; this.physicalExitKnown = true;
     } else {
       if (binding.verification) work.push(binding.verification);
       if (binding.operation) work.push(binding.operation);
@@ -78,14 +81,19 @@ export class NativeDevelopmentResourceCall<T> {
     // an operation success, nor a replacement for a rejected raw settlement.
     const outcomes = await Promise.allSettled(work);
     this.originalOutcomes = Object.freeze(outcomes);
-    if (noTaskProof) this.nativeExitKnown = this.originalOutcome?.status === "rejected"
-      && !!this.originalOutcome.reason && typeof this.originalOutcome.reason === "object"
-      && "exitVerified" in this.originalOutcome.reason && this.originalOutcome.reason.exitVerified === true;
+    if (noTaskProof) {
+      this.nativeExitKnown = this.originalOutcome?.status === "rejected"
+        && !!this.originalOutcome.reason && typeof this.originalOutcome.reason === "object"
+        && "exitVerified" in this.originalOutcome.reason && this.originalOutcome.reason.exitVerified === true;
+      this.physicalExitKnown = this.nativeExitKnown;
+    }
     if (nativeSettlement) {
       const index = work.indexOf(nativeSettlement), outcome = outcomes[index];
       const settled = outcome?.status === "fulfilled" ? outcome.value as NativeLaunchSettlement : undefined;
       this.nativeExitKnown = !!settled && settled.childCloseObserved === true && settled.workerExited === true
         && settled.workerExitCode === 0 && settled.uncertain === false;
+      this.physicalExitKnown = !!settled && settled.childCloseObserved === true && settled.workerExited === true
+        && Number.isSafeInteger(settled.workerExitCode);
     }
     this.observationFinished = true;
   }

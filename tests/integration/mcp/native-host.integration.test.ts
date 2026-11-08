@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { NativeMcpHostResources } from "../../../apps/desktop/src/main/native-mcp-resources.js";
 import { NativeDevelopmentHost, type NativeDevelopmentResourceLoader, type NativeDevelopmentResources } from "../../../apps/desktop/src/main/native-development-host.js";
+import { createObservedNativeDevelopmentLoader } from "../../../apps/desktop/src/main/native-development-resource-loader.js";
 import { DevelopmentHost } from "../../../apps/desktop/src/main/development-host.js";
 import type { NativeMcpHelpers } from "../../../apps/desktop/src/main/native-mcp-helpers.js";
 import { NativeBootstrapProcessError } from "../../../apps/desktop/src/main/native-bootstrap-operation.js";
@@ -71,12 +72,24 @@ const syntheticResources = (file: string, custom: NativeMcpHelpers, prepareWorke
   session: NativeMcpHostResources["session"] = async (operation, target, bytes, signal) => {
     signal.throwIfAborted(); if (operation === "publish") await custom.operate("publish", target, bytes, signal);
   }) => syntheticHostResources(file, custom, prepareWorker, session);
+// The factory and preparation observations are SYNTHETIC controller receipts.
+function syntheticLoader(start: (deadline: number, signal: AbortSignal) => Promise<NativeDevelopmentResources>): NativeDevelopmentResourceLoader {
+  return createObservedNativeDevelopmentLoader((deadline, signal, context) => {
+    const original = context.factory(() => start(deadline, signal), key => {
+      const result = key.then(() => Object.freeze({ status: "fulfilled" as const }),
+        reason => Object.freeze({ status: "rejected" as const, reason }));
+      return Object.freeze({ result, preparation: result });
+    });
+    return { result: original, original };
+  });
+}
 async function fixture(custom: NativeMcpHelpers = helpers, root?: string, prepareWorker?: NativeMcpHostResources["prepareWorker"], session?: NativeMcpHostResources["session"],
   loaderHook?: (resources: NativeDevelopmentResources, deadline: number, signal: AbortSignal) => Promise<NativeDevelopmentResources>) {
   const b = backend(), directory = root ?? await mkdtemp(join(base, "host-"));
   // The fixture replaces directory ACL preparation with mkdir. No ACL claim.
   const control = join(directory, "control"), resources = syntheticResources(join(control, "main-bootstrap.bin"), custom, prepareWorker, session);
-  const load = vi.fn<NativeDevelopmentResourceLoader>((deadline, signal) => loaderHook ? loaderHook(resources, deadline, signal) : Promise.resolve(resources));
+  const originalLoader = syntheticLoader((deadline, signal) => loaderHook ? loaderHook(resources, deadline, signal) : Promise.resolve(resources));
+  const load = Object.assign(vi.fn((deadline: number, signal: AbortSignal) => originalLoader(deadline, signal)), { observe: originalLoader.observe });
   const host = new NativeDevelopmentHost(b.port, control, load);
   cleanups.push(async () => { await host.stop(); await observeSyntheticHostWork(resources); });
   return { ...b, host, load, resources, directory, control, file: join(control, "main-bootstrap.bin"), reservation: join(control, "native-session-reserved") };
@@ -172,11 +185,11 @@ test("uncertain publisher exit prevents a second helper operation and preserves 
   expect(calls).toEqual(["recover", "publish"]); await access(f.reservation);
 });
 test("legacy and native hosts cannot share a backend even while disabled or after stop", async () => {
-  const b = backend(), root = join(base, "exclusive"); const host = new NativeDevelopmentHost(b.port, root, async () => syntheticResources(join(root, "main-bootstrap.bin"), helpers));
+  const b = backend(), root = join(base, "exclusive"); const host = new NativeDevelopmentHost(b.port, root, syntheticLoader(async () => syntheticResources(join(root, "main-bootstrap.bin"), helpers)));
   expect(() => new DevelopmentHost(b.port, root)).toThrow("already has an owner");
-  await host.stop(); expect(() => new NativeDevelopmentHost(b.port, root, async () => syntheticResources(join(root, "main-bootstrap.bin"), helpers))).toThrow("already has an owner");
+  await host.stop(); expect(() => new NativeDevelopmentHost(b.port, root, syntheticLoader(async () => syntheticResources(join(root, "main-bootstrap.bin"), helpers)))).toThrow("already has an owner");
   const other = backend(); new DevelopmentHost(other.port, root);
-  expect(() => new NativeDevelopmentHost(other.port, root, async () => syntheticResources(join(root, "main-bootstrap.bin"), helpers))).toThrow("already has an owner");
+  expect(() => new NativeDevelopmentHost(other.port, root, syntheticLoader(async () => syntheticResources(join(root, "main-bootstrap.bin"), helpers)))).toThrow("already has an owner");
 });
 // Six legacy helper-package oracles moved to native-mcp-helpers.test.ts,
 // where source verification is tested with synthetic bytes and mocked calls.
@@ -671,7 +684,7 @@ test("a loader cannot bind a different control file before the first resource op
 test("backend ownership is already claimed when the loader reenters construction", async () => {
   let f!: Awaited<ReturnType<typeof fixture>>;
   f = await fixture(helpers, undefined, undefined, undefined, async resources => {
-    expect(() => new NativeDevelopmentHost(f.port, f.control, async () => resources)).toThrow("already has an owner"); return resources;
+    expect(() => new NativeDevelopmentHost(f.port, f.control, syntheticLoader(async () => resources))).toThrow("already has an owner"); return resources;
   });
   expect((await f.host.setEnabled(true, performance.now() + 60000)).ok).toBe(true);
   expect((await f.host.stop()).failed).toBe(false);
@@ -749,4 +762,59 @@ test("reentrant stop before directory dispatch never creates a control directory
   }));
   expect((await f.host.setEnabled(true, performance.now() + 60000)).ok).toBe(false);
   expect(await stop).toMatchObject({ failed: true, reservationCreated: false }); await absent(f.control); await absent(f.reservation);
+});
+
+test("Host waits for original wrapper IO after public owner return before any directory mutation", async () => {
+  const f = await fixture(), wrapper = gate(), normal = f.load.observe;
+  vi.spyOn(f.load, "observe").mockImplementation(key => ({ ...normal(key), wrapper: wrapper.promise.then(() => ({ status: "fulfilled" as const })) }));
+  const opening = f.host.setEnabled(true, performance.now() + 60000);
+  try {
+    await tick(); await tick(); await absent(f.control); expect(f.load).toHaveBeenCalledOnce();
+    wrapper.resolve(); expect((await opening).ok).toBe(true); expect((await f.host.stop()).failed).toBe(false);
+  } finally { wrapper.resolve(); await opening; }
+});
+test("Host observer lookup failure retains late original work and permits no resource mutation", async () => {
+  const entered = gate(), release = gate();
+  const f = await fixture(helpers, undefined, undefined, undefined, async resources => { entered.resolve(); await release.promise; return resources; });
+  vi.spyOn(f.load, "observe").mockImplementation(() => { throw undefined; });
+  const opening = f.host.setEnabled(true, performance.now() + 60000);
+  try {
+    await entered.promise; expect((await opening).ok).toBe(false); const closing = f.host.stop();
+    let closed = false; void closing.then(() => { closed = true; }); await tick(); expect(closed).toBe(false); await absent(f.control);
+    release.resolve(); expect(await closing).toMatchObject({ failed: true, originalResourceWorkSettled: false, resourceOwnerHealthy: false });
+    await absent(f.control); await absent(f.reservation);
+  } finally { release.resolve(); await opening; }
+});
+test("Host retains late original factory preparation after a public loader timeout without upgrading stop", async () => {
+  const prep = gate(), reason = new Error("Synthetic public loader timeout");
+  const f = await fixture(helpers, undefined, undefined, undefined, () => Promise.reject(reason)), normal = f.load.observe;
+  vi.spyOn(f.load, "observe").mockImplementation(key => {
+    const value = normal(key); return { ...value, factory: value.factory.then(binding => binding.state === "bound"
+      ? { ...binding, observation: { ...binding.observation, preparation: prep.promise.then(() => ({ status: "fulfilled" as const })) } } : binding) };
+  });
+  const opening = f.host.setEnabled(true, performance.now() + 60000);
+  try {
+    expect((await opening).ok).toBe(false); const closing = f.host.stop(); let closed = false; void closing.then(() => { closed = true; });
+    await tick(); expect(closed).toBe(false); await absent(f.control); prep.resolve();
+    const outcome = await closing; expect(outcome.failed).toBe(true); expect(await f.host.stop()).toBe(outcome); await absent(f.reservation);
+  } finally { prep.resolve(); await opening; }
+});
+test("Host rejects a successful owner with a contradictory none binding before the first resource call", async () => {
+  const f = await fixture(), normal = f.load.observe;
+  vi.spyOn(f.load, "observe").mockImplementation(key => ({ ...normal(key), factory: Promise.resolve({ state: "none" as const }) }));
+  expect((await f.host.setEnabled(true, performance.now() + 60000)).ok).toBe(false);
+  expect(await f.host.stop()).toMatchObject({ failed: true, originalResourceWorkSettled: false, resourceOwnerHealthy: false });
+  await absent(f.control); await absent(f.reservation);
+});
+test("Host rejects a raw factory observation failure before any resource mutation", async () => {
+  const prep = gate(), f = await fixture(), normal = f.load.observe;
+  vi.spyOn(f.load, "observe").mockImplementation(key => {
+    const value = normal(key); return { ...value, factory: value.factory.then(binding => binding.state === "bound"
+      ? { ...binding, observation: { ...binding.observation, preparation: prep.promise.then(() => { throw new Error("Raw preparation observer failure"); }) } } : binding) };
+  });
+  const opening = f.host.setEnabled(true, performance.now() + 60000);
+  try {
+    await tick(); await absent(f.control); prep.resolve(); expect((await opening).ok).toBe(false);
+    expect(await f.host.stop()).toMatchObject({ failed: true, originalResourceWorkSettled: false }); await absent(f.reservation);
+  } finally { prep.resolve(); await opening; }
 });

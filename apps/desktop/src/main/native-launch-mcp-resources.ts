@@ -1,3 +1,4 @@
+import type { NativeCallOutcome } from "./native-launch-call-record.js";
 import { win32 } from "node:path";
 import { childEnvironment } from "./child-environment.js";
 import { loadNativeMcpLaunchPackage } from "./native-mcp-resources.js";
@@ -17,6 +18,19 @@ export interface NativeLaunchMcpResourceConfig {
 }
 /** Bound metadata is immutable; the owner's private lifecycle remains mutable. */
 export type NativeLaunchMcpResources = NativeLaunchResourceOwner & Readonly<{ controlFile: string }>;
+/** Status-only observation. No resource owner, dispatch, timer or reset is exposed.
+ * Preparation follows the retained ORIGINAL read-only factory IO, not its
+ * bounded public result. Its rejection is completion, never success. */
+export interface NativeLaunchMcpPreparationObservation {
+  readonly result: Promise<NativeCallOutcome>;
+  readonly preparation: Promise<NativeCallOutcome | Readonly<{ status: "not-started" }>>;
+}
+const preparationObservations = new WeakMap<Promise<unknown>, NativeLaunchMcpPreparationObservation>();
+export function observeNativeLaunchMcpPreparation(original: Promise<unknown>): NativeLaunchMcpPreparationObservation {
+  const observation = preparationObservations.get(original);
+  if (!observation) throw new Error("Unknown native MCP preparation promise");
+  return observation;
+}
 const hash = (value: unknown): value is string => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
 let claimed = false;
 let preparation: Promise<NativeLaunchMcpResources> | undefined;
@@ -77,6 +91,17 @@ export function loadNativeLaunchMcpResources(config: NativeLaunchMcpResourceConf
   let done = false, failed = false, timer: NodeJS.Timeout | undefined;
   const abort = new AbortController(), validSignal = signal instanceof AbortSignal;
   preparationResult = new Promise<NativeLaunchMcpResources>((yes, no) => { resolve = yes; reject = no; });
+  let originalPreparationStarted = false;
+  let recordPreparation!: (value: NativeCallOutcome | Readonly<{ status: "not-started" }>) => void;
+  const originalPreparation = new Promise<NativeCallOutcome | Readonly<{ status: "not-started" }>>(yes => { recordPreparation = yes; });
+  const result = preparationResult.then(() => {
+    if (!originalPreparationStarted) recordPreparation(Object.freeze({ status: "not-started" }));
+    return Object.freeze({ status: "fulfilled" as const });
+  }, reason => {
+    if (!originalPreparationStarted) recordPreparation(Object.freeze({ status: "not-started" }));
+    return Object.freeze({ status: "rejected" as const, reason });
+  });
+  preparationObservations.set(preparationResult, Object.freeze({ result, preparation: originalPreparation }));
   const cleanup = () => { clearTimeout(timer); if (validSignal) signal.removeEventListener("abort", onAbort); };
   const fail = (error: unknown) => {
     failed = true;
@@ -96,7 +121,10 @@ export function loadNativeLaunchMcpResources(config: NativeLaunchMcpResourceConf
     signal.addEventListener("abort", onAbort, { once: true }); check();
     timer = setTimeout(onAbort, Math.max(0, Number((deadline - process.hrtime.bigint() + 999_999n) / 1_000_000n)));
     check();
+    originalPreparationStarted = true; // BEFORE IO; a synchronous start uncertainty never means not-started.
     preparation = prepare(approved, abort.signal, check);
+    void preparation.then(() => recordPreparation(Object.freeze({ status: "fulfilled" })),
+      reason => recordPreparation(Object.freeze({ status: "rejected", reason })));
     void preparation.then(owner => {
       try {
         check(); // Also rejects late success without timer dispatch.

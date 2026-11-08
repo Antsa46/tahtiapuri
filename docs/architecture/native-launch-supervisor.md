@@ -4,9 +4,13 @@ Tila: Main-valvoja, Worker-sovitin ja Hostin pakollinen resurssilataaja
 jakavat saman pakettiin sidotun omistajan. BC:n 306 tapauksen mock-/Node-
 komponenttivalinnan jälkeen hyväksyttiin myös BD:n rajattu hakemistoskriptikoe,
 BE:n kolmen resurssikutsun koe ja BF:n kaksi erillistä oikeaa Host-tapausta.
-BF:n Host-ajot käyttivät suoraa compiled-importia. Nykyisellä lazy-import-
-fixturellä on tyypitys-, keräily- ja import-only-näyttö, ei uutta oikeaa Host-ajoa.
-Ajantasaisen näyttörajan omistaa [BF:n rajattu näyttö](#node-isännän-rajattu-testinäyttö).
+BF:n Host-ajot käyttivät suoraa compiled-importia. BF:n myöhempi lazy-import-
+versio sai tyypitys-, keräily- ja import-only-näytön, ei uutta oikeaa Host-ajoa.
+Nykyinen BG:n loader/context.factory-fixture on vain tyyppitarkistettu.
+BG:n erilliset 50/16/70 synteettiset/controller-tarkistukset rajataan
+[Mainin havaintojen jatkossa](#mainin-alkuperäisten-havaintojen-jatko-kesken) ja
+[latauspyynnön havainnossa](#alkuperäiseen-latauspyyntöön-sidottu-havainto).
+Historiallisen näyttörajan omistaa [BF:n rajattu näyttö](#node-isännän-rajattu-testinäyttö).
 Oletus-Electron-koostaminen ja koko sovelluksen oikeusmatriisi ovat edelleen
 avoinna. Alla vanhan vaiheen ajamattomuusväite koskee vain nimettyä vaihetta.
 
@@ -375,7 +379,7 @@ vahvista jälkeläisten sulkua, eikä controller-koe hyväksy Windowsin eristyst
 
 BB-vaiheessa broker-fixturen rajapinta siirrettiin uuteen loaderiin ilman
 uuden oikean ajon hyväksyntää. BF:n suoran import-version kaksi myöhempää
-Host-ajoa sekä nykyisen lazy-import-version erillinen näyttöraja ovat
+Host-ajoa sekä BF:n myöhemmän lazy-import-version erillinen näyttöraja ovat
 [BF:n yhteenvedossa](#node-isännän-rajattu-testinäyttö). Jokainen oikea tapaus tarvitsee tuoreen Main-
 prosessin sekä ajoreseptin erikseen hyväksymän launch-binding.json-syötteen;
 THREC001-lupaa tai compiled-pinneja ei päätellä paketin omasta ilmoituksesta.
@@ -447,7 +451,7 @@ Completion-uusinta käyttää samaa jo ladattua omistajaa.
 
 ### Node-isännän rajattu testinäyttö
 
-Havaintoavun 11 ja ledgerin 12 synteettistä tapausta läpäisivät samassa
+BF-vaiheen havaintoavun 11 ja ledgerin 12 synteettistä tapausta läpäisivät samassa
 rajatussa 23 tapauksen ajossa. Sama 23 tapauksen valinta läpäisi myös
 tavallisen root-konfiguraation kautta: havaintoavun täsmällinen testipolku on
 mukana sen include-valinnassa. Tämä ei ole koko root-sarjan ajo eikä uusi
@@ -473,16 +477,17 @@ hetkellä broker-close-havainto sai olla false; se ei yksin todista natiivin
 lease-odotuksen toteutumista. Lopullinen broker-exit0 ja vapautuksen omat
 sulkuhavainnot vaadittiin.
 
-Nykyinen fixture lataa saman kiinteän compiled-URLin vasta eksplisiittisen
+BF:n myöhempi lazy-import-fixture lataa saman kiinteän compiled-URLin vasta eksplisiittisen
 koekäynnistyksen sisällä. Alkuperäinen loader-Promise omistaa myös importin;
 deadline/abort tarkistetaan ennen sitä ja sen jälkeen. Tavalliseen keräilyyn
 ei lisätä desktop-dist-riippuvuutta, source-fallbackia, valittavaa URLia tai
-uutta factorya. Tämä viimeinen fixtureversio läpäisi tyypityksen, erillisen
+uutta factorya. Tämä BF-fixtureversio läpäisi tyypityksen, erillisen
 kopion keräilyn ilman desktop-distiä (kaksi tarkoituksella skipattua tapausta,
 nolla suoritettua) sekä fixed compiled import-only -tarkistuksen ilman
 factoryn kutsumista. Edellä mainitut kaksi oikeaa Host-ajoa ovat aiemman
-suoran import-version näyttöä; nykyistä lazy-import-versiota ei ajettu
-uudelleen oikeana Host-ketjuna.
+suoran import-version näyttöä; BF:n lazy-import-versiota ei ajettu
+uudelleen oikeana Host-ketjuna. Nykyisen BG-fixturen loader/context.factory-
+kytkentä on myöhempi muutos ja mukana vain BG:n tyyppitarkistuksessa.
 
 Näyttö käyttää synteettistä backendia. Se ei hyväksy oletus-Electron-
 koostamista, rearm/recovery-kokonaisuutta, riippumatonta kaikkien OS-
@@ -490,6 +495,99 @@ jälkeläisten tai profiilivaraston inventointia eikä koko CPU/GPU/FMI-
 minimipakettia. Aiemmat epäonnistumiset puuttuvine historiallisine
 sulkuhavaintoineen säilyvät. Karanteenin apureita ei ajettu tai palautettu,
 eikä uusia natiiveja tarkistusohjelmia tehty.
+
+## Mainin alkuperäisten havaintojen jatko (kesken)
+
+Paikallinen lähdejatko lisää tuotannon NativeDevelopmentResourceCalliin
+physicalSettled-havainnon. Se kertoo tämän kutsun alkuperäisen tiedostotyön
+ja child/Worker-sulun valmistumisesta, ei onnistumisesta. Myös tunnettu
+virheellinen Worker-exit voi olla fyysisesti päättynyt. Raakahavainnon
+hylkäys, tuntematon sulku tai virheellinen exit-koodi eivät kelpaa fyysiseksi
+näytöksi. Alkuperäisen exitVerified- ja failed-tuloksen ehdot säilyvät.
+
+observeNativeLaunchMcpPreparation sitoo havainnon täsmälleen factoryn
+palauttamaan alkuperäiseen Promiseen. Se erottaa julkisen, määräajalla
+rajatun tuloksen varsinaisen read-only-valmistelun päättymisestä. Havainto
+palauttaa vain lopputilan ja alkuperäisen hylkäyssyyn; ei resurssiomistajaa,
+kutsujen käynnistysvaltaa, uutta ajastinta, peruutusta tai resettiä.
+Not-started tarkoittaa, ettei alkuperäistä valmistelua aloitettu.
+Julkinen timeout ei ratkaise jo alkaneen valmistelun havaintoa.
+
+Electronin nykyisen shutdown-polun exit-virhe lukitaan monotonisesti.
+Sulku-Promise julkaistaan ennen cleanup-callbackeja: synkroninen uudelleentulo
+ei saa aloittaa toista siivousta, eikä myöhempi shutdown(1) saa kadota
+aiemman shutdown(0):n välimuistiin. IPC:n nykyinen shutdownPromise-portti
+sulkee uuden työn heti. Tämä lähdemuutos ei vielä vaihda legacy-MCP:tä
+natiiviin eikä käynnistä uutta prosessia.
+
+Näiden paikallisten muutosten desktop-build, kohdistettu testityypitys ja
+50 synteettistä tapausta (18 ledger, 27 factory, viisi Main) läpäisivät.
+Riippumaton katselmus varmisti lähteen, reseptin ja alkuperäiset kuittitiedot.
+Näyttö ei ole oikean Electronin, sovellusprosessien tai fyysisen kokonaissulun
+hyväksyntä. Täysi Mainin alkuperäisten open/close-, loader-, listener- ja socket-töiden
+aggregointi sekä backendin/modelin riippumaton sulku ovat seuraavaa työtä.
+Tunnetusti keskeneräistä lasta ei hyväksytä app.exit(1):n avulla suljetuksi;
+tuotannon pakotetun sulun prosessiomistus on edelleen todistettava.
+Yksityisen juuren bootstrap, riippumaton toimitushyväksyntä ja samaan juureen
+sidottu generation/rearm/recovery ovat oletusvaihdon välttämättömät portit.
+
+### Alkuperäiseen latauspyyntöön sidottu havainto
+
+createObservedNativeDevelopmentLoader rakentaa callable-lataajan ja sen
+pakollisen observe(originalPromise)-havainnon. Havainnon result on julkinen
+tulos, wrapper alkuperäinen tiedosto-/import-työ ja factory lopullinen sidonta
+BG:n alkuperäisen valmistelun havaintoon. Palautettu data ei sisällä owneria,
+uusia kutsuja, aikarajaa, peruutusta tai resettiä.
+
+Luotettu initializer käyttää jokaiseen factory-kutsuun context.factory-porttia
+ja sisällyttää kaiken kääreen I/O:n original-Promiseen. Portti varaa yhden
+factory-paikan ennen callbackia, tarkistaa pakollisen äärellisen alkuperäisen
+määräajan ja peruutuksen sekä palauttaa tarkan factory-Promisen ja rekisteröi sen ennen observer-kutsua.
+Binding-latch päätetään vasta alkuperäisen wrapperin päätyttyä ja uuden
+factory-admission sulkeuduttua. Sitä ennen puuttuva factory ei ole none-näyttö.
+Observerin tai käynnistyskahvan virhe jää unknown-tilaksi alkuperäisine
+hylkäyksineen. Julkinen timeout ei todista wrapperin tai factory-valmistelun
+päättymistä. Initializeria edeltävä hylkäys ja varmasti estetty toinen
+latauskutsu voivat osoittaa vain oman not-started-tilansa.
+
+Lataajan erillinen desktop-/tyyppi-/16 tapauksen synteettinen koe läpäisi
+riippumattoman tarkastuksen. Aiempi testikehyksen cleanup-palautusarvovirheen
+vuoksi epäonnistunut ajo säilyy epäonnistuneena; se ei ollut sovellusprosessi-
+tai eristyskoe. Tämä näyttö edeltää alla olevaa Host-kytkentää.
+
+Seuraava paikallinen lähdemuutos kytkee pakollisen observe-rajapinnan
+NativeDevelopmentHostiin. NativeDevelopmentLoadCall tallentaa alkuperäisen
+lataus-Promisen ja molemmat tuloskäsittelijät ennen lookupia. Julkinen owner
+hyväksytään vasta alkuperäisen wrapperin ja factory-valmistelun valmistuttua,
+alkuperäisen opening-deadlinen ja peruutuksen uustarkistuksen jälkeen.
+Onnistunut owner ristiriitaisella none/not-started-kuittauksella hylätään.
+Tunnettu hylkäys voi tarkoittaa päättynyttä työtä mutta ei tervettä owneria;
+lookupin virhe, unknown ja raakahavainnon hylkäys eivät osoita päättymistä.
+Kaikki saatavilla olevat alkuperäiset factory-havainnot kerätään myös silloin,
+kun wrapper tai julkinen tuloskuitti on jo virheellinen; varhainen validointivirhe
+ei saa ohittaa tunnetun keskeneräisen työn odottamista.
+
+Sulku odottaa myös säilytettyä lataushavaintoa saman alkuperäisen 30 sekunnin
+budjetin sisällä. Myöhäinen valmistuminen ei korota aiempaa epäonnistunutta
+stop-tulosta onnistumiseksi. ResourceWorkSettled/ownerHealthy vaativat nyt
+myös lataajan päättymisen/onnistumisen ennen cleanup-mutaatiota.
+Synteettiset Host-fixturet tuottavat nimetyt mock-havainnot. Oikean koefixturen
+compiled-factory sidotaan context.factory-portissa heti ennen kutsua;
+alkuperäinen tiedosto-/import-Promise säilyy erillisenä.
+
+Host-kytkennän desktop-build, kohdennettu tyypitys ja 70 synteettistä tapausta
+läpäisivät: 57 Host- ja 13 load-record-tapausta. Riippumaton tarkastaja varmisti
+lähteen, koereseptin, alku-/loppupinnit ja kolmen vaiheen todelliset exit0-kuitit.
+Oikea broker-fixture oli mukana vain tyypityksessä. Node-tiedostot, paikalliset
+putket ja synteettiset resurssit eivät osoita Windowsin ACL:ää, natiivi-Workeria,
+Electron-koostamista tai fyysistä kokonaissulkua. Aiemmat ajamattomat reseptit
+ja testikehyksen virheeseen päättynyt ajo säilyvät erillisinä; uusia oikeita
+natiivi- tai Electron-ajoja ei tehty tämän näytön perusteella.
+Havainnon raakojen Promisejen hylkäyksiä kuunnellaan heti. Hylätty observer
+ei muutu valmistelun päättymiskuitiksi; ennen lopullista sidontaa se tuottaa
+unknown-tilan, sidonnan jälkeen kuluttaja havaitsee alkuperäisen hylkäyksen.
+Fyysinen kokonaissulku tarvitsee lisäksi dynaamisen työrekisterin, myös
+hylättyjen socketien oikeat sulut ja alkuperäiset writer-callbackit.
 
 ## Pakettiin sidotun resurssipolun rajattu ajonäyttö
 

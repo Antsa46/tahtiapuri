@@ -1,4 +1,5 @@
 import type { NativeLaunchMcpResourceConfig } from "../../../apps/desktop/src/main/native-launch-mcp-resources.js";
+import { createObservedNativeDevelopmentLoader, type NativeLoaderContext } from "../../../apps/desktop/src/main/native-development-resource-loader.js";
 import { requireNativeOperationDeadline } from "../../../apps/desktop/src/main/native-operation-deadline.js";
 import { open as openBinding } from "node:fs/promises";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -45,7 +46,7 @@ function observation(): NativeHostObservation {
 }
 /** Reviewed runner creates this private input independently of runtime package
  * self-claims. No digest, protocol or compiled pin is inferred from the package. */
-async function loadCaseResources(control: string, deadline: number, signal: AbortSignal,
+async function loadCaseResources(control: string, deadline: number, signal: AbortSignal, context: NativeLoaderContext,
   observeSession?: (operation: Parameters<NativeDevelopmentResources["session"]>[0]) => void): Promise<NativeDevelopmentResources> {
   const check = () => { signal.throwIfAborted(); requireNativeOperationDeadline(deadline); };
   check(); const file = await openBinding(join(runRoot!, "launch-binding.json"), "r");
@@ -68,9 +69,9 @@ async function loadCaseResources(control: string, deadline: number, signal: Abor
   const factory: typeof import("../../../apps/desktop/src/main/native-launch-mcp-resources.js") =
     await import(/* @vite-ignore */ pathToFileURL(join(projectRoot, "apps/desktop/dist/main/native-launch-mcp-resources.js")).href);
   check();
-  const owner = await watcher.workOriginal("factory", "bound-resource-factory", () => factory.loadNativeLaunchMcpResources({
+  const owner = await watcher.workOriginal("factory", "bound-resource-factory", () => context.factory(() => factory.loadNativeLaunchMcpResources({
     runtimeRoot: runtimeRoot!, descriptorSha256: descriptorDigest!, controlFile: join(control, "main-bootstrap.bin"),
-    compiled: approved.compiled, recoveryApproval: approved.recoveryApproval }, deadline, signal));
+    compiled: approved.compiled, recoveryApproval: approved.recoveryApproval }, deadline, signal), factory.observeNativeLaunchMcpPreparation));
   watcher.owner(owner); loadedResourceOwner = owner; check();
   // Non-async delegates preserve the original Promise keys used by observeCall.
   return Object.freeze({ controlFile: owner.controlFile,
@@ -84,6 +85,14 @@ async function loadCaseResources(control: string, deadline: number, signal: Abor
     prepareWorker: (limit, abort) => watcher.invoke(owner, "stage", () => owner.prepareWorker(limit, abort)),
     observeCall: original => owner.observeCall(original), status: () => owner.status(),
   } satisfies NativeDevelopmentResources);
+}
+/** ORIGINAL binding-file/import Promise is retained separately from the bounded
+ * factory result; the callable loader binds the exact compiled factory key. */
+function caseLoader(control: string, observeSession?: Parameters<typeof loadCaseResources>[4]) {
+  return createObservedNativeDevelopmentLoader((deadline, signal, context) => {
+    const original = observation().workOriginal("loader", "host-resource-loader", () => loadCaseResources(control, deadline, signal, context, observeSession));
+    return { result: original, original };
+  });
 }
 let functionalTainted = false;
 const digest = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
@@ -261,12 +270,12 @@ if (!enabled || selectedCase === "roundtrip") test("round trips real MCP status 
   };
   let peer: McpPeer | undefined, outcome: NativeHostOutcome | undefined, exited: Exit | undefined;
   const mainReleaseRequests: { operation: "release-clean" | "release-pristine"; brokerCloseAlreadyObserved: boolean }[] = [];
-  const host = new NativeDevelopmentHost({ development }, control, (deadline, signal) => observation().workOriginal("loader", "host-resource-loader", () => loadCaseResources(control, deadline, signal, operation => {
+  const host = new NativeDevelopmentHost({ development }, control, caseLoader(control, operation => {
     if (operation === "release-clean" || operation === "release-pristine") {
       if (mainReleaseRequests.length >= 1) throw new Error("More than one Main release request");
       mainReleaseRequests.push({ operation, brokerCloseAlreadyObserved: peer?.observedClose ?? false });
     }
-  })));
+  }));
   let context: { generation: string; pid: number; creation: string; descriptorDigest: string } | undefined;
   let stopping: Promise<NativeHostOutcome> | undefined;
   const requestStop = () => stopping ??= host.stop().then(value => { outcome = value; return value; });
@@ -522,7 +531,7 @@ if (!enabled || selectedCase === "pristine") test("production Host disable relea
     if (operation === "development.configure" && (typeof value === "string" || value === null)) return service.configure(value);
     throw new Error("No broker operation belongs to pristine fixture");
   };
-  const host = new NativeDevelopmentHost({ development }, control, (deadline, signal) => observation().workOriginal("loader", "host-resource-loader", () => loadCaseResources(control, deadline, signal)));
+  const host = new NativeDevelopmentHost({ development }, control, caseLoader(control));
   let outcome: NativeHostOutcome | undefined, success = false, original: unknown, launch: Buffer | undefined, phase = "enable";
   const cleanupErrors: string[] = [];
   try {
