@@ -9,7 +9,7 @@ const epoch = "a".repeat(64);
 const tick = () => new Promise<void>(resolve => setImmediate(resolve));
 const status = (connected = true): DevelopmentResult => ({ ok: true, status: { enabled: true, connected,
   protocolVersion: 1, modelId: "qwen3-4b-q4-k-m", engineVersion: "3.22.2" } });
-function deferred<T>() { let resolve!: (value: T) => void, reject!: (error: Error) => void;
+function deferred<T>() { let resolve!: (value: T) => void, reject!: (error: unknown) => void;
   const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; }
 class Wire extends Duplex {
   readonly sent: Buffer[] = [];
@@ -72,7 +72,11 @@ it("rejects the legacy epoch and leaves an unclaimed ticket usable by the rightf
   const f = fixture(); f.hello(epoch);
   expect(await f.connection.closed).toMatchObject({ authenticated: false, epochRevoked: false, backendDetachSettled: false }); expect(f.development).not.toHaveBeenCalled();
   expect(f.owner.consume).not.toHaveBeenCalled(); expect(f.owner.revoke).not.toHaveBeenCalled();
-  expect(f.admission.phase).toBe("available"); await f.admission.disable();
+  expect(f.admission.phase).toBe("available");
+  expect(await f.connection.originalClosed).toEqual({ failed: true });
+  expect(f.admission.originalWorkSettled).toBe(false);
+  const good = f.admission.claim(f.ticket.generation, f.ticket.token)!; expect(await good.ready).toBe(true);
+  await good.close(); await f.admission.disable();
 });
 it("rejects request pipelining before descriptor consumption", async () => {
   const f = fixture(), removed = deferred<void>(); f.owner.consume.mockImplementation(() => removed.promise);
@@ -97,8 +101,10 @@ it("reports uncertain descriptor settlement instead of reopening after the deadl
   const f = fixture(), removed = deferred<void>(); f.owner.consume.mockImplementation(() => removed.promise);
   f.hello(); await tick(); const closed = f.connection.stop(); await tick();
   await vi.advanceTimersByTimeAsync(NativeControl.authenticationTimeoutMs);
-  expect(await closed).toMatchObject({ descriptorConsumptionSettled: false, failed: true });
+  const outcome = await closed; expect(outcome).toMatchObject({ descriptorConsumptionSettled: false, failed: true });
+  expect(f.connection.originalWorkSettled).toBe(false);
   removed.resolve(); await tick(); expect(f.admission.issueTicket()).toBeUndefined(); expect(f.stream.sent).toHaveLength(0);
+  await f.connection.originalClosed; expect(await closed).toBe(outcome); expect(outcome.failed).toBe(true);
 });
 it("descriptor failure burns the token and revokes the epoch", async () => {
   const f = fixture(); f.owner.consume.mockRejectedValue(new Error("Synthetic removal failure")); f.hello();
@@ -197,7 +203,9 @@ it("reports an unobserved stream close instead of equating destroy with exit", a
   const f = fixture(); await ready(f); let destroy!: (error?: Error | null) => void;
   f.stream._destroy = (_error, callback) => { destroy = callback; };
   f.send(ControlKind.clean); await tick(); await vi.advanceTimersByTimeAsync(NativeControl.ioTimeoutMs);
-  expect(await f.connection.closed).toMatchObject({ streamClosed: false, failed: true }); destroy();
+  const outcome = await f.connection.closed; expect(outcome).toMatchObject({ streamClosed: false, failed: true });
+  expect(f.connection.originalWorkSettled).toBe(false); destroy(); await f.connection.originalClosed;
+  expect(await f.connection.closed).toBe(outcome); expect(outcome.streamClosed).toBe(false);
 });
 
 for (const trailing of [1, 7, 15]) it("rejects CLEAN followed by a partial header of " + trailing + " bytes", async () => {
@@ -363,4 +371,74 @@ it("fully authenticated STOP retains its independent shutdown grace after the ol
     advance(NativeControl.authenticationTimeoutMs + NativeControl.shutdownTimeoutMs - 1); f.send(ControlKind.clean);
     expect(await stopped).toMatchObject({ failed: false, brokerCleanupReported: true });
   });
+});
+
+it.each(["success", "error"] as const)("original closure waits beyond CLEAN and actual close for held ACK callback: %s", async mode => {
+  const f = fixture(), error = new Error("Late exact ACK callback failure"); let callback!: (error?: Error) => void;
+  vi.spyOn(f.stream, "write").mockImplementation((...args: unknown[]) => {
+    callback = args.at(-1) as typeof callback; f.send(ControlKind.clean); return true;
+  });
+  f.hello(); const outcome = await f.connection.closed;
+  expect(outcome).toMatchObject({ failed: false, authenticated: true, brokerCleanupReported: true, streamClosed: true });
+  expect(f.connection.originalWorkSettled).toBe(false);
+  callback(mode === "error" ? error : undefined); const original = await f.connection.originalClosed;
+  expect(original).toEqual({ failed: mode === "error" }); expect(Object.isFrozen(original)).toBe(true);
+  if (mode === "error") expect(f.connection.originalFailure?.reason).toBe(error);
+  expect(await f.connection.closed).toBe(outcome); expect(outcome.failed).toBe(false);
+});
+it("a bounded revoke failure waits for the exact late raw revoke without upgrading the frozen outcome", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] }); const f = fixture(), raw = deferred<boolean>(); await ready(f);
+  f.owner.revoke.mockImplementation(() => raw.promise); f.send(ControlKind.clean); await tick();
+  await vi.advanceTimersByTimeAsync(NativeControl.authenticationTimeoutMs);
+  const outcome = await f.connection.closed; expect(outcome).toMatchObject({ epochRevoked: false, failed: true });
+  expect(f.connection.originalWorkSettled).toBe(false); raw.resolve(true); await f.connection.originalClosed;
+  expect(await f.connection.closed).toBe(outcome); expect(outcome.failed).toBe(true);
+});
+it.each([undefined, 0])("a late raw revoke rejection %s survives the already-closed phase", async reason => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] }); const f = fixture(), raw = deferred<boolean>(); await ready(f);
+  f.owner.revoke.mockImplementation(() => raw.promise); f.send(ControlKind.clean); await tick();
+  await vi.advanceTimersByTimeAsync(NativeControl.authenticationTimeoutMs); const outcome = await f.connection.closed;
+  expect(f.connection.originalWorkSettled).toBe(false); raw.reject(reason);
+  expect(await f.connection.originalClosed).toEqual({ failed: true }); expect(f.connection.originalFailure?.reason).toBe(reason);
+  expect(await f.connection.closed).toBe(outcome); expect(outcome.failed).toBe(true);
+});
+it("Connection API closure does not claim Admission's old raw invocation finished", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] }); const f = fixture(), raw = deferred<DevelopmentResult>(); await ready(f);
+  f.development.mockImplementation(op => op === "development.invoke" ? raw.promise : Promise.resolve(status(false)));
+  f.request(); await tick(); f.send(ControlKind.clean); const outcome = await f.connection.closed;
+  await vi.advanceTimersByTimeAsync(50); expect(await f.connection.originalClosed).toEqual({ failed: false });
+  expect(f.admission.originalWorkSettled).toBe(false); expect(outcome.failed).toBe(false);
+  raw.resolve(status()); expect(await f.admission.originalClosed).toEqual({ failed: false }); expect(await f.connection.closed).toBe(outcome);
+});
+it("finish and revoke reentry share one producer and cannot report closure during the callback", async () => {
+  const f = fixture(); await ready(f);
+  f.owner.revoke.mockImplementation(async () => {
+    expect(f.connection.stop()).toBe(f.connection.closed); expect(f.connection.originalWorkSettled).toBe(false); return true;
+  });
+  f.send(ControlKind.clean); expect((await f.connection.closed).failed).toBe(false);
+  expect(await f.connection.originalClosed).toEqual({ failed: false }); expect(f.owner.revoke).toHaveBeenCalledOnce();
+  expect(f.development.mock.calls.filter(([op]) => op === "development.detach")).toHaveLength(1);
+});
+it.each([undefined, 0])("synchronous raw owner revoke throw %s is retained before its bounded facade", async reason => {
+  const f = fixture(); await ready(f); f.owner.revoke.mockImplementation(() => { throw reason; }); f.send(ControlKind.clean);
+  expect(await f.connection.closed).toMatchObject({ epochRevoked: false, failed: true });
+  expect(await f.connection.originalClosed).toEqual({ failed: true }); expect(f.connection.originalFailure?.reason).toBe(reason);
+  expect(f.owner.revoke).toHaveBeenCalledOnce();
+});
+it("a queued REQUEST cannot dispatch after the original unfinished ACK deadline without timer delivery", async () => {
+  await withAuthenticationClock(async advance => {
+    const f = fixture(); f.stream.hold = true; f.hello(); await tick(); f.request(); advance(NativeControl.authenticationTimeoutMs + 1);
+    const outcome = await f.connection.closed; expect(outcome.failed).toBe(true);
+    expect(f.development.mock.calls.some(([op]) => op === "development.invoke")).toBe(false);
+    for (const release of f.stream.held.splice(0)) release(); await f.connection.originalClosed;
+    expect(await f.connection.closed).toBe(outcome);
+  });
+});
+it("stop winning after REQUEST admission fences the queued invoke before backend dispatch", async () => {
+  const f = fixture(); f.owner.consume.mockImplementation(async (_ticket, signal) => {
+    signal.addEventListener("abort", () => f.send(ControlKind.clean), { once: true });
+  });
+  await ready(f); f.request(); const outcome = await f.connection.stop(); expect(outcome.failed).toBe(false);
+  expect(f.development.mock.calls.some(([op]) => op === "development.invoke")).toBe(false);
+  expect(await f.connection.originalClosed).toEqual({ failed: false }); expect(await f.connection.closed).toBe(outcome);
 });

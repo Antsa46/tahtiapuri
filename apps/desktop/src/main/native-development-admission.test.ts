@@ -6,7 +6,7 @@ const epoch = "a".repeat(64);
 const status = (connected: boolean): DevelopmentResult => ({ ok: true, status: { enabled: true, connected,
   protocolVersion: 1, modelId: "qwen3-4b-q4-k-m", engineVersion: "3.22.2" } });
 const command: BridgeCommand = { id: "00000000-0000-4000-8000-000000000001", operation: "status", input: null };
-function deferred<T>() { let resolve!: (value: T) => void; let reject!: (error: Error) => void;
+function deferred<T>() { let resolve!: (value: T) => void; let reject!: (error: unknown) => void;
   const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; }
 function fixture() {
   const development = vi.fn(async (op: string): Promise<DevelopmentResult> => status(op !== "development.detach"));
@@ -198,3 +198,59 @@ for (const action of ["disable", "close"] as const)
     expect(f.development.mock.calls.some(([op]) => op === "development.attach")).toBe(false);
     expect(f.admission.phase).toBe("disabled"); expect(f.admission.issueTicket()).toBeUndefined();
   });
+
+it("original close waits through attach timeout and the whole late attach-to-detach chain", async () => {
+  vi.useFakeTimers(); const f = fixture(), attach = deferred<DevelopmentResult>(), detach = deferred<DevelopmentResult>();
+  f.development.mockImplementation(op => op === "development.attach" ? attach.promise : detach.promise);
+  const lease = f.claim(); await vi.advanceTimersByTimeAsync(50); expect(await lease.ready).toBe(false);
+  const stopping = f.admission.disable(); expect(f.admission.disable()).toBe(stopping);
+  await vi.advanceTimersByTimeAsync(50); expect(await stopping).toBe(false); expect(f.admission.originalWorkSettled).toBe(false);
+  attach.resolve(status(true)); await vi.advanceTimersByTimeAsync(0); expect(f.development.mock.calls.map(([op]) => op)).toEqual(["development.attach", "development.detach"]);
+  expect(f.admission.originalWorkSettled).toBe(false); detach.resolve(status(false));
+  expect(await f.admission.originalClosed).toEqual({ failed: false }); expect(await stopping).toBe(false); expect(await lease.close()).toBe(false);
+});
+it("four old raw invokes keep all slots after bounded timeouts; one original end releases one", async () => {
+  vi.useFakeTimers(); const f = fixture(), old = f.claim(); expect(await old.ready).toBe(true);
+  const pending = Array.from({ length: 4 }, () => deferred<DevelopmentResult>()); let dispatched = 0;
+  f.development.mockImplementation(op => op === "development.invoke" ? (dispatched < 4 ? pending[dispatched++]!.promise : (++dispatched, Promise.resolve(status(true))))
+    : Promise.resolve(status(op === "development.attach")));
+  const calls = Array.from({ length: 4 }, () => old.invoke(command)); await Promise.resolve(); expect(await old.close()).toBe(true);
+  const ticket = f.admission.issueTicket()!, next = f.admission.claim(ticket.generation, ticket.token)!; expect(await next.ready).toBe(true);
+  await vi.advanceTimersByTimeAsync(50); await Promise.all(calls); expect(await next.invoke(command)).toEqual({ ok: false, code: "BUSY" }); expect(dispatched).toBe(4);
+  pending[0]!.resolve(status(true)); await vi.advanceTimersByTimeAsync(0); expect(await next.invoke(command)).toEqual(status(true)); expect(dispatched).toBe(5);
+  const error = new Error("Old raw rejection"); pending[1]!.reject(error); pending[2]!.resolve(status(true)); pending[3]!.resolve(status(true)); await vi.advanceTimersByTimeAsync(0);
+  expect(f.admission.phase).toBe("active"); expect(f.admission.originalFailure).toEqual({ status: "rejected", reason: error });
+  await f.admission.disable(); expect(await f.admission.originalClosed).toEqual({ failed: true });
+});
+it("disable without a session produces a final no-work port and refuses future admission", async () => {
+  const f = fixture(), stopped = f.admission.disable(); expect(await stopped).toBe(true);
+  expect(await f.admission.originalClosed).toEqual({ failed: false }); expect(f.admission.originalWorkSettled).toBe(true);
+  expect(f.claim()).toBeUndefined(); expect(f.admission.issueTicket()).toBeUndefined(); expect(f.admission.disable()).toBe(stopped); expect(f.development).not.toHaveBeenCalled();
+});
+it("backend reentry sees its original attach and chained detach registered before final proof", async () => {
+  const f = fixture(), attach = deferred<DevelopmentResult>(); let stopping: Promise<boolean> | undefined;
+  f.development.mockImplementation(op => {
+    const value = f.admission.disable(); stopping ??= value; expect(value).toBe(stopping); expect(f.admission.originalWorkSettled).toBe(false);
+    return op === "development.attach" ? attach.promise : Promise.resolve(status(false));
+  });
+  const lease = f.claim(); await Promise.resolve(); expect(stopping).toBeDefined(); expect(f.admission.originalWorkSettled).toBe(false);
+  attach.resolve(status(true)); expect(await lease.ready).toBe(false); expect(await stopping).toBe(true);
+  expect(await f.admission.originalClosed).toEqual({ failed: false }); const count = f.development.mock.calls.length;
+  const close = lease.close(); expect(lease.close()).toBe(close); await close; expect(f.development.mock.calls).toHaveLength(count);
+});
+it.each([undefined, null, 0])("an old raw rejection %s survives later failures without disabling the replacement", async reason => {
+  const f = fixture(), old = f.claim(); expect(await old.ready).toBe(true); const first = deferred<DevelopmentResult>(), second = deferred<DevelopmentResult>(); let invocations = 0;
+  f.development.mockImplementation(op => op === "development.invoke" ? (++invocations === 1 ? first.promise : second.promise) : Promise.resolve(status(op === "development.attach")));
+  const a = old.invoke(command), b = old.invoke(command); await Promise.resolve(); expect(await old.close()).toBe(true);
+  const ticket = f.admission.issueTicket()!, newer = f.admission.claim(ticket.generation, ticket.token)!; expect(await newer.ready).toBe(true);
+  first.reject(reason); await a; second.reject(new Error("Later raw failure")); await b;
+  expect(f.admission.phase).toBe("active"); expect(f.admission.originalFailure).toEqual({ status: "rejected", reason });
+  await f.admission.disable(); expect(await f.admission.originalClosed).toEqual({ failed: true }); expect(f.admission.originalFailure?.reason).toBe(reason);
+});
+it("a synchronous backend invoke throw releases the original slot and retains the raw error", async () => {
+  const f = fixture(), lease = f.claim(), error = new Error("Synchronous backend failure"); expect(await lease.ready).toBe(true);
+  f.development.mockImplementation(op => { if (op === "development.invoke") throw error; return Promise.resolve(status(false)); });
+  expect(await lease.invoke(command)).toEqual({ ok: false, code: "ENGINE_UNAVAILABLE" }); await f.admission.disable();
+  expect(await f.admission.originalClosed).toEqual({ failed: true }); expect(f.admission.originalFailure?.reason).toBe(error);
+  expect(f.development.mock.calls.filter(([op]) => op === "development.detach")).toHaveLength(1);
+});

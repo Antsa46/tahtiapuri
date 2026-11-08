@@ -1,6 +1,7 @@
 import { securePrivateDirectory } from "../../../apps/desktop/src/main/private-directory.js";
 import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
-import { createConnection } from "node:net";
+import { createConnection, type Server, type Socket } from "node:net";
+import { EventEmitter } from "node:events";
 import { access, mkdir, mkdtemp, readFile, rm, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -123,6 +124,7 @@ test("joins descriptor helpers, local pipe and backend; CLEAN requests native re
   const stopped = f.host.stop(); expect((await client.next()).kind).toBe(ControlKind.stop); client.send(ControlKind.clean);
   expect(await stopped).toMatchObject({ failed: false, descriptorRemoved: true, helperExitVerified: true,
     backendRevoked: true, listenerClosed: true, brokerCleanupReported: true, reservationCreated: true, reservationReleased: true });
+  expect(await f.host.originalClosed).toEqual({ failed: false });
   await access(f.reservation); expect(f.operations.slice(-2)).toEqual(["development.detach", "development.configure"]);
   expect((await f.host.setEnabled(true, performance.now() + 60000)).ok).toBe(false);
   const restarted = await fixture(helpers, f.directory);
@@ -136,6 +138,7 @@ test("an invalid unauthenticated peer does not consume the valid ticket", async 
   const good = await peer(f.file); good.hello(); expect((await good.next()).kind).toBe(ControlKind.accept);
   good.send(ControlKind.clean); await good.closed;
   expect((await f.host.stop()).failed).toBe(false);
+  expect(await f.host.originalClosed).toEqual({ failed: false });
 });
 test("disable before authentication removes the descriptor and requests native pristine release", async () => {
   const f = await fixture(); await f.host.setEnabled(true, performance.now() + 60000);
@@ -253,7 +256,7 @@ test("a rejected synthetic recovery never reports an existing descriptor as remo
   expect(await f.host.stop()).toMatchObject({ failed: true, descriptorRemoved: false, reservationCreated: true });
   expect(await readFile(f.file, "utf8")).toBe("malformed descriptor"); await access(f.reservation);
 });
-test("listener bounds total live unauthenticated connections to four", async () => {
+test("listener overflow fails closed without claiming an opaque dropped handle ended", async () => {
   const f = await fixture(); await f.host.setEnabled(true, performance.now() + 60000);
   const peers = []; for (let i = 0; i < 4; i++) peers.push(await peer(f.file));
   const bytes = decodeNativeBootstrap(await readFile(f.file));
@@ -263,9 +266,9 @@ test("listener bounds total live unauthenticated connections to four", async () 
     const timer = setTimeout(() => { extra.destroy(); reject(new Error("Extra connection remained live")); }, 1000);
     extra.once("close", () => { clearTimeout(timer); resolve(); });
   });
-  expect(peers.every(client => !client.socket.destroyed)).toBe(true);
   const closed = f.host.stop(); await Promise.all(peers.map(client => client.closed));
-  expect((await closed).listenerClosed).toBe(true);
+  expect(await closed).toMatchObject({ failed: true, listenerClosed: true });
+  await tick(); expect(f.host.originalWorkSettled).toBe(false);
 });
 test("a fixed accept window closes the host after sixteen rejected peers", async () => {
   const f = await fixture(); await f.host.setEnabled(true, performance.now() + 60000);
@@ -702,6 +705,7 @@ test("an unavailable staging observation retains the original work and never per
   try {
     await entered.promise; expect((await opening).ok).toBe(false); const outcome = await f.host.stop();
     expect(outcome).toMatchObject({ failed: true, originalResourceWorkSettled: false, helperExitVerified: false, reservationReleased: false });
+    expect(f.host.originalWorkSettled).toBe(false);
     release.resolve(); await observeSyntheticHostWork(f.resources); expect(await f.host.stop()).toBe(outcome);
     expect(calls).toEqual(["prepare"]); expect(await readFile(join(f.reservation, "unobserved-stage.bin"), "utf8")).toBe("Synthetic retained work");
   } finally { release.resolve(); await opening; }
@@ -797,6 +801,7 @@ test("Host retains late original factory preparation after a public loader timeo
     expect((await opening).ok).toBe(false); const closing = f.host.stop(); let closed = false; void closing.then(() => { closed = true; });
     await tick(); expect(closed).toBe(false); await absent(f.control); prep.resolve();
     const outcome = await closing; expect(outcome.failed).toBe(true); expect(await f.host.stop()).toBe(outcome); await absent(f.reservation);
+    expect(await f.host.originalClosed).toEqual({ failed: true });
   } finally { prep.resolve(); await opening; }
 });
 test("Host rejects a successful owner with a contradictory none binding before the first resource call", async () => {
@@ -817,4 +822,130 @@ test("Host rejects a raw factory observation failure before any resource mutatio
     await tick(); await absent(f.control); prep.resolve(); expect((await opening).ok).toBe(false);
     expect(await f.host.stop()).toMatchObject({ failed: true, originalResourceWorkSettled: false }); await absent(f.reservation);
   } finally { prep.resolve(); await opening; }
+});
+
+// The following failure injections use synthetic socket/settlement records.
+// They do not prove Windows handle/Job termination or native helper execution.
+const privateHost = (host: NativeDevelopmentHost) => host as unknown as {
+  server: Server; sockets: Set<Socket>; accept(socket: Socket): void;
+};
+function pendingCloseSocket() {
+  const socket = new EventEmitter();
+  const destroy = vi.fn(() => socket);
+  return { socket: Object.assign(socket, { destroy }) as unknown as Socket, destroy };
+}
+for (const data of [undefined, { synthetic: true }]) test("opaque drop remains unknown after listener close: " + String(!!data), async () => {
+  const f = await fixture(); await f.host.setEnabled(true, performance.now() + 60000);
+  expect(() => privateHost(f.host).server.emit("drop", data)).not.toThrow();
+  const closed = await f.host.stop(); expect(closed).toMatchObject({ failed: true, listenerClosed: true, backendRevoked: true });
+  await tick(); expect(f.host.originalWorkSettled).toBe(false);
+  expect(await f.host.stop()).toBe(closed);
+});
+test("drop during stop never turns listener close into an opaque handle receipt", async () => {
+  const f = await fixture(); await f.host.setEnabled(true, performance.now() + 60000);
+  const closed = f.host.stop(); privateHost(f.host).server.emit("drop"); await closed;
+  await tick(); expect(f.host.originalWorkSettled).toBe(false);
+});
+for (const asynchronous of [false, true]) test("drop handler contains a failing stop before Node closes its handle: " + asynchronous, async () => {
+  const f = await fixture(); await f.host.setEnabled(true, performance.now() + 60000);
+  const stop = vi.spyOn(f.host, "stop").mockImplementation(() => {
+    if (asynchronous) return Promise.reject(undefined);
+    throw 0;
+  });
+  try { expect(() => privateHost(f.host).server.emit("drop")).not.toThrow(); await tick(); }
+  finally { stop.mockRestore(); }
+  expect(await f.host.stop()).toMatchObject({ failed: true, listenerClosed: true });
+  expect(f.host.originalWorkSettled).toBe(false);
+});
+test("raw-close capacity survives logical destruction and never grows on overflow", async () => {
+  const f = await fixture(), held = Array.from({ length: 5 }, pendingCloseSocket);
+  for (const raw of held) privateHost(f.host).accept(raw.socket);
+  expect(held.every(raw => raw.destroy.mock.calls.length === 1)).toBe(true);
+  expect(privateHost(f.host).sockets.size).toBe(4);
+  expect(() => held[4]!.socket.emit("error", new Error("Synthetic overflow socket error"))).not.toThrow();
+  expect(privateHost(f.host).sockets.size).toBe(4);
+  const closed = await f.host.stop(); expect(closed.failed).toBe(true);
+  for (const raw of held) raw.socket.emit("close");
+  await tick(); expect(privateHost(f.host).sockets.size).toBe(0);
+  expect(f.host.originalWorkSettled).toBe(false); expect(await f.host.stop()).toBe(closed);
+});
+test("a rejected raw socket releases its observation slot only on original close", async () => {
+  const f = await fixture(), held = Array.from({ length: 5 }, pendingCloseSocket);
+  for (const raw of held.slice(0, 4)) privateHost(f.host).accept(raw.socket);
+  expect(privateHost(f.host).sockets.size).toBe(4);
+  held[0]!.socket.emit("close"); await tick();
+  privateHost(f.host).accept(held[4]!.socket); expect(privateHost(f.host).sockets.size).toBe(4);
+  expect((await f.host.stop()).failed).toBe(false); expect(f.host.originalWorkSettled).toBe(false);
+  for (const raw of held.slice(1)) raw.socket.emit("close");
+  expect(await f.host.originalClosed).toEqual({ failed: false });
+});
+test("original generation waits for the opening status continuation while public stop ends", async () => {
+  const entered = gate(), release = gate(), f = await fixture(), normal = f.port.development;
+  f.port.development = async (...args) => {
+    if (args[0] === "development.status") { entered.resolve(); await release.promise; }
+    return normal(...args);
+  };
+  const opening = f.host.setEnabled(true, performance.now() + 60000);
+  try {
+    await entered.promise; const closed = await f.host.stop(); expect((await opening).ok).toBe(false);
+    expect(f.host.originalWorkSettled).toBe(false); release.resolve();
+    expect(await f.host.originalClosed).toEqual({ failed: true }); expect(await f.host.stop()).toBe(closed);
+    // Subsequent read-only status is BackendController/Main-owned, not a new generation.
+    const external = gate(); f.port.development = async (...args) => { await external.promise; return normal(...args); };
+    const status = f.host.getStatus(); expect(f.host.originalWorkSettled).toBe(true);
+    external.resolve(); await status; expect(f.host.originalWorkSettled).toBe(true);
+  } finally { release.resolve(); await opening; }
+});
+test("known nonzero original task exit ends retention while preserving failure", async () => {
+  const f = await fixture(helpers, undefined, undefined, undefined, async resources => withSyntheticTaskSettlement(resources, "identity", Promise.resolve({
+    childCloseObserved: true, workerExited: true, workerExitCode: 1, authorityCommitted: false, uncertain: true,
+  })));
+  expect((await f.host.setEnabled(true, performance.now() + 60000)).ok).toBe(false);
+  const closed = await f.host.stop(); expect(closed.failed).toBe(true);
+  expect(await f.host.originalClosed).toEqual({ failed: true }); expect(await f.host.stop()).toBe(closed);
+});
+test("generation waits for original Admission invoke after Connection and public stop", async () => {
+  const entered = gate(), release = gate(), f = await fixture(), normal = f.port.development;
+  f.port.development = async (...args) => {
+    if (args[0] === "development.invoke") { entered.resolve(); await release.promise; }
+    return normal(...args);
+  };
+  await f.host.setEnabled(true, performance.now() + 60000);
+  const client = await peer(f.file); client.hello(); expect((await client.next()).kind).toBe(ControlKind.accept);
+  client.send(ControlKind.request, Buffer.from(JSON.stringify({ id: randomUUID(), operation: "status", input: null })));
+  try {
+    await entered.promise; const closing = f.host.stop(); expect((await client.next()).kind).toBe(ControlKind.stop);
+    client.send(ControlKind.clean); await client.closed; const closed = await closing;
+    expect(f.host.originalWorkSettled).toBe(false); release.resolve(); await f.host.originalClosed;
+    expect(f.host.originalWorkSettled).toBe(true); expect(await f.host.stop()).toBe(closed);
+  } finally { release.resolve(); }
+});
+
+test("generation retains a Connection after successful CLEAN until its original ACK callback", async () => {
+  const f = await fixture(); await f.host.setEnabled(true, performance.now() + 60000);
+  const entered = gate(); let release: (() => void) | undefined, restore: (() => void) | undefined;
+  const capture = (socket: Socket) => {
+    const originalWrite = socket.write.bind(socket);
+    const write = vi.spyOn(socket, "write").mockImplementation(((chunk: Buffer, cb: (error?: Error | null) => void) => {
+      if (Buffer.isBuffer(chunk) && chunk[5] === ControlKind.accept) return originalWrite(chunk, error => {
+        // Real pipe write completes, but deliberately hold the callback visible
+        // to Writer: this is a synthetic observation delay, not native proof.
+        let released = false;
+        release = () => { if (!released) { released = true; cb(error); } }; entered.resolve();
+      });
+      return originalWrite(chunk, cb);
+    }) as Socket["write"]);
+    restore = () => { write.mockRestore(); };
+  };
+  privateHost(f.host).server.prependOnceListener("connection", capture);
+  try {
+    const client = await peer(f.file); client.hello(); expect((await client.next()).kind).toBe(ControlKind.accept);
+    await entered.promise; client.send(ControlKind.clean); await client.closed;
+    const closed = await f.host.stop(); expect(closed.failed).toBe(false);
+    expect(f.host.originalWorkSettled).toBe(false);
+    release!(); expect(await f.host.originalClosed).toEqual({ failed: false });
+    expect(await f.host.stop()).toBe(closed);
+  } finally {
+    privateHost(f.host).server.removeListener("connection", capture); restore?.(); release?.();
+  }
 });

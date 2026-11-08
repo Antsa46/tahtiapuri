@@ -28,6 +28,7 @@ export interface NativeHostOutcome {
   readonly failed: boolean;
 }
 type Backend = Pick<BackendController, "development">;
+type OriginalWork = { readonly original: Promise<unknown>; readonly observation: boolean };
 export type NativeDevelopmentResources = Pick<NativeLaunchMcpResources,
   "controlFile" | "prepareDirectory" | "identity" | "bootstrap" | "session" | "prepareWorker" | "observeCall" | "status">;
 /** Trusted composition/test seam. Production closes over one approved config;
@@ -39,6 +40,17 @@ const unavailable = (): DevelopmentResult => ({ ok: false, code: "ENGINE_UNAVAIL
  * Reopening needs the later generation/recovery protocol; a new Host or backend
  * alias is never a rearm mechanism. Caller owns the Electron lock. */
 export class NativeDevelopmentHost {
+  /** Generation-owned API/IO end, not backend process/Job termination. Read-only
+   * status queries remain owned by BackendController/Main after this one-shot. */
+  readonly originalClosed: Promise<Readonly<{ failed: boolean }>>;
+  private resolveOriginalClosed!: (value: Readonly<{ failed: boolean }>) => void;
+  private readonly originalWork = new Set<OriginalWork>();
+  private readonly sockets = new Set<Socket>();
+  private terminalRegistrationComplete = false;
+  private originalEnded = false;
+  private originalUnknown = false;
+  private originalFailed = false;
+  private firstOriginalFailure: Readonly<{ reason: unknown }> | undefined;
   private attempted = false;
   private closing = false;
   private accepting = false;
@@ -62,6 +74,7 @@ export class NativeDevelopmentHost {
   private readonly abort = new AbortController();
   private readonly cleanupAbort = new AbortController();
   private readonly connections = new Map<Socket, NativeMainConnection>();
+  private readonly retainedConnections = new Set<NativeMainConnection>();
   private readonly outcomes: NativeConnectionOutcome[] = [];
   private reservationCreated = false;
   private sessionSealed = false;
@@ -78,8 +91,40 @@ export class NativeDevelopmentHost {
     if (process.platform !== "win32" || !/^[A-Z]:\\/.test(directory) || win32.normalize(directory) !== directory
       || directory.length > 200 || directory === win32.parse(directory).root) throw new Error("Invalid native development directory.");
     if (typeof loadResources !== "function" || typeof loadResources.observe !== "function") throw new Error("Missing bound native MCP resource loader.");
+    this.originalClosed = new Promise(resolve => { this.resolveOriginalClosed = resolve; });
     claimDevelopmentBackend(backend);
     this.file = join(directory, "main-bootstrap.bin");
+  }
+  get originalWorkSettled(): boolean { return this.originalEnded; }
+  get originalFailure(): Readonly<{ reason: unknown }> | undefined { return this.firstOriginalFailure; }
+  private noteOriginalFailure(reason: unknown): void {
+    this.originalFailed = true;
+    this.firstOriginalFailure ??= Object.freeze({ reason });
+  }
+  private retainOriginal<T>(original: Promise<T>, inspect?: (value: T) => void, observation = false): Promise<T> {
+    const record: OriginalWork = { original, observation }; this.originalWork.add(record);
+    void original.then(value => {
+      try { inspect?.(value); }
+      catch (error) { this.noteOriginalFailure(error); this.originalUnknown = true; }
+      this.originalWork.delete(record); this.checkOriginal();
+    }, reason => {
+      this.noteOriginalFailure(reason); if (record.observation) this.originalUnknown = true;
+      this.originalWork.delete(record); this.checkOriginal();
+    });
+    return original;
+  }
+  private checkOriginal(): void {
+    if (!this.originalEnded && !this.originalUnknown && this.terminalRegistrationComplete && !this.originalWork.size) {
+      this.originalEnded = true;
+      this.resolveOriginalClosed(Object.freeze({ failed: this.originalFailed || this.failed }));
+    }
+  }
+  /** Never throw into Node's drop handler: Node closes the opaque clientHandle
+   * only AFTER emitting drop. Unknown ownership requires Main's forced cleanup. */
+  private unknownConnection(reason: unknown): void {
+    this.originalUnknown = true; this.failed = true; this.noteOriginalFailure(reason);
+    try { void this.stop().catch(error => { this.noteOriginalFailure(error); this.originalUnknown = true; }); }
+    catch (error) { this.noteOriginalFailure(error); }
   }
   getStatus(): Promise<DevelopmentResult> { return this.backend.development("development.status"); }
   setEnabled(enabled: false): Promise<DevelopmentResult>;
@@ -96,7 +141,7 @@ export class NativeDevelopmentHost {
     }
     this.openingDeadline = openingDeadline; // Before any preparation or loader IO.
     // Publish the ORIGINAL open promise before any callback can re-enter stop.
-    this.opening = Promise.resolve().then(() => this.open());
+    this.opening = this.retainOriginal(Promise.resolve().then(() => this.open()));
     this.openingResult = new Promise(resolve => {
       let returned = false, timer: NodeJS.Timeout | undefined;
       const cancelTimer = clearTimeout;
@@ -106,10 +151,10 @@ export class NativeDevelopmentHost {
       const cancelled = () => finish(unavailable());
       this.abort.signal.addEventListener("abort", cancelled, { once: true });
       timer = setTimeout(() => { this.failed = true; finish(unavailable()); void this.stop(); }, Math.max(0, openingDeadline - performance.now()));
-      void this.opening!.then(async () => {
+      this.retainOriginal(this.opening!.then(async () => {
         try { this.alive(); const result = await this.getStatus(); this.alive(); finish(result); }
-        catch { this.failed = true; finish(unavailable()); void this.stop(); }
-      }, () => { this.failed = true; finish(unavailable()); void this.stop(); });
+        catch (error) { this.noteOriginalFailure(error); this.failed = true; finish(unavailable()); void this.stop(); }
+      }, () => { this.failed = true; finish(unavailable()); void this.stop(); }));
     });
     return this.openingResult;
   }
@@ -120,12 +165,24 @@ export class NativeDevelopmentHost {
     let resolveStop!: (outcome: NativeHostOutcome) => void;
     this.stopping = new Promise(resolve => { resolveStop = resolve; });
     this.cleanupDeadline = performance.now() + 30000;
-    this.closing = true; this.accepting = false; this.abort.abort();
-    void this.admission?.disable();
-    for (const connection of this.connections.values()) void connection.stop();
-    this.closingWork = this.close();
+    this.closing = true; this.accepting = false;
+    // Retain the complete cleanup producer BEFORE abort/stop callbacks re-enter.
+    let begin!: () => void;
+    const start = new Promise<void>(resolve => { begin = resolve; });
+    this.closingWork = this.retainOriginal(start.then(() => this.close()), outcome => {
+      if (outcome.failed) this.noteOriginalFailure(new Error("Original native Host close failed."));
+    });
+    try {
+      this.abort.abort();
+      void this.admission?.disable();
+      for (const connection of this.connections.values()) void connection.stop();
+    } catch (error) {
+      this.originalUnknown = true; this.failed = true; this.noteOriginalFailure(error);
+    } finally {
+      this.terminalRegistrationComplete = true; begin(); this.checkOriginal();
+    }
     void this.bound(this.closingWork, 30000, this.cleanupDeadline).then(result => {
-      if (!result) this.cleanupAbort.abort();
+      if (!result) { this.cleanupAbort.abort(); this.noteOriginalFailure(new Error("Original native Host close deadline expired.")); }
       resolveStop(result ?? Object.freeze({
       descriptorRemoved: false, helperExitVerified: false, originalResourceWorkSettled: false,
       resourceOwnerHealthy: false, backendRevoked: false, listenerClosed: false,
@@ -150,29 +207,43 @@ export class NativeDevelopmentHost {
   private async resource<T>(start: (resources: NativeDevelopmentResources) => Promise<T>): Promise<T> {
     const resources = this.resources;
     if (!resources) throw new Error("Native Host resources unavailable.");
-    let original: Promise<T>;
-    try { original = start(resources); }
-    catch (error) { this.failed = true; this.helpersSettled = false; throw error; }
-    const call = new NativeDevelopmentResourceCall(original);
-    this.resourceCalls.push(call as NativeDevelopmentResourceCall<unknown>);
-    call.bind(resources); // Original is already retained and handled.
-    if (!call.observationAvailable) { this.failed = true; this.helpersSettled = false; throw new Error("Native Host call observation unavailable."); }
-    try {
-      const result = await call.result; await call.observed;
-      if (call.failed || !call.settled || !call.exitVerified) throw new Error("Native Host original call not verified.");
-      return result;
-    } catch (error) {
-      this.failed = true;
-      if (error && typeof error === "object" && "exitVerified" in error && error.exitVerified === false) this.helpersSettled = false;
-      throw error;
-    }
+    return this.retainOriginal(Promise.resolve().then(async () => {
+      let original: Promise<T>;
+      try { original = start(resources); }
+      catch (error) { this.originalUnknown = true; this.failed = true; this.helpersSettled = false; throw error; }
+      const call = new NativeDevelopmentResourceCall(original);
+      this.resourceCalls.push(call as NativeDevelopmentResourceCall<unknown>);
+      // Both observation handlers are retained before observer lookup/re-entry.
+      this.retainOriginal(call.observed.then(() => {
+        if (!call.physicalSettled) throw new Error("Original native resource termination unknown.");
+        if (call.failed) this.noteOriginalFailure(call.originalOutcome?.status === "rejected"
+          ? call.originalOutcome.reason : new Error("Original native resource failed."));
+      }), undefined, true);
+      call.bind(resources); // Original is already retained and handled.
+      if (!call.observationAvailable) { this.failed = true; this.helpersSettled = false; throw new Error("Native Host call observation unavailable."); }
+      try {
+        const result = await call.result; await call.observed;
+        if (call.failed || !call.settled || !call.exitVerified) throw new Error("Native Host original call not verified.");
+        return result;
+      } catch (error) {
+        this.failed = true;
+        if (error && typeof error === "object" && "exitVerified" in error && error.exitVerified === false) this.helpersSettled = false;
+        throw error;
+      }
+    }));
   }
   private async open(): Promise<void> {
     try {
       this.alive();
-      this.loading = this.loadResources(this.openingDeadline, this.abort.signal);
+      try { this.loading = this.loadResources(this.openingDeadline, this.abort.signal); }
+      catch (error) { this.originalUnknown = true; throw error; }
       const loading = new NativeDevelopmentLoadCall(this.loading);
       this.loadingCall = loading; // Retain original + both handlers BEFORE lookup.
+      this.retainOriginal(loading.observed.then(() => {
+        if (!loading.settled) throw new Error("Original native loader end unknown.");
+        if (loading.failed) this.noteOriginalFailure(loading.originalOutcome?.status === "rejected"
+          ? loading.originalOutcome.reason : new Error("Original native loader failed."));
+      }), undefined, true);
       loading.bind(this.loadResources);
       if (!loading.observationAvailable) throw new Error("Native loader observation unavailable.");
       const resources = await loading.result;
@@ -197,6 +268,9 @@ export class NativeDevelopmentHost {
       const main = await this.resource(resources => resources.identity(this.openingDeadline, this.abort.signal)); this.alive();
       const epoch = randomBytes(32).toString("hex"), pipeNonce = randomBytes(16).toString("hex");
       this.admission = new NativeDevelopmentAdmission(this.backend, epoch);
+      this.retainOriginal(this.admission.originalClosed, outcome => {
+        if (outcome.failed) this.noteOriginalFailure(this.admission?.originalFailure?.reason);
+      }, true);
       const ticket = this.admission.issueTicket();
       if (!ticket) throw new Error("Native admission unavailable.");
       this.descriptor = encodeNativeBootstrap({ main, pipeNonce, ticket });
@@ -205,14 +279,15 @@ export class NativeDevelopmentHost {
       await this.resource(resources => resources.session("seal", this.descriptor!, this.openingDeadline, this.abort.signal));
       this.sessionSealed = true; this.alive();
       // A failed acknowledgement can still mean the backend changed; revoke it.
-      this.configuration = Promise.resolve().then(() => {
+      this.configuration = this.retainOriginal(Promise.resolve().then(() => {
         this.alive(); this.epochConfigured = true;
         return this.backend.development("development.configure", epoch);
-      });
+      }));
       const configured = await this.configuration; this.alive();
       if (!configured.ok || !("status" in configured) || !configured.status.enabled) throw new Error("Native backend unavailable.");
       const server = createServer(socket => this.accept(socket));
       server.maxConnections = 4; this.server = server;
+      server.on("drop", () => this.unknownConnection(new Error("Native listener dropped an unobservable handle.")));
       server.on("error", () => { this.failed = true; void this.stop(); });
       this.listening = Promise.resolve().then(() => {
         this.alive();
@@ -232,42 +307,76 @@ export class NativeDevelopmentHost {
     } catch (error) { this.accepting = false; throw error; }
   }
   private accept(socket: Socket) {
-    socket.on("error", () => {});
-    if (!this.accepting || this.closing || !this.admission || this.connections.size >= 4) { socket.destroy(); return; }
-    if (Date.now() - this.bucket >= 1000) { this.bucket = Date.now(); this.accepted = 0; }
-    if (++this.accepted > 16) { socket.destroy(); this.failed = true; void this.stop(); return; }
-    const connection = new NativeMainConnection(socket, this.admission, {
-      consume: async (ticket, signal, deadline) => {
-        signal.throwIfAborted(); requireNativeOperationDeadline(deadline);
-        await this.descriptorWork;
-        signal.throwIfAborted(); requireNativeOperationDeadline(deadline);
-        if (this.descriptorState !== "published" || !this.descriptor
-          || this.descriptor.subarray(48, 64).toString("hex") !== ticket.generation
-          || this.descriptor.subarray(64).toString("hex") !== ticket.token) throw new Error("Native descriptor mismatch.");
-        this.descriptorState = "consuming";
-        this.descriptorWork = this.resource(resources => resources.bootstrap("consume", this.descriptor, deadline, signal))
-          .then(() => { this.descriptorState = "removed"; }, error => { this.descriptorState = "uncertain"; throw error; });
-        await this.descriptorWork;
-      },
-      revoke: () => this.revoke(),
-    });
-    this.connections.set(socket, connection);
-    void connection.closed.then(outcome => {
-      this.connections.delete(socket);
-      // Keep only the owning generation outcome, not an unbounded history of
-      // rejected unauthenticated peers.
-      if (outcome.authenticated || this.admission?.phase === "disabled") {
-        this.outcomes.push(outcome); this.failed ||= outcome.failed; void this.stop();
-      }
-    });
+    // Node decrements _connections before the socket close callback. Its
+    // maxConnections cap cannot bound our still-pending close observations.
+    if (this.sockets.size >= 4 || this.originalEnded) {
+      this.unknownConnection(new Error("Native raw socket observation capacity exceeded."));
+      // Overflow does not reserve a slot, but the rejected socket can still
+      // emit an asynchronous error after destroy returns.
+      try { socket.on("error", () => {}); } catch (error) { this.noteOriginalFailure(error); }
+      try { socket.destroy(); } catch (error) { this.noteOriginalFailure(error); }
+      return;
+    }
+    this.sockets.add(socket);
+    let closed!: () => void;
+    const rawClose = new Promise<void>(resolve => { closed = resolve; });
+    this.retainOriginal(rawClose, () => { this.sockets.delete(socket); }, true);
+    // Keep the accept producer across constructors/listener callbacks that may
+    // synchronously re-enter stop before the Connection can be registered.
+    let accepted!: () => void;
+    this.retainOriginal(new Promise<void>(resolve => { accepted = resolve; }));
+    try {
+      socket.once("close", closed);
+      socket.on("error", () => {});
+      if (!this.accepting || this.closing || !this.admission || this.retainedConnections.size >= 4) { socket.destroy(); return; }
+      if (Date.now() - this.bucket >= 1000) { this.bucket = Date.now(); this.accepted = 0; }
+      if (++this.accepted > 16) { socket.destroy(); this.failed = true; void this.stop(); return; }
+      const connection = new NativeMainConnection(socket, this.admission, {
+        consume: async (ticket, signal, deadline) => {
+          signal.throwIfAborted(); requireNativeOperationDeadline(deadline);
+          await this.descriptorWork;
+          signal.throwIfAborted(); requireNativeOperationDeadline(deadline);
+          if (this.descriptorState !== "published" || !this.descriptor
+            || this.descriptor.subarray(48, 64).toString("hex") !== ticket.generation
+            || this.descriptor.subarray(64).toString("hex") !== ticket.token) throw new Error("Native descriptor mismatch.");
+          this.descriptorState = "consuming";
+          this.descriptorWork = this.resource(resources => resources.bootstrap("consume", this.descriptor, deadline, signal))
+            .then(() => { this.descriptorState = "removed"; }, error => { this.descriptorState = "uncertain"; throw error; });
+          await this.descriptorWork;
+        },
+        revoke: () => this.revoke(),
+      });
+      this.connections.set(socket, connection);
+      this.retainedConnections.add(connection);
+      let owningOutcome = false;
+      const logicalClosed = connection.closed.then(outcome => {
+        this.connections.delete(socket);
+        // Fix semantic ownership at public completion, not at a later raw end.
+        owningOutcome = outcome.authenticated || this.admission?.phase === "disabled";
+        if (owningOutcome) {
+          this.outcomes.push(outcome); this.failed ||= outcome.failed; void this.stop();
+        }
+        return outcome;
+      });
+      this.retainOriginal(Promise.all([logicalClosed, connection.originalClosed]), ([, original]) => {
+        this.retainedConnections.delete(connection);
+        if (original.failed && owningOutcome) this.noteOriginalFailure(connection.originalFailure?.reason);
+      }, true);
+      if (this.closing) void connection.stop();
+    } catch (error) {
+      this.unknownConnection(error);
+      try { socket.destroy(); } catch (destroyError) { this.noteOriginalFailure(destroyError); }
+    } finally { accepted(); }
   }
   private revoke(): Promise<boolean> {
-    this.revocation ??= (async () => {
+    this.revocation ??= this.retainOriginal(Promise.resolve().then(async () => {
       await this.configuration?.catch(() => {});
       if (!this.epochConfigured) return true;
       const result = await this.backend.development("development.configure", null);
       return result.ok && "status" in result && !result.status.enabled && !result.status.connected;
-    })().catch(() => false);
+    }).catch(error => { this.noteOriginalFailure(error); return false; }), value => {
+      if (!value) this.noteOriginalFailure(new Error("Original native backend revocation failed."));
+    });
     return this.revocation;
   }
   private cleanupWithinBudget(): boolean {
@@ -280,13 +389,13 @@ export class NativeDevelopmentHost {
     // Their own in-flight creation is still awaited, so a late listen/configure
     // cannot restore a resource after its cleanup was reported.
     const server = this.server;
-    const listener = !server ? Promise.resolve(true) : (async () => {
+    const listener = this.retainOriginal(!server ? Promise.resolve(true) : (async () => {
       await this.listening?.catch(() => {});
       return new Promise<boolean>(resolve => {
         try { server.close(error => resolve(!error || (error as NodeJS.ErrnoException).code === "ERR_SERVER_NOT_RUNNING")); }
         catch { resolve(false); }
       });
-    })();
+    })(), value => { if (!value) throw new Error("Original native listener end unknown."); }, true);
     const connections = [...this.connections.values()];
     const stoppedWork = Promise.all(connections.map(connection => connection.stop()));
     const detachedWork = this.admission?.disable() ?? Promise.resolve(true);

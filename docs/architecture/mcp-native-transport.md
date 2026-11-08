@@ -436,7 +436,7 @@ ohituksia tai uusintaa. Desktop-build, kahden testitiedoston tyypitys sekä
 riippumaton lähde-, resepti- ja raakatuloskatselmus läpäisivät.
 BA:n 78 tapauksen vaiheessa Hostin consume-muutoksella oli käännös- ja
 lähdenäyttö, eikä siinä ajettu oikeaa Host-/Worker-/natiiviketjua. Myöhemmät
-BF:n suoran import-version Host-ajot ja nykyisen lazy-import-fixturen
+BF:n suoran import-version Host-ajot ja BF:n myöhemmän lazy-import-fixturen
 rajattu keräily-/import-näyttö erotetaan
 [käynnistysvalvojan yhteenvedossa](native-launch-supervisor.md#node-isännän-rajattu-testinäyttö).
 Oletuspolkua tämä yhteys-/admission-sarja ei hyväksy.
@@ -503,6 +503,141 @@ Tämä näyttö ei hyväksy LPAC:ia, verkkokieltoa, FMI:tä, GPU:ta tai koko
 minimipakettia. Kuvaustiedoston puuttuminen ei todista vanhan työntekijän
 siivoutumista.
 
+### Alkuperäisten kirjoitus- ja backend-kutsujen päättyminen
+
+Paikallinen lähdejatko lisää NativeControlWriteriin ja
+NativeDevelopmentAdmissioniin erillisen originalClosed-portin. Se ratkeaa
+muuttumattomalla failed-tilalla vasta tunnettujen alkuperäisten API-töiden
+päätyttyä ja uuden työn aidan sulkeuduttua. originalWorkSettled on saman
+päättymisen lukeva havainto. Tämä ei ole toimituksen onnistuminen, peerin
+käsittelykuitti tai OS-prosessin/Jobin päättymistodiste. Connection.closed
+säilyy rajattuna loogisena tuloksena. Uudempi paikallinen Connection-lähde
+kuluttaa Writer-porttia erillisenä havaintona, kuten alla kuvataan.
+
+Writer säilyttää loogisesta jonosta erillisen dispatch-tietueen ennen
+listener-rekisteröintiä ja write-kutsua. Listenerin uudelleentulossa tehty
+stop estää myöhemmän write-kutsun. Portti odottaa dispatch-kehyksen paluun
+sekä jokaisen käynnistetyn kirjoituksen alkuperäisen callbackin myös
+loogisen jonon peruutuksen jälkeen. Write-heitto ilman callbackia jää
+keskeneräiseksi; stream-close ei korvaa puuttuvaa callbackia. Callbackin
+virhe kirjataan ennen tietueen vapautusta ja ulkoista failure-callbackia.
+Drain kuuluu edelleen loogisen FIFO-onnistumisen ehtoihin.
+[Node.js:n stream-sopimus](https://nodejs.org/api/stream.html#writablewritechunk-encoding-callback)
+erottaa kirjoituscallbackin ja vastapainetta ilmaisevan drainin; destroy
+voi katkaista vielä käsittelemättömiä kirjoituksia. Tässä konservatiivinen
+havainto odottaa oman alkuperäisen callbackin eikä päättele sen valmistumista.
+
+Admission rekisteröi alkuperäisen attachin, invoken sekä koko attach→detach-
+ketjun ennen rajattua julkista odotusta ja backend-callbackia. Disable sulkee
+pääsyn, julkaisee välimuistitetun sulkuketjun ja vasta sitten päättää uuden
+työn rekisteröintiaidan. Vanhan leasen myöhempi close ei aloita toista detachia.
+Neljän keskeneräisen invoken raja kattaa alkuperäiset työt kaikista sessioneista;
+paikka vapautuu vasta alkuperäisen työn päättyessä, ei julkisessa timeoutissa.
+
+Keskeneräisten töiden alkuperäiset Promiset ja tietueet säilyvät päättymiseen.
+Ensimmäinen alkuperäinen hylkäys säilyy omana tietueenaan myös reason-arvon
+ollessa undefined, null tai 0. Myöhemmät päättyneet hylkäykset tiivistyvät
+kyllästyvään laskuriin ja pysyvään failed-havaintoon; tämä ei ole täydellinen
+kutsuhistoria. Vanhan invoken myöhäinen hylkäys ei käske sulkea korvaavaa
+asiakasta. originalFailure on vain alkuperäisen ensimmäisen virheen havainto,
+eikä sitä välitetä automaattisesti käyttöliittymään tai MCP-tulosteeseen.
+
+Uusien porttien desktop-build, kohdennetut tyypit ja 157/157 tapauksen
+rajattu ajo läpäisivät. Writerin 14 uutta tapausta ja Admissionin kahdeksan
+uutta regressiota täydentävät aiempia 25 Admission-, 53 Connection- ja 57 Host-
+tapauksia. Riippumaton lähde-, resepti- ja raakakuittikatselmus hyväksyi tämän
+rajatun näytön. Nykyinen oikea broker-fixture oli mukana vain tyypityksessä;
+Node-tiedostot/putket ja synteettiset portit eivät todista OS-oikeusrajoja.
+Hostin dynaamisen sulun ja Mainin riippumattoman backend-/mallisulun
+kytkentä sekä koko sovelluksen OS- ja Electron-näyttö ovat edelleen
+seuraavaa työtä. Connectionin seuraava lähdesiirto kuvataan alla. Alkuperäisen 30 sekunnin
+sulun epäonnistunutta tulosta ei muuteta myöhemmällä valmistumisella.
+
+### Connectionin alkuperäisen työn erillinen sulku
+
+Connection.originalClosed odottaa omaa alkuperäistä authenticate-/consume-/
+invoke-/revoke- ja finish-työtään, Writer.originalClosed-porttia sekä havaittua
+stream-close-tapahtumaa. Tuottaja rekisteröidään ennen callbackia ja säilytetään
+sen loppuun; se voi lisätä uuden alkuperäistyön ennen omaa päättymistään.
+Lopullinen tyhjyys hyväksytään vasta synkronisen sulkuvalmistelun rekisteröinti-
+aidan jälkeen. Pelkkä destroyed-lippu, destroy-kutsu tai bounded-close ei riitä.
+Hylätty havainto-Promise ja epävarma synkroninen sulkuvalmistelu eivät kelpaa
+päättymistodisteeksi. Uutta ajastinta, aikarajaa tai resettiä ei lisätä.
+
+Revoke säilyttää entisen rajatun detachin järjestyksen. Sen jo rekisteröity
+jatkoketju muodostaa ja säilyttää owner.revoke()-alkuperäisen Promisen ennen
+bounded-käärettä. Julkinen revoketulos voi siis päättyä ennen alkuperäistä työtä.
+REQUESTin siirretty callback tarkistaa aktiivisen vaiheen ja keskeneräisen
+alkutunnistautumisen alkuperäisen määräajan uudelleen ennen invoke-dispatchia.
+Writerin tai alkuperäisen työn myöhäinen virhe kirjataan ennen closed-vaiheen
+paluita. Aikaisempi jäädytetty Connection.closed-tulos ei muutu. Tahallinen
+looginen ACK-peruutus erotetaan varsinaisesta kirjoituscallbackin virheestä.
+
+Connection ei odota yhteistä Admission.originalClosed-porttia. Väärän
+ilman tunnusta liittyvän peerin pitää voida sulkeutua kelvollisen ticketin
+säilyessä käytettävänä. Myös invoken bounded-facaden päättyminen voi päättää
+Connectionin API-työn, vaikka alkuperäinen backend-kutsu on vielä kesken.
+Host omistaa Admissionin erillisen koko sukupolven portin. Tämä on tarkoituksellinen
+vastuuraja, eikä Connectionin havaintoa käytetä backendin työn tai OS-prosessin
+päättymisväitteenä. Virheellisen peerin hylkäyksen historiaa ei sellaisenaan
+käytetä kelvollisen sukupolven sulkemiskäskynä.
+
+Desktop-build, kohdennetut tyypit ja 171/171 tapauksen rajattu ajo
+läpäisivät: Writer 14, Admission 33, Connection 64, Host 57 sekä kolme
+oikean paikallisputken integraatiota synteettisillä palveluilla. Riippumaton
+lähde-, ajoresepti- ja raakakuittikatselmus hyväksyi rajatun näytön. Oikea
+broker-fixture sisältyi vain tyypitykseen; jälkeläisten OS-päättymistä ei
+varmennettu. Tämä ei ole oikea natiivi-/Worker-/Electron-koe eikä koko
+Hostin dynaamisen kokonaissulun hyväksyntä.
+
+
+### Hostin sukupolven alkuperäistyön koonti (lähde, koe avoin)
+
+NativeDevelopmentHost.originalClosed kokoaa dynaamisesti tämän kertaluonteisen
+sukupolven alkuperäiset avaus- ja sulkutuottajat, avauksen sisäisen statusjatkon,
+resurssilatauksen alkuperäiset havainnot, jokaisen resurssikutsun tiedosto- ja
+lapsi-/Worker-päättymishavainnon, configure-/revoke-ketjut, yhteisen Admissionin
+sekä jokaisen Connectionin ja vastaanotetun socketin alkuperäisen sulun.
+Tuottaja säilyy myös silloin, kun se voi vielä rekisteröidä jatkotyötä. Portti
+ratkeaa vasta sulun rekisteröintiaidan ja kaikkien näiden töiden jälkeen.
+Epäonnistuminen säilyy erillään päättymisestä: esimerkiksi tunnettu nonzero
+Worker-exit voi päättää työn, mutta ei tee siitä onnistunutta. Puuttuva tai
+hylätty päättymishavainto jää epävarmaksi. Vanhaa 30 sekunnin stop-tulosta
+ja sen aikarajaa ei muuteta eikä myöhempi valmistuminen korota sitä.
+
+BackendController ja Main omistavat erikseen myöhemmät käyttöliittymän
+lukuoikeudelliset statuskyselyt ja backend-prosessin lopullisen sulun.
+Host-portti ei tarkoita kaikkien tulevien metodikutsujen tai OS-prosessien
+päättymistä. Avauksen sisäinen statusjatko kuuluu silti Hostin tuottajaan.
+
+Connectionin looginen sulku voi vapauttaa aktiivisen yhteyden, mutta sen
+alkuperäistyö pysyy erillisessä enintään neljän yhteyden rekisterissä.
+Socketin sulkua odottavalla rekisterillä on oma neljän paikan raja; paikka
+vapautuu vasta close-havainnosta. Virheellisen tunnistamattoman peerin
+semanttinen tulos arvioidaan sen julkisen sulun hetkellä, eikä myöhäinen
+sulku tee siitä toisen sukupolven omistajaa.
+
+Noden maxConnections=4 säilyy. Käytetyn Node-version sisäinen net-lähde
+hylkää ylimääräisen yhteyden drop-tapahtumalla ennen Socket-olion luomista
+ja sulkee sen kahvan ilman sovellukselle annettavaa valmistumiskutsua.
+Lisäksi Noden yhteyslaskuri vähenee ennen socket-close-callbackia, joten
+se ei yksin rajaa keskeneräisten havaintojen määrää. Drop ja oman rekisterin
+ylitys kirjaavat pysyvän epävarmuuden ja sulkevat pääsyn. Drop-handler ei
+heitä Nodeen, koska heitto voisi estää myös Noden oman kahvan sulkukutsun.
+Myöhempi listener-close ei korvaa puuttuvaa kahvahavaintoa. Tällaisella
+polulla Host-portti ei anna kokonaissulkutodistetta; Mainin erillinen pakotettu
+prosessisulku ja sen ulkoinen OS-näyttö ovat edelleen toteutettavia.
+
+Desktop-build, kohdennetut tyypit ja 182/182 tapauksen rajattu koe läpäisivät:
+Writer 14, Admission 33, Connection 64, Host 68 ja kolme paikallisputken
+integraatiota. Riippumaton lähde-, resepti- ja raakakuittikatselmus hyväksyi
+näytön. Aikaisemmat 157 ja 171 tapausta ovat tämän kanssa päällekkäisiä
+vaihekohtaisia ajoja. Kokeet käyttävät synteettisiä palveluja ja päättymis-
+havaintoja sekä Node-tiedostoja/putkia; oikea broker-fixture on mukana vain
+tyypityksessä, eikä jälkeläisten OS-päättymistä varmennettu. Muutos ei ota
+käyttöön uutta oletuspolkua, tiedosto-oikeuksia, uudelleenavausta tai
+natiivi-/Electron-/OS-kokopaketin hyväksyntää.
+
 ## Suojatun käynnistyskuvauksen julkaisu, kulutus ja palautus
 
 `main-bootstrap.cpp` ja `bootstrap-publication.h` toteuttavat kolme kiinteää
@@ -527,9 +662,14 @@ Muutos on käännetty sovelluspakettiin. Mainin kuljetus- ja valvontalogiikan
 Koe erotti tyhjät, osittaiset, väärät, ylimääräiset ja ilman EOF:ää jääneet
 syötteet hyväksytyistä kehyksistä ja varmisti kaikkien omien lasten sulun.
 Aiemmat paketit käyttävät tyhjää EOF:ää; niitä ei saa kytkeä uuden
-säievalvojan recover-pyyntöihin. Varsinainen launch-worker ja sovelluskytkentä
-ovat tekemättä. Ensimmäisen raportittoman CLI-epäonnistumisen tuntemattomat
-havainnot ja viiveen syy säilyvät avoimina.
+säievalvojan recover-pyyntöihin. AS/AT-vaiheessa varsinainen launch-worker ja
+sovelluskytkentä olivat vielä tekemättä. Myöhempi kiinteän Workerin toteutus
+ja rajattu resurssipolun ajonäyttö kuvataan
+[käynnistysvalvojan Worker-osuudessa](native-launch-supervisor.md#kiinteä-worker-ja-rajattu-ajonäyttö)
+ja [resurssipolun näytössä](native-launch-supervisor.md#pakettiin-sidotun-resurssipolun-rajattu-ajonäyttö).
+Oletus-Electron-koostaminen ja kokopaketin hyväksyntä ovat edelleen avoimia.
+Ensimmäisen raportittoman CLI-epäonnistumisen tuntemattomat havainnot ja
+viiveen syy säilyvät avoimina.
 Valvojan integraatioportit ja koesarjan tarkat näyttörajat omistaa
 [natiiviapurien käynnistysvalvoja](native-launch-supervisor.md).
 
@@ -610,7 +750,7 @@ avausrajaa. Sen sopimuksen, kutsukohtaiset havainnot, testisiirron ja
 hakemistovalmistelun rajatun näytön omistaa
 [natiiviapurien käynnistysvalvoja](native-launch-supervisor.md#hostin-pakollinen-resurssilataaja-kesken).
 Alla oleva vanha generic-helper-näyttö ei hyväksy tätä uutta liitosta.
-Uudempi suoran import-version Host-näyttö sekä nykyisen lazy-import-fixturen
+Uudempi BF:n suoran import-version Host-näyttö sekä BF:n lazy-import-fixturen
 ajamaton oikea Host-ketju erotetaan
 [BF:n näyttörajassa](native-launch-supervisor.md#node-isännän-rajattu-testinäyttö).
 `development-owner.ts` sallii yhdelle backend-oliolle vain yhden legacy-

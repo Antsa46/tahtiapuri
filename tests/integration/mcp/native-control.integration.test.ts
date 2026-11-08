@@ -100,6 +100,8 @@ it("uses a real local pipe and actual services for all four UI/MCP ownership bou
   expect(f.assistant.cancel(mcp)).toEqual({ ok: false, code: "INVALID_INPUT" });
   f.send(ControlKind.clean);
   expect(await f.connection.closed).toMatchObject({ failed: false, brokerCleanupReported: true, backendDetachSettled: true, epochRevoked: true, streamClosed: true });
+  expect(await f.connection.originalClosed).toEqual({ failed: false });
+  expect(await f.admission.originalClosed).toEqual({ failed: false });
   expect(f.operations.slice(-2)).toEqual(["development.detach", "epoch.revoke"]);
   expect(f.service.status()).toMatchObject({ status: { enabled: false, connected: false } });
   expect(f.assistant.get(ui)).toMatchObject({ job: { state: "loading" } });
@@ -114,10 +116,14 @@ it("STOP releases active MCP work while the queued UI work survives", async () =
   await tick(); expect(f.jobs.map(job => job.id)).toEqual([mcp, ui]);
   expect(f.assistant.get(ui)).toMatchObject({ job: { state: "loading", text: "" } });
   f.send(ControlKind.clean); expect((await closed).failed).toBe(false);
+  expect(await f.connection.originalClosed).toEqual({ failed: false });
+  expect(await f.admission.originalClosed).toEqual({ failed: false });
 });
 it("real pipe EOF cancels the owner's work but does not claim native cleanup", async () => {
   const f = await fixture(); const mcp = jobId(await f.request("probe", input));
   f.client.end();
   expect(await f.connection.closed).toMatchObject({ failed: true, brokerCleanupReported: false, backendDetachSettled: true, epochRevoked: true, streamClosed: true });
   expect(f.cancelled).toEqual([mcp]); expect(f.admission.issueTicket()).toBeUndefined();
+  expect(await f.connection.originalClosed).toEqual({ failed: true });
+  expect(await f.admission.originalClosed).toEqual({ failed: false });
 });
